@@ -76,19 +76,22 @@ def ingest(channel: Channel, raw: bytes) -> Reply | None:
     return _classify(channel, inbound, match)
 
 
-def _outbound_by_ids(channel: Channel, ids: list[str]) -> Message | None:
+def _outbound_by_ids(channel: Channel, ids: list[str], *, lock: bool = False) -> Message | None:
+    """The newest outbound message of the channel with one of `ids`; `lock` holds its row for a status change."""
     if not ids:
         return None
     messages = Message.objects.select_related("thread__recipient_language").filter(
         thread__channel=channel, direction=Direction.OUT, message_id__in=ids
     )
+    if lock:
+        messages = messages.select_for_update(of=("self",))
     return messages.order_by("-pk").first()
 
 
 def _match_thread(channel: Channel, msg: EmailMessage) -> Match | None:
-    """Our Message-ID in In-Reply-To/References (C-20), else the newest open thread of the sender (C-21)."""
-    message = _outbound_by_ids(
-        channel, mail_parser.header_ids(msg, "In-Reply-To") + mail_parser.header_ids(msg, "References")
+    """Our Message-ID in In-Reply-To, then References (C-20), else the newest open thread of the sender (C-21)."""
+    message = _outbound_by_ids(channel, mail_parser.header_ids(msg, "In-Reply-To")) or _outbound_by_ids(
+        channel, mail_parser.header_ids(msg, "References")
     )
     if message is not None:
         return Match(thread=message.thread, message=message, matched_by=ReplyMatch.HEADER)
@@ -182,7 +185,8 @@ def mark_message_replied(reply: Reply) -> None:
 
 def _ingest_dsn(channel: Channel, inbound: Inbound) -> Reply | None:
     dsn = dsn_service.parse(inbound.msg)
-    message = _outbound_by_ids(channel, [dsn.original_message_id] if dsn.original_message_id else [])
+    ids = [dsn.original_message_id] if dsn.original_message_id else []
+    message = _outbound_by_ids(channel, ids, lock=True)  # a concurrent DSN must not see a stale bounce_retry_at
     if message is None or not (dsn.is_hard or dsn.is_soft):
         logger.info("communicator DSN %s (status %r) matched no message", inbound.message_id, dsn.status)
         return None

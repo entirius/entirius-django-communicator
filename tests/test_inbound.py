@@ -233,6 +233,17 @@ def test_C26_duplicate_inbound_message_id_idempotent(channel):
     assert "can we talk on Thursday" in Reply.objects.get().body_text
 
 
+def test_in_reply_to_wins_over_a_newer_references_id(channel):
+    answered = make_sent(channel, "owner@example-shop-1.test", message_id="<old@mail.example.test>", ref="x:1")
+    make_sent(channel, "owner@example-shop-1.test", message_id="<new@mail.example.test>", ref="x:2")
+    raw = eml("reply_plain.eml", "<old@mail.example.test>").replace(
+        b"References: <old@mail.example.test>", b"References: <new@mail.example.test>"
+    )
+
+    with mock.patch(NOTIFY):
+        assert ingest(channel, raw).message_id == answered.pk
+
+
 def test_own_outbound_mail_in_the_mailbox_is_ignored(channel):
     make_sent(channel, "owner@example-shop-1.test", message_id="<reply-plain-1@example-shop-1.test>")
     assert ingest(channel, eml("reply_plain.eml")) is None and not Reply.objects.exists()
