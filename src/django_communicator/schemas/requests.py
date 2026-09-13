@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from django_communicator.enums import ChannelMode, MessageStatus, SuppressionKind, TemplateKind
+from django_communicator.enums import ChannelMode, MessageStatus, ReplyKind, SuppressionKind, TemplateKind
 from django_communicator.services.communicate_service import RecipientData
 
 
@@ -177,3 +177,30 @@ class DevStartSequenceRequest(BaseModel):
 
     thread_id: int = Field(description="Thread of the channel.", examples=[3])
     sequence_key: str = Field(min_length=1, max_length=64, description="Sequence key.", examples=["followup"])
+
+
+class ThreadListQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    subject_ref: str | None = Field(default=None, max_length=200, description="Only threads about this reference.")
+
+
+class ReplyListQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    kind: ReplyKind | None = Field(default=None, description="Only replies of this kind.")
+    thread: int | None = Field(default=None, description="Only replies of this thread.")
+
+
+class MailboxRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    imap_host: str = Field(min_length=1, max_length=255, description="IMAP host.", examples=["imap.mail.test"])
+    imap_port: int = Field(default=993, ge=1, le=65535, description="IMAP port.", examples=[993])
+    imap_use_ssl: bool = Field(default=True, description="IMAP over TLS.", examples=[True])
+    imap_user: str = Field(min_length=1, max_length=255, description="IMAP login.", examples=["outreach"])
+    imap_password: str | None = Field(
+        default=None, max_length=1024, description="Write-only; omitted or null keeps the stored one."
+    )
+    folder: str = Field(default="INBOX", min_length=1, max_length=64, description="Folder polled.", examples=["INBOX"])
+    is_active: bool = Field(default=True, description="Polled by the beat.", examples=[True])

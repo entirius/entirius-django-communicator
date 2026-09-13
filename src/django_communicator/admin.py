@@ -1,13 +1,16 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
+from django import forms
 from django.contrib import admin
 
 from django_communicator.models import (
     Channel,
+    MailboxConfig,
     Message,
     MessageTemplate,
     MessageTemplateVersion,
+    Reply,
     SendPolicy,
     SendWindow,
     Sequence,
@@ -108,6 +111,44 @@ class ThreadSequenceStateAdmin(admin.ModelAdmin):
     list_display = ("thread", "sequence", "step", "next_due_at", "stopped_at", "stop_reason")
     list_filter = ("stop_reason",)
     list_select_related = ("thread", "sequence")
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        return False
+
+
+class MailboxConfigForm(forms.ModelForm):
+    imap_password = forms.CharField(
+        widget=forms.PasswordInput(render_value=False), required=False, help_text="Leave empty to keep the stored one."
+    )
+
+    class Meta:
+        model = MailboxConfig
+        fields = ("channel", "imap_host", "imap_port", "imap_use_ssl", "imap_user", "imap_password", "folder")
+        fields += ("last_uid", "is_active")
+
+    def clean_imap_password(self) -> str:
+        return self.cleaned_data["imap_password"] or self.instance.imap_password
+
+
+@admin.register(MailboxConfig)
+class MailboxConfigAdmin(admin.ModelAdmin):
+    form = MailboxConfigForm
+    list_display = ("channel", "imap_host", "imap_user", "folder", "is_active", "last_uid", "last_polled_at")
+    readonly_fields = ("last_polled_at",)
+
+
+@admin.register(Reply)
+class ReplyAdmin(admin.ModelAdmin):
+    list_display = ("from_email", "subject", "kind", "matched_by", "thread", "received_at")
+    list_filter = ("kind",)
+    list_select_related = ("thread",)
+    search_fields = ("from_email", "subject")
 
     def has_add_permission(self, request) -> bool:
         return False

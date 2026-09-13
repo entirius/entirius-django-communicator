@@ -5,12 +5,15 @@
 
 from django.urls import path
 
+from django_communicator.api.admin.views import mailbox_views as mailbox
+from django_communicator.api.admin.views import reply_views as reply
 from django_communicator.api.admin.views import review_views as review
 from django_communicator.api.admin.views import sending_views as sending
 from django_communicator.api.admin.views import sequence_views as sequence
 from django_communicator.api.admin.views import suppression_views as suppression
 from django_communicator.api.admin.views import template_views as template
 from django_communicator.api.admin.views import test_views as dev
+from django_communicator.api.admin.views import thread_views as thread
 from django_communicator.api.admin.views._base import is_development
 
 urlpatterns = [
@@ -47,6 +50,20 @@ urlpatterns = [
         "sequences/<int:pk>/steps/", sequence.SequenceStepListView.as_view(), name="admin-communicator-sequence-steps"
     ),
     path("sequences/<int:pk>/texts/", sequence.TextListView.as_view(), name="admin-communicator-sequence-texts"),
+    path("threads/", thread.ThreadListView.as_view(), name="admin-communicator-threads"),
+    path("threads/<int:pk>/", thread.ThreadDetailView.as_view(), name="admin-communicator-thread"),
+    path("replies/", reply.ReplyListView.as_view(), name="admin-communicator-replies"),
+    path(
+        "replies/<int:pk>/confirm-optout/",
+        reply.ConfirmOptoutView.as_view(),
+        name="admin-communicator-reply-confirm-optout",
+    ),
+    path(
+        "replies/<int:pk>/dismiss-optout/",
+        reply.DismissOptoutView.as_view(),
+        name="admin-communicator-reply-dismiss-optout",
+    ),
+    path("mailbox/", mailbox.MailboxView.as_view(), name="admin-communicator-mailbox"),
 ]
 
 if is_development():
@@ -55,4 +72,5 @@ if is_development():
         path("test/clock/", dev.DevClockView.as_view(), name="admin-communicator-test-clock"),
         path("test/send-due/", dev.DevSendDueView.as_view(), name="admin-communicator-test-send-due"),
         path("test/start-sequence/", dev.DevStartSequenceView.as_view(), name="admin-communicator-test-start-sequence"),
+        path("test/poll-now/", dev.DevPollNowView.as_view(), name="admin-communicator-test-poll-now"),
     ]

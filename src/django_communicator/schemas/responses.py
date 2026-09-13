@@ -284,3 +284,86 @@ class SequenceStateResponse(BaseModel):
     sequence_id: int = Field(description="Sequence id.", examples=[1])
     step: int = Field(description="Follow-ups scheduled so far.", examples=[0])
     next_due_at: datetime | None = Field(description="Next follow-up due.", examples=[None])
+
+
+class ThreadSummaryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Thread id.", examples=[3])
+    subject_ref: str = Field(description="Opaque reference of the caller.", examples=["leads.Company:42"])
+    recipient_email: str = Field(description="Recipient email.", examples=["jan@shop.test"])
+    recipient_name: str = Field(description="Recipient name.", examples=["Jan Kowalski"])
+    status: str = Field(description="open, replied or closed.", examples=["replied"])
+    last_message_at: datetime | None = Field(description="Last outbound or inbound mail.", examples=[None])
+
+
+class ThreadListResponse(BaseModel):
+    count: int = Field(description="Total matching threads.", examples=[1])
+    next: str | None = Field(description="Next page URL.", examples=[None])
+    previous: str | None = Field(description="Previous page URL.", examples=[None])
+    results: list[ThreadSummaryResponse] = Field(description="Newest first.", examples=[[]])
+
+
+class TimelineEntryResponse(BaseModel):
+    kind: str = Field(description="message or reply.", examples=["reply"])
+    at: datetime = Field(description="Sent, received or created.", examples=["2026-09-14T10:15:00Z"])
+    direction: str = Field(description="out or in.", examples=["in"])
+    status: str = Field(description="Message status; empty for a reply.", examples=[""])
+    subject: str = Field(description="Subject.", examples=["Re: Your shop audit"])
+    body_text: str = Field(description="Plain-text body, quoted history included.", examples=["Hello, ..."])
+    from_email: str = Field(description="Sender of a reply; empty for our messages.", examples=["owner@shop.test"])
+    reply_kind: str = Field(
+        description="reply, auto, suspected_optout, bounce_hard or bounce_soft; empty for a message.",
+        examples=["reply"],
+    )
+
+
+class ThreadDetailResponse(ThreadSummaryResponse):
+    timeline: list[TimelineEntryResponse] = Field(description="Messages and replies, oldest first.", examples=[[]])
+
+
+class ReplyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Reply id.", examples=[5])
+    thread_id: int = Field(description="Thread.", examples=[3])
+    message_id: int | None = Field(description="Outbound message answered (header match).", examples=[11])
+    from_email: str = Field(description="Sender.", examples=["owner@shop.test"])
+    subject: str = Field(description="Subject.", examples=["Re: Your shop audit"])
+    body_text: str = Field(description="Plain-text body.", examples=["Hello, ..."])
+    kind: str = Field(description="reply, auto, suspected_optout, bounce_hard or bounce_soft.", examples=["reply"])
+    matched_by: str = Field(description="header, sender or dsn.", examples=["header"])
+    inbound_message_id: str = Field(description="Message-ID of the inbound mail.", examples=["<a@shop.test>"])
+    received_at: datetime = Field(description="Ingested.", examples=["2026-09-14T10:15:00Z"])
+    optout_confirmed_at: datetime | None = Field(description="Opt-out confirmed by a human.", examples=[None])
+
+
+class ReplyListResponse(BaseModel):
+    count: int = Field(description="Total matching replies.", examples=[1])
+    next: str | None = Field(description="Next page URL.", examples=[None])
+    previous: str | None = Field(description="Previous page URL.", examples=[None])
+    results: list[ReplyResponse] = Field(description="Newest first.", examples=[[]])
+
+
+class MailboxResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    imap_host: str = Field(description="IMAP host.", examples=["imap.mail.test"])
+    imap_port: int = Field(description="IMAP port.", examples=[993])
+    imap_use_ssl: bool = Field(description="IMAP over TLS.", examples=[True])
+    imap_user: str = Field(description="IMAP login.", examples=["outreach"])
+    has_password: bool = Field(description="A password is stored (never returned).", examples=[True])
+    folder: str = Field(description="Folder polled.", examples=["INBOX"])
+    last_uid: int = Field(description="Poll cursor.", examples=[0])
+    is_active: bool = Field(description="Polled by the beat.", examples=[True])
+    last_polled_at: datetime | None = Field(description="Last successful poll.", examples=[None])
+
+    @classmethod
+    def of(cls, config) -> "MailboxResponse":
+        fields = {name: getattr(config, name) for name in cls.model_fields if name != "has_password"}
+        return cls.model_validate({**fields, "has_password": bool(config.imap_password)})
+
+
+class PollNowResponse(BaseModel):
+    ingested: int = Field(description="Mail that produced or matched a reply.", examples=[1])
+    skipped: int = Field(description="Mail dropped (unmatched, own, unreadable).", examples=[0])

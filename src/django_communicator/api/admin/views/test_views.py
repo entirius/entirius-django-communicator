@@ -1,7 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
-"""Development-only endpoints for BDD: communicate(), channel clock, beat run, sequence start.
+"""Development-only endpoints for BDD: communicate(), channel clock, beat run, sequence start, IMAP poll.
 
 404 outside `ENVIRONMENT == "development"`.
 """
@@ -17,12 +17,13 @@ from django_communicator.schemas.requests import DevClockRequest, DevCommunicate
 from django_communicator.schemas.responses import (
     ClockResponse,
     MessageDetailResponse,
+    PollNowResponse,
     SendDueResponse,
     SequenceStateResponse,
 )
 from django_communicator.services import clock_service, sequence_service
 from django_communicator.services.communicate_service import LegalFooterRequiredError, communicate
-from django_communicator.tasks import schedule_follow_ups, send_due
+from django_communicator.tasks import poll_inbox, schedule_follow_ups, send_due
 
 _TAGS = ["Communicator (development)"]
 
@@ -95,3 +96,16 @@ class DevStartSequenceView(DevelopmentView):
         except sequence_service.SequenceError as error:
             raise ValidationError({"sequence_key": [str(error)]}) from None
         return Response(SequenceStateResponse.model_validate(state).model_dump(mode="json"), status=201)
+
+
+class DevPollNowView(DevelopmentView):
+    @extend_schema(
+        tags=_TAGS,
+        summary="Run the IMAP poll now (development only)",
+        description="Runs the poll_inbox body in-process over every active mailbox (no celery-once lock).",
+        request=None,
+        responses={200: PollNowResponse, **ERROR_RESPONSES},
+    )
+    def post(self, request: Request, channel_idx: str) -> Response:
+        self.channel(channel_idx)
+        return Response(PollNowResponse(**poll_inbox.run()).model_dump(mode="json"))
