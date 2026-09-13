@@ -77,6 +77,8 @@ Prefix `api/communicator/v2/admin/<channel_idx>/`, `JWTAuthentication` + `IsAdmi
 ## Gotchas
 
 - Views and other services never save `status`; go through `message_service`.
+- Transitions are compare-and-set on the stored status (stale copy → 409); `message_approved` / `company_skipped`
+  fire on commit. Automated rewrites are counted on the locked row before the toolbox call — failures count.
 - Static templates and suppressed recipients never reach the toolbox; `complete()` is never retried.
 - `failure_detail` holds error class, toolbox code, HTTP status and field names — never the prompt.
 - `utils/domains.py` is a copy of the leads/siteintel rule — never import it across modules.

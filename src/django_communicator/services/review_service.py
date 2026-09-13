@@ -4,6 +4,7 @@
 
 """Review queue of a channel: list, next, accept, rewrite, manual edit, skip. Status changes via `message_service`."""
 
+from django.db import transaction
 from django.db.models import QuerySet
 from django_utils.toolbox import ToolboxError
 
@@ -46,9 +47,10 @@ def get_message(channel: Channel, pk: int) -> Message:
 
 
 def accept(message: Message, *, user) -> Message:
-    """`approved` with reviewer and timestamp; `scheduled_at` is left for the sending layer."""
-    message_service.transition(message, MessageStatus.APPROVED, user=user)
-    message_approved.send(sender=Message, message=message)
+    """`approved` with reviewer and timestamp; `scheduled_at` is left for the sending layer. Signals once, on commit."""
+    with transaction.atomic():
+        message_service.transition(message, MessageStatus.APPROVED, user=user)
+        transaction.on_commit(lambda: message_approved.send(sender=Message, message=message))
     return message
 
 
@@ -57,30 +59,35 @@ def skip(message: Message, *, user, reason: str = "") -> Message:
 
 
 def skip_company(message: Message, *, user, reason: str = "") -> Message:
-    """Reject and tell the owner of `subject_ref` (this module knows no companies)."""
-    skip(message, user=user, reason=reason)
-    company_skipped.send(sender=Message, subject_ref=message.thread.subject_ref, message=message)
+    """Reject and tell the owner of `subject_ref` (this module knows no companies). Signals once, on commit."""
+    subject_ref = message.thread.subject_ref
+    with transaction.atomic():
+        skip(message, user=user, reason=reason)
+        transaction.on_commit(lambda: company_skipped.send(sender=Message, subject_ref=subject_ref, message=message))
     return message
 
 
-def edit(message: Message, *, subject: str, body_text: str) -> Message:
-    """New version written by a human — no toolbox call."""
+def edit(message: Message, *, subject: str, body_text: str, user=None) -> Message:
+    """New version written by `user` — no toolbox call."""
     message_service.ensure_transition(message, MessageStatus.SUPERSEDED)
-    return message_service.create_version(message, subject=subject, body_text=body_text, edited_by_human=True)
+    changes = {"subject": subject, "body_text": body_text, "edited_by_human": True, "created_by": user}
+    return message_service.create_version(message, **changes)
 
 
 def rewrite(message: Message, *, notes: str, automated: bool = False) -> Message:
     """New AI version with `notes` appended to the user prompt. Automated rewrites stop at the configured limit.
 
+    An automated rewrite is counted on the stored message before the toolbox call, so failures count too.
     A toolbox failure yields a `failed` version and leaves the reviewed message in the queue.
     """
     message_service.ensure_transition(message, MessageStatus.SUPERSEDED)
     if not (message.rendered_prompt and message.template_version_id):
         raise ReviewError("only AI drafts can be rewritten")
-    if automated and message.automated_rewrites >= communicator_settings.COMMUNICATOR_AUTOMATED_REWRITE_LIMIT:
+    limit = communicator_settings.COMMUNICATOR_AUTOMATED_REWRITE_LIMIT
+    if automated and not message_service.claim_automated_rewrite(message, limit=limit):
         raise RewriteLimitReachedError("automated rewrite limit reached")
     prompt = f"{message.rendered_prompt}\n\n{notes.strip()}"
-    counters = {"review_notes": notes, "automated": automated}
+    counters = {"review_notes": notes}
     try:
         draft = drafting_service.generate(
             prompt=prompt, version=message.template_version, tag=REWRITE_TAG, channel_idx=message.thread.channel.idx
@@ -95,12 +102,13 @@ def rewrite(message: Message, *, notes: str, automated: bool = False) -> Message
 
 def _failed_rewrite(message: Message, error: Exception, counters: dict) -> Message:
     code = drafting_service.failure_code(error)
+    detail = drafting_service.failure_detail(error)
+    failed = message_service.create_version(
+        message, status=MessageStatus.FAILED, failure_code=code, failure_detail=detail, attempts=1, **counters
+    )
     template_key = message.template_version.template.key
     ref = message.thread.subject_ref
     drafting_service.notify_failure(
         channel_idx=message.thread.channel.idx, subject_ref=ref, code=code, template_key=template_key
     )
-    detail = drafting_service.failure_detail(error)
-    return message_service.create_version(
-        message, status=MessageStatus.FAILED, failure_code=code, failure_detail=detail, attempts=1, **counters
-    )
+    return failed

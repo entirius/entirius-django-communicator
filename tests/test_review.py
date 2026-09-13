@@ -2,9 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 import json
+import threading
 from itertools import product
 
 import pytest
+from django.db import connection
+from django_utils.toolbox.testing import error_response
 
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import MESSAGE_STATUS_TRANSITIONS, MessageStatus
@@ -28,11 +31,35 @@ def draft(ai_template, toolbox, recipient, context) -> Message:
     return _draft(recipient, context)
 
 
-def test_C07_accept_sets_reviewer(draft, admin_api):
+def _race(action, pk: int, **kwargs) -> list[str]:
+    """Run `action` in two threads on two copies of message `pk`, both read before either writes."""
+    copies = [Message.objects.select_related("thread").get(pk=pk) for _ in range(2)]
+    barrier, outcomes = threading.Barrier(2), []
+
+    def run(copy: Message) -> None:
+        barrier.wait()
+        try:
+            action(copy, **kwargs)
+            outcomes.append("ok")
+        except InvalidTransitionError:
+            outcomes.append("conflict")
+        finally:
+            connection.close()
+
+    threads = [threading.Thread(target=run, args=(copy,)) for copy in copies]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return sorted(outcomes)
+
+
+def test_C07_accept_sets_reviewer(draft, admin_api, django_capture_on_commit_callbacks):
     received = []
     message_approved.connect(lambda sender, message, **kw: received.append(message.pk), weak=False, dispatch_uid="t07")
 
-    accepted = review_service.accept(draft, user=admin_api.user)
+    with django_capture_on_commit_callbacks(execute=True):
+        accepted = review_service.accept(draft, user=admin_api.user)
 
     message_approved.disconnect(dispatch_uid="t07")
     assert (accepted.status, accepted.reviewed_by, accepted.scheduled_at) == (
@@ -63,8 +90,6 @@ def test_C08_rewrite_creates_version_and_caps_automated_loop(draft, toolbox):
 
 
 def test_C08_failed_rewrite_keeps_the_reviewed_message(draft, toolbox):
-    from django_utils.toolbox.testing import error_response
-
     toolbox["complete"].mock(return_value=error_response(504, "UPSTREAM_TIMEOUT"))
 
     failed = review_service.rewrite(draft, notes="Shorter.")
@@ -81,12 +106,13 @@ def test_C08_static_message_cannot_be_rewritten(channel, recipient, context):
         review_service.rewrite(message, notes="x")
 
 
-def test_C09_manual_edit_no_toolbox_call(draft, toolbox):
+def test_C09_manual_edit_no_toolbox_call(draft, toolbox, admin_api):
     calls = toolbox["complete"].call_count
 
-    edited = review_service.edit(draft, subject="Edited", body_text="By hand.")
+    edited = review_service.edit(draft, subject="Edited", body_text="By hand.", user=admin_api.user)
     draft.refresh_from_db()
 
+    assert edited.created_by == admin_api.user
     assert (edited.edited_by_human, edited.version, edited.status, draft.status) == (
         True,
         2,
@@ -126,13 +152,14 @@ def test_transition_table_every_illegal_edge_raises(draft):
             message_service.transition(draft, target)
 
 
-def test_skip_company_rejects_and_emits_subject_ref(draft, admin_api):
+def test_skip_company_rejects_and_emits_subject_ref(draft, admin_api, django_capture_on_commit_callbacks):
     received = []
     company_skipped.connect(
         lambda sender, subject_ref, **kw: received.append(subject_ref), weak=False, dispatch_uid="tsc"
     )
 
-    skipped = review_service.skip_company(draft, user=admin_api.user, reason="Not a fit")
+    with django_capture_on_commit_callbacks(execute=True):
+        skipped = review_service.skip_company(draft, user=admin_api.user, reason="Not a fit")
 
     company_skipped.disconnect(dispatch_uid="tsc")
     assert (skipped.status, skipped.reject_reason, received) == ("rejected", "Not a fit", ["bdd:42"])
@@ -145,3 +172,73 @@ def test_C08_automated_counter_is_read_under_the_lock(draft, toolbox):
     rewritten = review_service.rewrite(stale, notes="Shorter.", automated=True)
 
     assert rewritten.automated_rewrites == 3
+
+
+@pytest.mark.django_db(transaction=True)
+def test_C07_concurrent_accept_approves_once(draft, admin_api):
+    received = []
+    message_approved.connect(lambda sender, message, **kw: received.append(message.pk), weak=False, dispatch_uid="c07")
+
+    outcomes = _race(review_service.accept, draft.pk, user=admin_api.user)
+
+    message_approved.disconnect(dispatch_uid="c07")
+    draft.refresh_from_db()
+    assert (outcomes, received, draft.status) == (["conflict", "ok"], [draft.pk], MessageStatus.APPROVED)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_skip_company_emits_once(draft, admin_api):
+    received = []
+    company_skipped.connect(
+        lambda sender, subject_ref, **kw: received.append(subject_ref), weak=False, dispatch_uid="s1"
+    )
+
+    outcomes = _race(review_service.skip_company, draft.pk, user=admin_api.user, reason="Not a fit")
+
+    company_skipped.disconnect(dispatch_uid="s1")
+    assert (outcomes, received) == (["conflict", "ok"], ["bdd:42"])
+
+
+def test_accept_cannot_override_superseded(draft, admin_api):
+    stale = Message.objects.get(pk=draft.pk)
+    review_service.edit(draft, subject="Edited", body_text="By hand.", user=admin_api.user)
+
+    with pytest.raises(InvalidTransitionError):
+        review_service.accept(stale, user=admin_api.user)
+    draft.refresh_from_db()
+    assert (draft.status, draft.reviewed_by) == (MessageStatus.SUPERSEDED, None)
+
+
+def test_C08_stale_copy_at_limit_is_refused(draft, toolbox):
+    stale = Message.objects.get(pk=draft.pk)
+    Message.objects.filter(pk=draft.pk).update(automated_rewrites=3)
+    calls = toolbox["complete"].call_count
+
+    with pytest.raises(review_service.RewriteLimitReachedError):
+        review_service.rewrite(stale, notes="Shorter.", automated=True)
+    assert toolbox["complete"].call_count == calls and not Message.objects.filter(parent=draft).exists()
+
+
+def test_C08_failed_rewrites_count_towards_cap(draft, toolbox):
+    toolbox["complete"].mock(return_value=error_response(504, "UPSTREAM_TIMEOUT"))
+    calls = toolbox["complete"].call_count
+    limit = communicator_settings.COMMUNICATOR_AUTOMATED_REWRITE_LIMIT
+
+    failed = [review_service.rewrite(draft, notes="Shorter.", automated=True) for _ in range(limit)]
+    with pytest.raises(review_service.RewriteLimitReachedError):
+        review_service.rewrite(draft, notes="Shorter.", automated=True)
+
+    draft.refresh_from_db()
+    assert {message.status for message in failed} == {MessageStatus.FAILED}
+    assert (draft.automated_rewrites, draft.status) == (limit, MessageStatus.REVIEW_REQUIRED)
+    assert toolbox["complete"].call_count == calls + limit
+
+
+def test_failed_rewrite_on_approved_message_is_refused(draft, toolbox, admin_api):
+    stale = Message.objects.select_related("thread__channel", "template_version__template").get(pk=draft.pk)
+    review_service.accept(draft, user=admin_api.user)
+    toolbox["complete"].mock(return_value=error_response(504, "UPSTREAM_TIMEOUT"))
+
+    with pytest.raises(InvalidTransitionError):
+        review_service.rewrite(stale, notes="Shorter.")
+    assert not Message.objects.filter(parent=draft).exists()

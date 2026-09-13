@@ -4,7 +4,8 @@
 import pytest
 from django.contrib.auth import get_user_model
 
-from django_communicator.models import MessageTemplate
+from django_communicator.admin import MessageAdmin
+from django_communicator.models import Message, MessageTemplate
 
 
 @pytest.fixture
@@ -45,3 +46,9 @@ def test_admin_save_creates_a_version(superuser_client, ai_template):
 
     assert response.status_code == 302
     assert MessageTemplate.objects.get().current_version.number == 2
+
+
+def test_message_admin_is_read_only(rf):
+    admin = MessageAdmin(Message, None)
+
+    assert not any(check(rf.get("/")) for check in (admin.has_add_permission, admin.has_delete_permission))

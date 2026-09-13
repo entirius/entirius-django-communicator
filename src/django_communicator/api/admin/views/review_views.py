@@ -111,7 +111,8 @@ class EditView(_MessageActionView):
     def post(self, request: Request, channel_idx: str, pk: int) -> Response:
         body = parse(EditRequest, request.data)
         message = self.message(channel_idx, pk)
-        return self.act(review_service.edit, message, subject=body.subject, body_text=body.body_text, status=201)
+        fields = {"subject": body.subject, "body_text": body.body_text, "user": request.user}
+        return self.act(review_service.edit, message, **fields, status=201)
 
 
 class SkipView(_MessageActionView):
