@@ -11,9 +11,14 @@ from django_utils.toolbox.testing import error_response
 from django_communicator.enums import FailureCode, MessageStatus
 from django_communicator.models import Message, Thread
 from django_communicator.services import suppression_service
-from django_communicator.services.communicate_service import LegalFooterRequiredError, RecipientData, communicate
+from django_communicator.services.communicate_service import (
+    LegalFooterRequiredError,
+    RecipientData,
+    ThreadMismatchError,
+    communicate,
+)
 from tests.conftest import CHANNEL_IDX, DRAFT, draft_response
-from tests.factories import LanguageFactory, make_static, make_template
+from tests.factories import ChannelFactory, LanguageFactory, make_static, make_template
 
 
 def _communicate(recipient, context, key="lead.cold.shop", **kwargs) -> Message:
@@ -208,3 +213,44 @@ def test_inactive_template_does_not_resolve(channel, recipient, context):
     make_static(channel, is_active=False)
 
     assert _communicate(recipient, context, key="followup").failure_code == FailureCode.NO_TEMPLATE
+
+
+@pytest.mark.parametrize("subject", ["x" * 256, "Line one\nLine two", "Line one\rLine two"])
+def test_C11_overlong_or_multiline_subject_fails_as_schema(ai_template, toolbox, recipient, context, subject):
+    toolbox["complete"].mock(return_value=draft_response({**DRAFT, "subject": subject}))
+
+    message = _communicate(recipient, context)
+
+    assert (message.status, message.failure_code) == (MessageStatus.FAILED, FailureCode.SCHEMA)
+
+
+def test_thread_from_other_channel_rejected(static_template, toolbox, recipient, context):
+    other = ChannelFactory(idx="other-channel", default_language=static_template.channel.default_language)
+    foreign = Thread.objects.create(channel=other, subject_ref="bdd:42", recipient_email=recipient.email)
+    own = _communicate(recipient, context, key="followup").thread
+    other_recipient = recipient.model_copy(update={"email": "anna@example-shop-2.test"})
+
+    with pytest.raises(ThreadMismatchError):
+        _communicate(recipient, context, key="followup", thread=foreign)
+    with pytest.raises(ThreadMismatchError):
+        _communicate(other_recipient, context, key="followup", thread=own)
+    assert Message.objects.filter(thread=foreign).count() == 0 and Message.objects.count() == 1
+
+
+def test_context_cannot_override_recipient_fields(static_template, recipient):
+    message = _communicate(recipient, {"first_name": "Mallory", "email": "x@evil.test"}, key="followup")
+
+    assert message.subject == "Hi Jan"
+
+
+def test_suppression_domain_rejects_email_shape(channel):
+    with pytest.raises(ValueError):
+        suppression_service.create_suppression(channel, kind="domain", value="jan@shop.pl")
+    assert suppression_service.normalise_value("domain", "WWW.Shop.pl") == "shop.pl"
+
+
+@pytest.mark.parametrize("value", ["foo@", "@shop.pl", "jan@shop", "jan@shop.", "a@b@shop.pl"])
+def test_suppression_email_rejects_incomplete(channel, value):
+    with pytest.raises(ValueError):
+        suppression_service.create_suppression(channel, kind="email", value=value)
+    assert suppression_service.normalise_value("email", " Jan@Shop.pl ") == "jan@shop.pl"

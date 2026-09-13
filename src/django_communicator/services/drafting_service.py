@@ -21,7 +21,7 @@ from django_utils.toolbox import (
     ToolboxValidationError,
 )
 from django_utils.toolbox import Message as PromptMessage
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from django_communicator.enums import FailureCode
 from django_communicator.models import MessageTemplateVersion
@@ -37,8 +37,15 @@ class DraftOutputError(Exception):
 
 
 class DraftOutput(BaseModel):
-    subject: str = Field(min_length=1)
+    subject: str = Field(min_length=1, max_length=255)
     body_paragraphs: list[str] = Field(min_length=1)
+
+    @field_validator("subject")
+    @classmethod
+    def single_line(cls, subject: str) -> str:
+        if "\r" in subject or "\n" in subject:
+            raise ValueError("subject must be a single line")
+        return subject
 
 
 @dataclass(frozen=True)

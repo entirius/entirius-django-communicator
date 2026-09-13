@@ -27,13 +27,21 @@ def is_suppressed(channel: Channel, email: str) -> bool:
 
 
 def normalise_value(kind: str, value: str) -> str:
-    """Lower-cased email, or the registrable domain of a domain; raises `ValueError` on unusable input."""
+    """Lower-cased email, or the registrable domain of a domain; raises `ValueError` on a value that cannot match."""
     value = value.strip().lower()
     if kind == SuppressionKind.DOMAIN:
+        if "@" in value:
+            raise ValueError("a domain has no @")
         return registrable_domain(value)
-    if "@" not in value:
+    local, _, host = value.partition("@")
+    if not local or "@" in host or not _is_dotted(host):
         raise ValueError("not an email address")
     return value
+
+
+def _is_dotted(host: str) -> bool:
+    labels = host.split(".")
+    return len(labels) > 1 and all(labels)
 
 
 def list_suppressions(channel: Channel) -> QuerySet[Suppression]:

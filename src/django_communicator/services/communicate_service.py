@@ -28,6 +28,10 @@ class LegalFooterRequiredError(Exception):
     """The template needs a legal footer and the caller passed none — no Message is created."""
 
 
+class ThreadMismatchError(Exception):
+    """The supplied thread belongs to another channel, subject or recipient — no Message is created."""
+
+
 class RecipientData(BaseModel):
     email: str = Field(min_length=3, max_length=254, description="Recipient email.", examples=["jan@shop.test"])
     first_name: str = Field(default="", description="Recipient first name.", examples=["Jan"])
@@ -48,6 +52,8 @@ def communicate(
 ) -> Message:
     """Suppression → template → legal footer → render → static body or AI draft. Raises `Channel.DoesNotExist`."""
     channel = channel_service.get_channel(channel_idx)
+    if thread is not None:
+        _check_thread(thread, channel, recipient, subject_ref)
     base = {"render_context": context, "legal_footer": recipient.legal_footer, "requires_review": requires_review}
     if suppression_service.is_suppressed(channel, recipient.email):
         return _create(channel, recipient, subject_ref, thread, status=MessageStatus.SUPPRESSED, **base)
@@ -59,7 +65,7 @@ def communicate(
     if template.requires_legal_footer and not recipient.legal_footer.strip():
         raise LegalFooterRequiredError(f"template {template_key} requires a legal footer")
     base["template_version"] = template.current_version
-    values = {"first_name": recipient.first_name, "last_name": recipient.last_name, "email": recipient.email, **context}
+    values = {**context, "first_name": recipient.first_name, "last_name": recipient.last_name, "email": recipient.email}
     try:
         if template.kind == TemplateKind.STATIC:
             return _static(channel, recipient, subject_ref, thread, template, values, base)
@@ -113,6 +119,12 @@ def _fail(channel, recipient, subject_ref, thread, code: str, detail: str, base:
 def _create(channel, recipient: RecipientData, subject_ref: str, thread: Thread | None, **fields) -> Message:
     thread = thread or _open_thread(channel, recipient, subject_ref)
     return message_service.create_message(thread=thread, **fields)
+
+
+def _check_thread(thread: Thread, channel: Channel, recipient: RecipientData, subject_ref: str) -> None:
+    owner = (channel.pk, subject_ref, recipient.email.strip().lower())
+    if (thread.channel_id, thread.subject_ref, thread.recipient_email) != owner:
+        raise ThreadMismatchError(f"thread {thread.pk} belongs to another channel, subject or recipient")
 
 
 def _open_thread(channel: Channel, recipient: RecipientData, subject_ref: str) -> Thread:
