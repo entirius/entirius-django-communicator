@@ -4,12 +4,16 @@
 
 """Suppression list: exact email or registrable domain (`www.shop.pl` == `shop.pl`, never a substring)."""
 
+import logging
+
 from django.db import IntegrityError, transaction
 from django.db.models import Q, QuerySet
 
 from django_communicator.enums import SuppressionKind
 from django_communicator.models import Channel, Suppression
 from django_communicator.utils.domains import email_domain, registrable_domain
+
+logger = logging.getLogger(__name__)
 
 
 class DuplicateSuppressionError(Exception):
@@ -58,6 +62,16 @@ def create_suppression(channel: Channel, *, kind: str, value: str, reason: str =
             )
     except IntegrityError:
         raise DuplicateSuppressionError(f"{kind} {normalised} is already suppressed") from None
+
+
+def suppress_email(channel: Channel, email: str, *, reason: str, user=None) -> None:
+    """Idempotent: an address already listed keeps its row; an unusable address is only logged."""
+    try:
+        create_suppression(channel, kind=SuppressionKind.EMAIL, value=email, reason=reason, user=user)
+    except DuplicateSuppressionError:
+        return
+    except ValueError:
+        logger.warning("communicator cannot suppress an unusable address in channel %s", channel.idx)
 
 
 def delete_suppression(channel: Channel, pk: int) -> None:

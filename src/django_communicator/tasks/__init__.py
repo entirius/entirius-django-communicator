@@ -4,7 +4,8 @@
 
 """Celery tasks (discovered by the host's `app.autodiscover_tasks()`)."""
 
+from django_communicator.tasks.poll_inbox import poll_inbox
 from django_communicator.tasks.schedule_follow_ups import schedule_follow_ups
 from django_communicator.tasks.send_due import send_due
 
-__all__ = ["schedule_follow_ups", "send_due"]
+__all__ = ["poll_inbox", "schedule_follow_ups", "send_due"]
