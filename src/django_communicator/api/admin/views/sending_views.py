@@ -74,7 +74,9 @@ class ChannelConfigView(AdminView):
 
 
 class PolicyView(AdminView):
-    @extend_schema(tags=_TAGS, summary="Send policy of the channel", responses={200: PolicyResponse, **ERROR_RESPONSES})
+    @extend_schema(
+        tags=_TAGS, summary="Send policy of the channel", responses={200: PolicyResponse, **ERROR_RESPONSES, 409: None}
+    )
     def get(self, request: Request, channel_idx: str) -> Response:
         policy = policy_service.load_policy(self.channel(channel_idx))
         if policy is None:
@@ -85,12 +87,13 @@ class PolicyView(AdminView):
         tags=_TAGS,
         summary="Create or replace the send policy",
         request=PolicyRequest,
-        responses={200: PolicyResponse, **ERROR_RESPONSES},
+        responses={200: PolicyResponse, **ERROR_RESPONSES, 409: None},
     )
     def put(self, request: Request, channel_idx: str) -> Response:
         body = parse(PolicyRequest, request.data)
-        policy = sending_config_service.save_policy(self.channel(channel_idx), **body.model_dump())
-        return Response(_policy_response(policy))
+        channel = self.channel(channel_idx)
+        sending_config_service.save_policy(channel, **body.model_dump())
+        return Response(_policy_response(policy_service.load_policy(channel)))
 
 
 class OutboxListView(AdminView):
@@ -102,7 +105,7 @@ class OutboxListView(AdminView):
             OpenApiParameter("page", int),
             OpenApiParameter("page_size", int),
         ],
-        responses={200: OutboxListResponse, **ERROR_RESPONSES},
+        responses={200: OutboxListResponse, **ERROR_RESPONSES, 409: None},
     )
     def get(self, request: Request, channel_idx: str) -> Response:
         query = parse(OutboxQuery, request.query_params.dict())

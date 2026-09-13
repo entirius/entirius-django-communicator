@@ -56,27 +56,46 @@ Layers one way: API → services → models. Templates, `communicate()`, review,
 
 - One send path: beat `django_communicator.send_due` (every 5 min, queue `communicator_send`, `QueueOnce`
   graceful) → `services/send_service.run_send_due` → `delivery_service.deliver` — nothing else calls `deliver(`
-  (a test greps for it). Each due message is claimed with `select_for_update(skip_locked=True)` in its own transaction.
+  (a test greps for it).
+- Send-once (at most once beats at least once): `deliver` commits the claim `approved|scheduled → sending`
+  (`send_attempted_at`) as a compare-and-set of its own, calls SMTP outside any transaction, then a second short
+  transaction records `sent`/`failed`/`scheduled`. A `sending` row older than `COMMUNICATOR_SENDING_STALE_MINUTES`
+  (30) is never re-sent — the next run marks it `failed/send_outcome_unknown` for a human.
 - Due = outbound `approved`/`scheduled` with `scheduled_at` empty or reached on the channel clock
   (`clock_service.now_for`, dev-only cache override). `accept` sets `scheduled_at` = next policy slot;
   `send_now` sets it to now and nothing else.
 - Policy (`SendPolicy` + `SendWindow`, tz/country from the channel): business day (`holidays`), window, daily cap
-  (Redis `communicator:sent:<idx>:<channel day>`, 48 h TTL; dry_run does not count), spread = send with
-  probability remaining / runs left in the window.
+  (Redis `communicator:sent:<idx>:<channel day>`, 48 h TTL; dry_run does not count). A run delivers at most
+  `run_budget` = remaining cap (spread off) or `ceil(remaining / runs left in the window)` (spread on), in due order;
+  each delivery reserves its place first (`INCR`, `DECR` + deferred when over the cap, given back unless sent), so
+  overlapping runs cannot exceed the cap.
 - Modes: `dry_run` → `would_send`, no SMTP; `sandbox` → `sandbox_mailbox`, `X-Original-To`, `[SANDBOX] ` prefix;
-  `live` only with `live_enabled` and `ENVIRONMENT == "production"` — otherwise the channel is skipped and a
-  critical notification goes out once per channel day. `Channel.clean()` / `channel_service.set_mode` refuse
+  `live` only while `channel_service.live_allowed` holds (`ENVIRONMENT == "production"` and `live_enabled` and
+  `mode == live`, no setting relaxes it) — checked per message on the channel re-read with the claim (the run-level
+  check is only a shortcut); otherwise the message stays waiting and a critical notification goes out once per
+  channel day. `Channel.clean()` / `channel_service.set_mode` refuse
   sandbox without mailbox and live without the flag.
 - Mail (`mail_builder`): multipart/alternative, footer after `-- `, `Message-ID: <communicator-<id>-<hex8>@<from
   domain>>`, `In-Reply-To`/`References` from earlier sent messages of the thread; connection from
   `EMAIL_SMTP_CONFIGURATION_CHANNELS[<channel idx>]` via django_email — missing → messages stay, high alert once a day.
-- SMTP: 5xx → `failed/smtp` (+ email suppression on 550/551/553/554 in live); 4xx / transport → `scheduled`,
+- SMTP: 5xx → `failed/smtp`; the recipient is suppressed (live) only when RCPT was refused
+  (`SMTPRecipientsRefused` 550/551/553/554) — `SMTPSenderRefused`/`SMTPDataError` suppress nobody and raise a high
+  channel alert once per day; 4xx / transport → `scheduled`,
   `failed/smtp` at `COMMUNICATOR_SMTP_MAX_ATTEMPTS` (`Message.send_attempts`; `attempts` stays toolbox calls).
 - Sequences: `start_sequence` / `stop_sequence` / `pause_sequence`; beat `django_communicator.schedule_follow_ups`
   (hourly, `communicator_default`) creates the next follow-up via `communicate(requires_review=False)` with the
   previous context + `body` = a random unused pool text (whole pool + warning once used up). The next due date
   counts from the delivery; the delivery of the last step stops the state `finished` and emits `sequence_finished`.
-- Host beat schedule: `send_due` `crontab(minute="*/5")`, `schedule_follow_ups` `crontab(minute=0)`.
+  Follow-ups carry `Message.sequence_step`; the step advance is a compare-and-set on `step` (overlapping runs create
+  one follow-up). Every terminal outcome goes through `sequence_service.on_follow_up_finished`: delivered → next due
+  date / `finished`; failed or suppressed → stopped `failed`/`suppressed`; rejected or skipped → re-armed from the
+  last delivery. `deliver` skips a follow-up (`skipped`, `failure_detail` = `thread_replied` |
+  `sequence_not_running`) once the thread is no longer open or its sequence is stopped/paused.
+- Channel `country` (known to `holidays`) and `timezone` (known to `zoneinfo`) are validated in `clean()` and
+  `save()`; a bad stored value makes `load_policy` raise `ChannelConfigError` → every admin view answers 409
+  `CHANNEL_CONFIG_INVALID` (policy, outbox, accept), never 500.
+- Host beat schedule (service `main/celery.py`, plan 12): `send_due` `crontab(minute="*/5")`, `schedule_follow_ups`
+  `crontab(minute=0)`.
   Workers need `app.conf.ONCE` (Redis) — `AppConfig.ready()` raises otherwise (`COMMUNICATOR_REQUIRE_ONCE_BACKEND`).
 
 ## Inbound
@@ -129,15 +148,15 @@ Prefix `api/communicator/v2/admin/<channel_idx>/`, `JWTAuthentication` + `IsAdmi
 | `GET replies/?kind=&thread=` | newest first |
 | `POST replies/<id>/confirm-optout/` · `dismiss-optout/` | 200; not an undecided `suspected_optout` → 409 |
 | `GET/PUT mailbox/` | IMAP config; `imap_password` write-only (`has_password`), omitted on PUT = kept |
-| `POST test/communicate/` · `test/clock/` (`{iso_datetime}`) · `test/send-due/` · `test/start-sequence/` · `test/poll-now/` | `ENVIRONMENT == "development"` only, else 404 |
+| `POST test/communicate/` · `test/clock/` (`{iso_datetime}`) · `test/send-due/` · `test/start-sequence/` · `test/poll-now/` · `test/reset-counters/` (`{days}`) | `ENVIRONMENT == "development"` only, else 404; `send-due` takes the beat's celery-once lock (409 while held) |
 
 ## Host integration
 
 - `INSTALLED_APPS += ["django_communicator"]` (after `django_regional`, `django_notifications`);
   `urlpatterns.append(path("", include("django_communicator.urls")))`.
 - Settings: `AI_TOOLBOX_*` (utils), `COMMUNICATOR_AUTOMATED_REWRITE_LIMIT` (3), `COMMUNICATOR_QUEUE_*`,
-  `COMMUNICATOR_LIVE_REQUIRES_PRODUCTION` (True), `EMAIL_SMTP_CONFIGURATION_CHANNELS` (django_email),
-  `REDIS_URL` / `COMMUNICATOR_REDIS_URL`, `COMMUNICATOR_SMTP_MAX_ATTEMPTS` (3), `COMMUNICATOR_SEND_INTERVAL_MIN` (5),
+  `ENVIRONMENT` (live needs `production`), `EMAIL_SMTP_CONFIGURATION_CHANNELS` (django_email),
+  `REDIS_URL` / `COMMUNICATOR_REDIS_URL`, `COMMUNICATOR_SMTP_MAX_ATTEMPTS` (3), `COMMUNICATOR_SENDING_STALE_MINUTES` (30), `COMMUNICATOR_SEND_INTERVAL_MIN` (5),
   `COMMUNICATOR_SANDBOX_SUBJECT_PREFIX`, `COMMUNICATOR_REQUIRE_ONCE_BACKEND` (True), `COMMUNICATOR_INBOUND_BATCH` (50),
   `COMMUNICATOR_SOFT_BOUNCE_RETRY_H` (24), `COMMUNICATOR_OPTOUT_PHRASES`, `COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS`.
 - Runtime deps the host lock must carry: `holidays`, `celery-once`, `redis`, `entirius-django-email`, `cryptography`

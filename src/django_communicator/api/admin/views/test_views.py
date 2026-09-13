@@ -1,27 +1,34 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
-"""Development-only endpoints for BDD: communicate(), channel clock, beat run, sequence start, IMAP poll.
+"""Development-only endpoints for BDD: communicate(), channel clock, beat run, sequence start, IMAP poll, counters.
 
 404 outside `ENVIRONMENT == "development"`.
 """
 
+from celery_once import AlreadyQueued
 from drf_spectacular.utils import extend_schema
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from django_communicator.api.admin.views._base import ERROR_RESPONSES, DevelopmentView, parse
+from django_communicator.api.admin.views._base import ERROR_RESPONSES, Conflict, DevelopmentView, parse
 from django_communicator.models import Sequence, Thread
-from django_communicator.schemas.requests import DevClockRequest, DevCommunicateRequest, DevStartSequenceRequest
+from django_communicator.schemas.requests import (
+    DevClockRequest,
+    DevCommunicateRequest,
+    DevResetCountersRequest,
+    DevStartSequenceRequest,
+)
 from django_communicator.schemas.responses import (
     ClockResponse,
+    CountersResetResponse,
     MessageDetailResponse,
     PollNowResponse,
     SendDueResponse,
     SequenceStateResponse,
 )
-from django_communicator.services import clock_service, sequence_service
+from django_communicator.services import clock_service, counter_service, sequence_service
 from django_communicator.services.communicate_service import LegalFooterRequiredError, communicate
 from django_communicator.tasks import poll_inbox, schedule_follow_ups, send_due
 
@@ -64,17 +71,39 @@ class DevSendDueView(DevelopmentView):
     @extend_schema(
         tags=_TAGS,
         summary="Run schedule_follow_ups then send_due (development only)",
-        description="Runs both task bodies in-process over every channel (no celery-once lock taken or cleared); "
-        "the counts are totals.",
+        description="Runs both task bodies in-process over every channel under the send_due celery-once lock of the "
+        "beat — 409 while a beat run holds it; the counts are totals.",
         request=None,
-        responses={200: SendDueResponse, **ERROR_RESPONSES},
+        responses={200: SendDueResponse, **ERROR_RESPONSES, 409: None},
     )
     def post(self, request: Request, channel_idx: str) -> Response:
         self.channel(channel_idx)
         follow_ups = schedule_follow_ups.run()
-        counts = send_due.run()
-        body = SendDueResponse(follow_ups_scheduled=follow_ups, **counts)
-        return Response(body.model_dump(mode="json"))
+        key = send_due.get_key((), {})
+        try:
+            send_due.once_backend.raise_or_lock(key, timeout=send_due.once.get("timeout", send_due.default_timeout))
+        except AlreadyQueued:
+            raise Conflict("send_due is already running") from None
+        try:
+            counts = send_due.run()
+        finally:
+            send_due.once_backend.clear_lock(key)
+        return Response(SendDueResponse(follow_ups_scheduled=follow_ups, **counts).model_dump(mode="json"))
+
+
+class DevResetCountersView(DevelopmentView):
+    @extend_schema(
+        tags=_TAGS,
+        summary="Clear the channel's daily send counters (development only)",
+        request=DevResetCountersRequest,
+        responses={200: CountersResetResponse, **ERROR_RESPONSES},
+    )
+    def post(self, request: Request, channel_idx: str) -> Response:
+        body = parse(DevResetCountersRequest, request.data)
+        channel = self.channel(channel_idx)
+        for day in body.days:
+            counter_service.reset(channel, day)
+        return Response(CountersResetResponse(cleared=len(body.days)).model_dump(mode="json"))
 
 
 class DevStartSequenceView(DevelopmentView):

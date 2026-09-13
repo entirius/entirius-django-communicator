@@ -3,7 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Request schemas of the communicator admin API v2."""
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -169,6 +169,17 @@ class DevClockRequest(BaseModel):
 
     iso_datetime: datetime | None = Field(
         description="Channel clock; naive = channel timezone; null clears.", examples=["2026-09-14T10:00:00"]
+    )
+
+
+class DevResetCountersRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    days: list[date] = Field(
+        min_length=1,
+        max_length=31,
+        description="Channel days whose send counters are cleared.",
+        examples=[["2026-09-21"]],
     )
 
 

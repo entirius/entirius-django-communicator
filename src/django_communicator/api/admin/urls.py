@@ -71,6 +71,7 @@ if is_development():
         path("test/communicate/", dev.DevCommunicateView.as_view(), name="admin-communicator-test-communicate"),
         path("test/clock/", dev.DevClockView.as_view(), name="admin-communicator-test-clock"),
         path("test/send-due/", dev.DevSendDueView.as_view(), name="admin-communicator-test-send-due"),
+        path("test/reset-counters/", dev.DevResetCountersView.as_view(), name="admin-communicator-test-reset-counters"),
         path("test/start-sequence/", dev.DevStartSequenceView.as_view(), name="admin-communicator-test-start-sequence"),
         path("test/poll-now/", dev.DevPollNowView.as_view(), name="admin-communicator-test-poll-now"),
     ]

@@ -277,6 +277,10 @@ class ClockResponse(BaseModel):
     now: datetime = Field(description="Channel clock after the change.", examples=["2026-09-14T10:00:00+02:00"])
 
 
+class CountersResetResponse(BaseModel):
+    cleared: int = Field(description="Channel days cleared.", examples=[7])
+
+
 class SequenceStateResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
