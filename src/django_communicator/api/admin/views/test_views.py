@@ -10,6 +10,8 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from celery_once import AlreadyQueued
+from django.db import transaction
+from django.utils.decorators import method_decorator
 from drf_spectacular.utils import extend_schema
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.request import Request
@@ -84,6 +86,7 @@ class DevClockView(DevelopmentView):
         return Response(ClockResponse(now=clock_service.now_for(channel)).model_dump(mode="json"))
 
 
+@method_decorator(transaction.non_atomic_requests, name="dispatch")  # the send-once claim must commit on its own
 class DevSendDueView(DevelopmentView):
     @extend_schema(
         tags=_TAGS,

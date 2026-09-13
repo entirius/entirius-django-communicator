@@ -57,16 +57,20 @@ Layers one way: API → services → models. Templates, `communicate()`, review,
 - One send path: beat `django_communicator.send_due` (every 5 min, queue `communicator_send`, `QueueOnce`
   graceful) → `services/send_service.run_send_due` → `delivery_service.deliver` — nothing else calls `deliver(`
   (a test greps for it).
-- Send-once (at most once beats at least once): `deliver` commits the claim `approved|scheduled → sending`
-  (`send_attempted_at`) as a compare-and-set of its own, calls SMTP outside any transaction, then a second short
-  transaction records `sent`/`failed`/`scheduled`. A `sending` row older than `COMMUNICATOR_SENDING_STALE_MINUTES`
+- Send-once (at most once beats at least once): `deliver` checks suppression and the follow-up blocker and builds
+  the mail first, then commits the claim `approved|scheduled → sending` (`send_attempted_at`) as a compare-and-set
+  in a durable transaction (inside an outer atomic block it raises `RuntimeError`; the dev `send-due` view is
+  `non_atomic_requests`), calls SMTP outside any transaction, then a second short transaction records
+  `sent`/`failed`/`scheduled`. An error after the claim but before SMTP releases the claim to its prior status. A `sending` row older than `COMMUNICATOR_SENDING_STALE_MINUTES`
   (30) is never re-sent — the next run marks it `failed/send_outcome_unknown` for a human.
 - Due = outbound `approved`/`scheduled` with `scheduled_at` empty or reached on the channel clock
   (`clock_service.now_for`, dev-only cache override). `accept` sets `scheduled_at` = next policy slot;
   `send_now` sets it to now and nothing else.
 - Policy (`SendPolicy` + `SendWindow`, tz/country from the channel): business day (`holidays`), window, daily cap
   (Redis `communicator:sent:<idx>:<channel day>`, 48 h TTL; dry_run does not count). A run delivers at most
-  `run_budget` = remaining cap (spread off) or `ceil(remaining / runs left in the window)` (spread on), in due order;
+  `run_budget` = remaining cap (spread off) or, spread on, a running quota
+  `max(floor(daily_cap * runs elapsed today incl. this one / runs in all of today's windows) - sent today, 0)` (runs
+  at `COMMUNICATOR_SEND_INTERVAL_MIN`; cap 10 over 108 runs → one send about every 11 runs), in due order;
   each delivery reserves its place first (`INCR`, `DECR` + deferred when over the cap, given back unless sent), so
   overlapping runs cannot exceed the cap.
 - Modes: `dry_run` → `would_send`, no SMTP; `sandbox` → `sandbox_mailbox`, `X-Original-To`, `[SANDBOX] ` prefix;
@@ -86,7 +90,7 @@ Layers one way: API → services → models. Templates, `communicate()`, review,
   (hourly, `communicator_default`) creates the next follow-up via `communicate(requires_review=False)` with the
   previous context + `body` = a random unused pool text (whole pool + warning once used up). The next due date
   counts from the delivery; the delivery of the last step stops the state `finished` and emits `sequence_finished`.
-  Follow-ups carry `Message.sequence_step`; the step advance is a compare-and-set on `step` (overlapping runs create
+  Follow-ups carry `Message.sequence_step` (inherited by edited/rewritten versions); the step advance is a compare-and-set on `step` (overlapping runs create
   one follow-up). Every terminal outcome goes through `sequence_service.on_follow_up_finished`: delivered → next due
   date / `finished`; failed or suppressed → stopped `failed`/`suppressed`; rejected or skipped → re-armed from the
   last delivery. `deliver` skips a follow-up (`skipped`, `failure_detail` = `thread_replied` |

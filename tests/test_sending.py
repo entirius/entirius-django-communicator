@@ -12,6 +12,7 @@ import redis
 from django.core import mail
 from django.core.exceptions import ImproperlyConfigured
 from django.core.mail import EmailMultiAlternatives
+from django.db import connection, transaction
 from django.test import override_settings
 from django.utils import timezone
 
@@ -29,6 +30,7 @@ from django_communicator.services import (
     policy_service,
     review_service,
     send_service,
+    suppression_service,
 )
 from django_communicator.services.communicate_service import communicate
 from django_communicator.signals import message_sent
@@ -274,6 +276,37 @@ def test_C15_worker_killed_after_smtp_does_not_resend(policy, sandbox, static_te
 
     message.refresh_from_db()
     assert (message.status, len(mail.outbox)) == (MessageStatus.SENDING, 1)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_claim_inside_outer_atomic_is_refused(policy, sandbox, static_template, admin_api, once_backend):
+    message = approved_message()
+
+    with pytest.raises(RuntimeError), transaction.atomic():
+        message_service.claim_for_sending(message)
+    refused = Message.objects.get(pk=message.pk).status
+    with mock.patch.dict(connection.settings_dict, {"ATOMIC_REQUESTS": True}):
+        body = admin_api.post(api_url("test/send-due/")).json()
+
+    message.refresh_from_db()
+    assert (refused, body["sent"], message.status, len(mail.outbox)) == ("approved", 1, "sent", 1)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_error_before_smtp_releases_claim(policy, sandbox, static_template):
+    message = approved_message()
+
+    with mock.patch.object(delivery_service, "_before_smtp", side_effect=RuntimeError("after the claim")):
+        _run()
+    released = Message.objects.get(pk=message.pk)
+    with mock.patch.object(suppression_service, "is_suppressed", side_effect=RuntimeError("before the claim")):
+        _run()
+    untouched = Message.objects.get(pk=message.pk).status
+    _run()
+
+    message.refresh_from_db()
+    assert (released.status, released.send_attempted_at is not None, untouched) == ("approved", True, "approved")
+    assert (message.status, len(mail.outbox)) == ("sent", 1)
 
 
 def test_stale_sending_marked_unknown_not_resent(policy, sandbox, static_template):

@@ -18,6 +18,7 @@ import logging
 import smtplib
 from datetime import datetime, timedelta
 
+from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
 from django.utils import timezone
 
@@ -44,23 +45,40 @@ LIVE_REFUSED = "Live sending refused"
 def deliver(message: Message, *, now: datetime) -> str:
     """Outcome: `sent`, `would_send`, `suppressed`, `skipped`, `failed` or `deferred`.
 
-    Raises `SmtpNotConfiguredError` (the claim is released first).
+    Suppression, follow-up blocker and mail build run before the claim; an error after the claim but before SMTP
+    releases it. Raises `SmtpNotConfiguredError` (nothing claimed).
     """
-    previous = message.status
-    claimed = message_service.claim_for_sending(message)
+    current = Message.objects.select_related("thread__channel").get(pk=message.pk)
+    if current.status not in (MessageStatus.APPROVED, MessageStatus.SCHEDULED):
+        return DEFERRED
+    refusal = _refusal(current)
+    mail = None if refusal or current.thread.channel.mode == ChannelMode.DRY_RUN else mail_builder.build(current)
+    claimed = message_service.claim_for_sending(current)
     if claimed is None:
         return DEFERRED
-    channel = claimed.thread.channel
+    try:
+        outcome = _before_smtp(claimed, current, refusal, now)
+    except Exception:
+        message_service.release_claim(claimed, current.status)
+        raise
+    return outcome or _send(claimed, mail, now)
+
+
+def _before_smtp(claimed: Message, current: Message, refusal: tuple[str, dict] | None, now: datetime) -> str | None:
+    """The outcome when the claimed message must not reach SMTP; None to send the mail built before the claim."""
+    channel, built_for = claimed.thread.channel, current.thread.channel
     if channel.mode == ChannelMode.LIVE and not channel_service.live_allowed(channel):
-        message_service.release_claim(claimed, previous)
+        message_service.release_claim(claimed, current.status)
         refuse_live(channel, now)
         return DEFERRED
-    refusal = _refusal(claimed)
+    if (channel.mode, channel.sandbox_mailbox) != (built_for.mode, built_for.sandbox_mailbox):
+        message_service.release_claim(claimed, current.status)
+        return DEFERRED
     if refusal is not None:
         return _finish(claimed, *refusal)
     if channel.mode == ChannelMode.DRY_RUN:
         return _finish(claimed, MessageStatus.WOULD_SEND, {"sent_at": now})
-    return _send(claimed, previous, now)
+    return None
 
 
 def refuse_live(channel: Channel, now: datetime) -> None:
@@ -83,12 +101,7 @@ def _finish(message: Message, outcome: str, fields: dict) -> str:
     return outcome
 
 
-def _send(message: Message, previous: str, now: datetime) -> str:
-    try:
-        mail = mail_builder.build(message)
-    except mail_builder.SmtpNotConfiguredError:
-        message_service.release_claim(message, previous)
-        raise
+def _send(message: Message, mail: EmailMultiAlternatives, now: datetime) -> str:
     try:
         mail.send()
     except (smtplib.SMTPException, OSError) as error:
