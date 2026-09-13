@@ -11,7 +11,7 @@ from django_utils.toolbox import ToolboxError
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import MessageStatus
 from django_communicator.models import Channel, Message
-from django_communicator.services import drafting_service, message_service
+from django_communicator.services import drafting_service, message_service, sequence_service
 from django_communicator.services.drafting_service import DraftOutputError
 from django_communicator.services.send_service import initial_slot
 from django_communicator.signals import company_skipped, message_approved
@@ -60,7 +60,11 @@ def accept(message: Message, *, user) -> Message:
 
 
 def skip(message: Message, *, user, reason: str = "") -> Message:
-    return message_service.transition(message, MessageStatus.REJECTED, user=user, reason=reason)
+    """Rejected; a rejected follow-up re-arms its sequence."""
+    with transaction.atomic():
+        message_service.transition(message, MessageStatus.REJECTED, user=user, reason=reason)
+        sequence_service.on_follow_up_finished(message, MessageStatus.REJECTED)
+    return message
 
 
 def skip_company(message: Message, *, user, reason: str = "") -> Message:

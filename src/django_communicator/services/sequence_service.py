@@ -5,12 +5,13 @@
 """Follow-up sequences: start, stop, pause, schedule the next follow-up from the text pool.
 
 `days_after_previous` counts from the delivery of the previous message: the state gets its next due date when a
-message of the thread is delivered (`on_delivered`), and none while a scheduled follow-up waits to be sent.
+message of the thread is delivered, and none while a scheduled follow-up waits. Every terminal outcome of a
+follow-up goes through `on_follow_up_finished`, so no sequence stays running without a next step.
 """
 
 import logging
 import random
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.db import transaction
 from django.utils import timezone
@@ -29,6 +30,10 @@ from django_communicator.signals import sequence_finished
 logger = logging.getLogger(__name__)
 
 DELIVERED = (MessageStatus.SENT, MessageStatus.WOULD_SEND)
+_STOP_REASONS = {
+    MessageStatus.FAILED: SequenceStopReason.FAILED,
+    MessageStatus.SUPPRESSED: SequenceStopReason.SUPPRESSED,
+}
 
 
 class SequenceError(Exception):
@@ -62,18 +67,45 @@ def pause_sequence(thread: Thread) -> None:
     stop_sequence(thread, SequenceStopReason.PAUSED)
 
 
+def on_follow_up_finished(message: Message, outcome: str) -> None:
+    """Delivered → next step or `finished`; a follow-up failed/suppressed → stopped; rejected/skipped → re-armed."""
+    if outcome in DELIVERED:
+        on_delivered(message)
+    elif message.sequence_step is None:
+        return
+    elif outcome in _STOP_REASONS:
+        stop_sequence(message.thread, _STOP_REASONS[outcome])
+    else:
+        last = _last_delivered(message.thread)
+        _arm(message.thread, last.sent_at if last else clock_service.now_for(message.thread.channel))
+
+
 def on_delivered(message: Message) -> None:
-    """Next due date from this delivery, or `finished` (+ `sequence_finished` on commit) after the last step."""
-    state = ThreadSequenceState.objects.filter(thread_id=message.thread_id, stopped_at=None).first()
+    _arm(message.thread, message.sent_at)
+
+
+def _arm(thread: Thread, base: datetime) -> None:
+    """Next due date `days_after_previous` after `base`, or `finished` (+ `sequence_finished`) after the last step."""
+    state = ThreadSequenceState.objects.filter(thread_id=thread.pk, stopped_at=None).first()
     if state is None:
         return
     steps = list(state.sequence.steps.order_by("number"))
     if state.step >= len(steps):
-        stop_sequence(message.thread, SequenceStopReason.FINISHED)
-        transaction.on_commit(lambda: sequence_finished.send(sender=Thread, thread=message.thread))
+        stop_sequence(thread, SequenceStopReason.FINISHED)
+        transaction.on_commit(lambda: sequence_finished.send(sender=Thread, thread=thread))
         return
-    state.next_due_at = message.sent_at + timedelta(days=steps[state.step].days_after_previous)
+    state.next_due_at = base + timedelta(days=steps[state.step].days_after_previous)
     state.save(update_fields=["next_due_at", "modified_at"])
+
+
+def follow_up_blocker(message: Message) -> str:
+    """Why a follow-up must not leave: `thread_replied` or `sequence_not_running`; empty otherwise."""
+    if message.sequence_step is None:
+        return ""
+    if message.thread.status != ThreadStatus.OPEN:
+        return "thread_replied"
+    running = ThreadSequenceState.objects.filter(thread_id=message.thread_id, stopped_at=None).exists()
+    return "" if running else "sequence_not_running"
 
 
 def run_follow_ups(rng: random.Random | None = None) -> int:
@@ -96,9 +128,10 @@ def _schedule_logged(state: ThreadSequenceState, rng: random.Random) -> Message 
 
 @transaction.atomic
 def schedule_follow_up(state: ThreadSequenceState, rng: random.Random) -> Message | None:
+    """The next follow-up; the step advance is a compare-and-set, so a concurrent run creates nothing (None)."""
     steps = list(state.sequence.steps.order_by("number"))
     text = pick_text(state, rng)
-    if text is None or state.step >= len(steps):
+    if text is None or state.step >= len(steps) or not _advance(state):
         return None
     thread, step = state.thread, steps[state.step]
     message = communicate(
@@ -111,8 +144,16 @@ def schedule_follow_up(state: ThreadSequenceState, rng: random.Random) -> Messag
         thread=thread,
     )
     ThreadPoolUsage.objects.get_or_create(thread=thread, text=text)
-    ThreadSequenceState.objects.filter(pk=state.pk).update(step=state.step + 1, next_due_at=None)
+    Message.objects.filter(pk=message.pk).update(sequence_step=step.number)
+    message.sequence_step = step.number
+    if message.status in _STOP_REASONS:
+        on_follow_up_finished(message, message.status)
     return message
+
+
+def _advance(state: ThreadSequenceState) -> bool:
+    running = ThreadSequenceState.objects.filter(pk=state.pk, step=state.step, stopped_at=None)
+    return bool(running.update(step=state.step + 1, next_due_at=None, modified_at=timezone.now()))
 
 
 def pick_text(state: ThreadSequenceState, rng: random.Random) -> TextPool | None:

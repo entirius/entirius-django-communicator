@@ -13,12 +13,11 @@ QUEUE_INBOUND = getattr(settings, "COMMUNICATOR_QUEUE_INBOUND", "communicator_in
 # Automated rewrite loops stop after this many rewrites of one draft chain; human rewrites are unlimited.
 COMMUNICATOR_AUTOMATED_REWRITE_LIMIT = getattr(settings, "COMMUNICATOR_AUTOMATED_REWRITE_LIMIT", 3)
 
-# Live sends need ENVIRONMENT == "production" on top of the channel flag (enforced by the sending plan).
-COMMUNICATOR_LIVE_REQUIRES_PRODUCTION = getattr(settings, "COMMUNICATOR_LIVE_REQUIRES_PRODUCTION", True)
-
 # Sending (beat `send_due` every COMMUNICATOR_SEND_INTERVAL_MIN minutes — also the unit of the spread formula).
 COMMUNICATOR_SEND_INTERVAL_MIN = getattr(settings, "COMMUNICATOR_SEND_INTERVAL_MIN", 5)
 COMMUNICATOR_SMTP_MAX_ATTEMPTS = getattr(settings, "COMMUNICATOR_SMTP_MAX_ATTEMPTS", 3)
+# A `sending` claim older than this is never re-sent: it ends `failed/send_outcome_unknown` for a human to check.
+COMMUNICATOR_SENDING_STALE_MINUTES = getattr(settings, "COMMUNICATOR_SENDING_STALE_MINUTES", 30)
 COMMUNICATOR_SANDBOX_SUBJECT_PREFIX = getattr(settings, "COMMUNICATOR_SANDBOX_SUBJECT_PREFIX", "[SANDBOX] ")
 COMMUNICATOR_REDIS_URL = getattr(settings, "COMMUNICATOR_REDIS_URL", getattr(settings, "REDIS_URL", ""))
 COMMUNICATOR_CLOCK_CACHE_KEY = "communicator:clock:{channel_idx}"

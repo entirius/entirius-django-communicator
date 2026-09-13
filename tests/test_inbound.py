@@ -212,6 +212,7 @@ def test_C25_dsn_soft_bounce_retry_after_24h_then_failed(channel):
     assert message.status == MessageStatus.SCHEDULED and message.scheduled_at == message.bounce_retry_at
     assert abs(message.bounce_retry_at - timezone.now() - timedelta(hours=24)) < timedelta(minutes=1)
     resent_id = "<communicator-1-resent00@mail.example.test>"
+    message_service.transition(message, MessageStatus.SENDING)
     message_service.transition(message, MessageStatus.SENT, fields={"message_id": resent_id})
 
     second = eml("dsn_soft.eml", resent_id).replace(b"<dsn-soft-1@", b"<dsn-soft-2@")

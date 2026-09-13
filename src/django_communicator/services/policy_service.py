@@ -8,11 +8,11 @@ Every `at` is an aware datetime; it is read in the channel timezone.
 """
 
 import math
-import random
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import holidays
+from django.core.exceptions import ValidationError
 
 from django_communicator import settings as communicator_settings
 from django_communicator.models import Channel, SendPolicy
@@ -21,11 +21,19 @@ from django_communicator.services import counter_service
 SLOT_SEARCH_DAYS = 366
 
 
+class ChannelConfigError(Exception):
+    """The stored channel country or timezone cannot drive a send policy."""
+
+
 def load_policy(channel: Channel) -> SendPolicy | None:
-    """The channel policy with its windows; raises `NotImplementedError` for a country unknown to `holidays`."""
+    """The channel policy with its windows; raises `ChannelConfigError` for a bad stored country or timezone."""
     policy = SendPolicy.objects.select_related("channel").prefetch_related("windows").filter(channel=channel).first()
-    if policy is not None:
-        holidays.country_holidays(channel.country)
+    if policy is None:
+        return None
+    try:
+        policy.channel.validate_locale()
+    except ValidationError as error:
+        raise ChannelConfigError("; ".join(error.messages)) from None
     return policy
 
 
@@ -65,8 +73,12 @@ def next_slot(policy: SendPolicy, after: datetime) -> datetime | None:
     return None
 
 
+def channel_day(policy: SendPolicy, at: datetime) -> date:
+    return _local(policy, at).date()
+
+
 def remaining_today(policy: SendPolicy, at: datetime) -> int:
-    sent = counter_service.sent_on(policy.channel, _local(policy, at).date())
+    sent = counter_service.sent_on(policy.channel, channel_day(policy, at))
     return max(policy.daily_cap - sent, 0)
 
 
@@ -81,11 +93,9 @@ def runs_left(policy: SendPolicy, at: datetime) -> int:
     return max(math.ceil((end - local) / interval), 1)
 
 
-def should_send_now(policy: SendPolicy, at: datetime, remaining: int, rng: random.Random | None = None) -> bool:
-    """False without cap left; with `spread`, true with probability remaining / runs left in the window."""
-    if remaining <= 0 or not is_open(policy, at):
-        return False
-    if not policy.spread:
-        return True
-    draw = (rng or random).random()  # noqa: S311 — pacing, not security
-    return draw < remaining / runs_left(policy, at)
+def run_budget(policy: SendPolicy, at: datetime) -> int:
+    """Deliveries this run may make: 0 when closed; with `spread`, today's remaining cap over the runs left."""
+    if not is_open(policy, at):
+        return 0
+    remaining = remaining_today(policy, at)
+    return math.ceil(remaining / runs_left(policy, at)) if policy.spread else remaining

@@ -1,7 +1,6 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
-import random
 from datetime import datetime, timedelta
 
 import pytest
@@ -11,7 +10,8 @@ from django.core.exceptions import ValidationError
 from django_communicator.enums import ChannelMode
 from django_communicator.models import Channel
 from django_communicator.services import channel_service, clock_service, counter_service, policy_service, send_service
-from tests.conftest import MONDAY_10, WARSAW, approved_message
+from django_communicator.services.communicate_service import RecipientData, communicate
+from tests.conftest import CHANNEL_IDX, MONDAY_10, WARSAW, api_url, approved_message
 from tests.factories import ChannelFactory
 
 
@@ -62,22 +62,51 @@ def test_C17_daily_cap_counter_per_channel_day_resets_at_channel_midnight(policy
     assert counter_service.sent_on(other, MONDAY_10.date()) == 0
 
 
-def test_spread_sends_with_probability_of_remaining_over_runs_left(policy):
+def test_C17_spread_does_not_front_load_backlog(policy, sandbox, static_template):
     policy.spread = True
-    last_run = _at(2026, 9, 14, 16, 56)
+    policy.save()
+    for n in range(5):
+        approved_message(subject_ref=f"spread:{n}")
+
+    first = send_service.run_send_due()
+    clock_service.set_override(policy.channel, _at(2026, 9, 14, 16, 56))
+    last = send_service.run_send_due()
 
     assert policy_service.runs_left(policy, _at(2026, 9, 14, 8, 0)) == 108
-    assert policy_service.should_send_now(policy, last_run, remaining=1, rng=random.Random(7))
-    assert not policy_service.should_send_now(policy, MONDAY_10, remaining=0)
-    draws = [policy_service.should_send_now(policy, MONDAY_10, 1, random.Random(seed)) for seed in range(200)]
-    assert 0 < sum(draws) < 20
+    assert (first["sent"], first["deferred"]) == (1, 4)  # ceil(10 remaining / 84 runs left)
+    assert (last["sent"], last["deferred"]) == (4, 0)  # the last run of the window may use the rest
 
 
-def test_unknown_country_raises_at_policy_load(policy):
+def test_unknown_country_is_409_not_500(policy, static_template, admin_api):
+    recipient = RecipientData(email="jan@example-shop-1.test", first_name="Jan", language="pl")
+    draft = communicate(
+        channel_idx=CHANNEL_IDX, template_key="followup", recipient=recipient, context={}, subject_ref="c409"
+    )
     Channel.objects.filter(pk=policy.channel.pk).update(country="XX")
 
-    with pytest.raises(NotImplementedError):
+    responses = [
+        admin_api.get(api_url("policy/")),
+        admin_api.get(api_url("messages/")),
+        admin_api.post(api_url(f"review/{draft.pk}/accept/")),
+    ]
+
+    draft.refresh_from_db()
+    assert [response.status_code for response in responses] == [409, 409, 409]
+    assert responses[0].json()["error"] == "CHANNEL_CONFIG_INVALID" and draft.status == "review_required"
+    with pytest.raises(policy_service.ChannelConfigError):
         policy_service.load_policy(Channel.objects.get(pk=policy.channel.pk))
+
+
+def test_invalid_timezone_rejected_on_save(channel):
+    channel.timezone = "Mars/Olympus_Mons"
+    with pytest.raises(ValidationError):
+        channel.save()
+
+    channel.timezone, channel.country = "Europe/Warsaw", "XX"
+    with pytest.raises(ValidationError):
+        channel.clean()
+    channel.refresh_from_db()
+    assert (channel.timezone, channel.country) == ("Europe/Warsaw", "PL")
 
 
 def test_C30_sandbox_without_mailbox_refused(channel):

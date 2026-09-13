@@ -62,6 +62,31 @@ def transition(
     return message
 
 
+def claim_for_sending(message: Message) -> Message | None:
+    """Commit `approved|scheduled → sending` in a transaction of its own, before any SMTP call.
+
+    Compare-and-set on the stored status: None when another run claimed or changed the message. Returns the row
+    re-read with its thread and channel, so the delivery decides on fresh data.
+    """
+    ensure_transition(message, MessageStatus.SENDING)
+    now = timezone.now()
+    with transaction.atomic():
+        claimed = Message.objects.filter(pk=message.pk, status=message.status).update(
+            status=MessageStatus.SENDING, send_attempted_at=now, modified_at=now
+        )
+    if not claimed:
+        return None
+    return Message.objects.select_related("thread__channel").get(pk=message.pk)
+
+
+def release_claim(message: Message, status: str) -> None:
+    """Undo a `sending` claim that never reached SMTP: back to the status it was claimed from."""
+    Message.objects.filter(pk=message.pk, status=MessageStatus.SENDING).update(
+        status=status, modified_at=timezone.now()
+    )
+    message.status = status
+
+
 @transaction.atomic
 def claim_automated_rewrite(message: Message, *, limit: int) -> bool:
     """Count one automated rewrite on the locked row before the toolbox is called; False once `limit` is reached.

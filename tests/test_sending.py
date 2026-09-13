@@ -11,16 +11,22 @@ import pytest
 import redis
 from django.core import mail
 from django.core.exceptions import ImproperlyConfigured
+from django.core.mail import EmailMultiAlternatives
 from django.test import override_settings
+from django.utils import timezone
 
+from django_communicator import settings as communicator_settings
 from django_communicator.apps import DjangoCommunicatorConfig
 from django_communicator.enums import ChannelMode, MessageStatus
-from django_communicator.models import SendPolicy, Suppression
+from django_communicator.models import Channel, Message, SendPolicy, Suppression
 from django_communicator.services import (
     channel_service,
     clock_service,
     counter_service,
+    delivery_service,
     mail_builder,
+    message_service,
+    policy_service,
     review_service,
     send_service,
 )
@@ -236,18 +242,19 @@ def test_recipient_suppressed_after_approval_is_not_sent(policy, sandbox, static
     assert (counts["suppressed"], message.status, len(mail.outbox)) == (1, "suppressed", 0)
 
 
-def test_counter_failure_keeps_the_sent_status(policy, sandbox, static_template):
+def test_counter_failure_defers_without_sending(policy, sandbox, static_template):
     message = approved_message()
 
-    with mock.patch.object(counter_service, "increment", side_effect=redis.ConnectionError):
+    with mock.patch.object(counter_service, "reserve", side_effect=redis.ConnectionError):
         _run()
 
     message.refresh_from_db()
-    assert (message.status, len(mail.outbox)) == ("sent", 1)
+    assert (message.status, len(mail.outbox)) == ("approved", 0)
 
 
 def test_broken_channel_does_not_stop_the_others(policy, sandbox, static_template):
-    other = ChannelFactory(idx="other-channel", label="Other", country="XX")
+    other = ChannelFactory(idx="other-channel", label="Other")
+    Channel.objects.filter(pk=other.pk).update(country="XX")
     SendPolicy.objects.create(channel=other)
     message = approved_message()
 
@@ -255,3 +262,107 @@ def test_broken_channel_does_not_stop_the_others(policy, sandbox, static_templat
 
     message.refresh_from_db()
     assert message.status == "sent"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_C15_worker_killed_after_smtp_does_not_resend(policy, sandbox, static_template):
+    message = approved_message()
+
+    with mock.patch.object(delivery_service, "_finish", side_effect=RuntimeError("killed after SMTP")):
+        _run()
+    _run()
+
+    message.refresh_from_db()
+    assert (message.status, len(mail.outbox)) == (MessageStatus.SENDING, 1)
+
+
+def test_stale_sending_marked_unknown_not_resent(policy, sandbox, static_template):
+    message = approved_message()
+    message_service.claim_for_sending(message)
+
+    _run()
+    fresh = Message.objects.get(pk=message.pk).status
+    Message.objects.filter(pk=message.pk).update(send_attempted_at=timezone.now() - timedelta(minutes=31))
+    _run()
+
+    message.refresh_from_db()
+    assert (fresh, message.status, message.failure_code) == ("sending", "failed", "send_outcome_unknown")
+    assert len(mail.outbox) == 0
+
+
+def test_C13_mode_switched_mid_run_stays_sandbox_outside_production(policy, sandbox, static_template):
+    first = approved_message()
+    second = approved_message(email="anna@example-shop-2.test", subject_ref="send:2")
+    original = EmailMultiAlternatives.send
+
+    def send_then_switch_to_live(built, *args, **kwargs):
+        result = original(built, *args, **kwargs)
+        channel_service.set_mode(Channel.objects.get(pk=policy.channel.pk), mode=ChannelMode.LIVE, live_enabled=True)
+        return result
+
+    with mock.patch.object(EmailMultiAlternatives, "send", autospec=True, side_effect=send_then_switch_to_live):
+        counts = _run()
+
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert (first.status, second.status, counts["deferred"]) == ("sent", "approved", 1)
+    assert [sent.to for sent in mail.outbox] == [["sandbox@mail.example.test"]]
+
+
+def test_C13_no_setting_drops_production_gate(policy, static_template):
+    channel_service.set_mode(policy.channel, mode=ChannelMode.LIVE, live_enabled=True)
+    message = approved_message()
+
+    with override_settings(COMMUNICATOR_LIVE_REQUIRES_PRODUCTION=False, ENVIRONMENT="staging"):
+        _run()
+        allowed = channel_service.live_allowed(policy.channel)
+
+    message.refresh_from_db()
+    assert (allowed, message.status, len(mail.outbox)) == (False, "approved", 0)
+    assert not hasattr(communicator_settings, "COMMUNICATOR_LIVE_REQUIRES_PRODUCTION")
+
+
+def test_C16_sender_refused_does_not_suppress_recipient(policy, static_template):
+    channel_service.set_mode(policy.channel, mode=ChannelMode.LIVE, live_enabled=True)
+    messages = [approved_message(), approved_message(email="anna@example-shop-2.test", subject_ref="send:2")]
+    errors = [
+        smtplib.SMTPSenderRefused(550, b"sender domain not allowed", "outreach@mail.example.test"),
+        smtplib.SMTPDataError(554, b"rejected as spam"),
+    ]
+
+    with (
+        override_settings(ENVIRONMENT="production"),
+        mock.patch("django.utils.timezone.now", return_value=MONDAY_10),
+        mock.patch(SEND, side_effect=errors),
+        mock.patch(NOTIFY) as notify,
+    ):
+        _run()
+
+    statuses = [Message.objects.get(pk=message.pk).status for message in messages]
+    assert (statuses, Suppression.objects.count()) == (["failed", "failed"], 0)
+    assert (notify.call_count, notify.call_args.kwargs["severity"]) == (1, "high")
+
+
+def test_C14_overlapping_runs_respect_cap(policy, sandbox, static_template, admin_api, once_backend):
+    policy.daily_cap = 2
+    policy.save()
+    for n in range(3):
+        approved_message(subject_ref=f"overlap:{n}")
+    counter_service.reserve(policy.channel, MONDAY_10.date(), 2)  # an overlapping run holds one place
+
+    with mock.patch.object(policy_service, "remaining_today", return_value=2):  # read before that run counted
+        counts = _run()
+
+    assert (counts["sent"], counts["deferred"], len(mail.outbox)) == (1, 2, 1)
+    assert counter_service.sent_on(policy.channel, MONDAY_10.date()) == 2
+    send_due.once_backend.raise_or_lock(send_due.get_key((), {}), timeout=60)
+    assert admin_api.post(api_url("test/send-due/")).status_code == 409
+
+
+def test_dev_reset_counters_clears_channel_days(policy, admin_api):
+    counter_service.reserve(policy.channel, MONDAY_10.date(), 10)
+
+    response = admin_api.post(api_url("test/reset-counters/"), {"days": ["2026-09-14"]}, format="json")
+
+    assert (response.status_code, response.json()) == (200, {"cleared": 1})
+    assert counter_service.sent_on(policy.channel, MONDAY_10.date()) == 0

@@ -3,16 +3,35 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 import logging
 import random
+import smtplib
 from datetime import timedelta
+from unittest import mock
 
 import pytest
 from django.core import mail
 
-from django_communicator.enums import SequenceStopReason
-from django_communicator.models import Sequence, SequenceStep, TextPool, ThreadPoolUsage, ThreadSequenceState
-from django_communicator.services import clock_service, counter_service, send_service, sequence_service
+from django_communicator.enums import SequenceStopReason, ThreadStatus
+from django_communicator.models import (
+    Message,
+    MessageTemplate,
+    Sequence,
+    SequenceStep,
+    TextPool,
+    Thread,
+    ThreadPoolUsage,
+    ThreadSequenceState,
+)
+from django_communicator.services import (
+    clock_service,
+    counter_service,
+    review_service,
+    send_service,
+    sequence_service,
+)
 from django_communicator.signals import sequence_finished
 from tests.conftest import MONDAY_10, approved_message
+
+THURSDAY_10 = MONDAY_10 + timedelta(days=3)
 
 
 @pytest.fixture
@@ -32,8 +51,8 @@ def body_template(channel):
     return make_static(channel, auto_approve=True, body="{body}")
 
 
-def _sent_cold(sequence) -> ThreadSequenceState:
-    cold = approved_message(footer="Footer.", context={"body": "Cold."})
+def _sent_cold(sequence, email: str = "jan@example-shop-1.test", subject_ref: str = "send:1") -> ThreadSequenceState:
+    cold = approved_message(email=email, subject_ref=subject_ref, footer="Footer.", context={"body": "Cold."})
     send_service.run_send_due()
     return sequence_service.start_sequence(cold.thread, sequence)
 
@@ -87,3 +106,63 @@ def test_last_step_delivered_finishes_sequence(
     state.refresh_from_db()
     assert (state.stop_reason, finished) == (SequenceStopReason.FINISHED, [state.thread.pk])
     assert sequence_service.run_follow_ups() == 0
+
+
+def _create_follow_up(policy, state: ThreadSequenceState) -> Message:
+    clock_service.set_override(policy.channel, THURSDAY_10)
+    sequence_service.run_follow_ups(random.Random(0))
+    state.refresh_from_db()
+    return state.thread.messages.get(sequence_step=1)
+
+
+def test_C28_failed_follow_up_stops_sequence(policy, sandbox, body_template, sequence):
+    state = _sent_cold(sequence)
+    follow_up = _create_follow_up(policy, state)
+
+    with mock.patch("django.core.mail.EmailMultiAlternatives.send", side_effect=smtplib.SMTPDataError(554, b"no")):
+        send_service.run_send_due()
+
+    state.refresh_from_db()
+    follow_up.refresh_from_db()
+    assert (follow_up.status, state.stop_reason, state.next_due_at) == ("failed", SequenceStopReason.FAILED, None)
+    assert state.stopped_at is not None and sequence_service.run_follow_ups() == 0
+
+
+def test_C28_rejected_follow_up_rearms(policy, sandbox, body_template, sequence, admin_api):
+    state = _sent_cold(sequence)
+    MessageTemplate.objects.filter(pk=body_template.pk).update(auto_approve=False)
+    follow_up = _create_follow_up(policy, state)
+    waiting = (follow_up.status, state.next_due_at)
+
+    review_service.skip(follow_up, user=admin_api.user)
+
+    state.refresh_from_db()
+    assert waiting == ("review_required", None)
+    assert (state.step, state.stopped_at, state.next_due_at) == (1, None, MONDAY_10 + timedelta(days=5))
+
+
+def test_follow_up_not_sent_after_reply_or_pause(policy, sandbox, body_template, sequence):
+    replied = _sent_cold(sequence)
+    paused = _sent_cold(sequence, "anna@example-shop-2.test", "send:2")
+    clock_service.set_override(policy.channel, THURSDAY_10)
+    created = sequence_service.run_follow_ups(random.Random(0))
+    Thread.objects.filter(pk=replied.thread_id).update(status=ThreadStatus.REPLIED)
+    sequence_service.pause_sequence(paused.thread)
+
+    send_service.run_send_due()
+
+    outcomes = sorted(Message.objects.filter(sequence_step=1).values_list("status", "failure_detail"))
+    assert (created, len(mail.outbox)) == (2, 2)
+    assert outcomes == [("skipped", "sequence_not_running"), ("skipped", "thread_replied")]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_schedule_creates_one_follow_up(policy, sandbox, body_template, sequence):
+    state = _sent_cold(sequence)
+    stale = ThreadSequenceState.objects.get(pk=state.pk)
+
+    first = sequence_service.schedule_follow_up(state, random.Random(0))
+    second = sequence_service.schedule_follow_up(stale, random.Random(1))
+
+    assert first is not None and second is None
+    assert Message.objects.filter(thread=state.thread, sequence_step__isnull=False).count() == 1

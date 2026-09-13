@@ -4,37 +4,34 @@
 
 """The single send path: one `send_due` run over every channel with a send policy.
 
-Due = outbound `approved`/`scheduled` with `scheduled_at` empty or reached on the channel clock. Each message is
-claimed with `select_for_update(skip_locked=True)` in its own transaction, so a concurrent run never sends it twice.
+Due = outbound `approved`/`scheduled` with `scheduled_at` empty or reached on the channel clock. A run may deliver
+`policy_service.run_budget` messages in due order; each delivery first reserves its place under the daily cap
+(atomic in Redis) and is then claimed `sending` by `delivery_service`, so overlapping runs never send twice.
 """
 
 import logging
-import random
 from collections import Counter
-from datetime import datetime
+from datetime import date, datetime
 
-from django.conf import settings
-from django.db import transaction
+import redis
 from django.db.models import F, Q, QuerySet
 
-from django_communicator import settings as communicator_settings
 from django_communicator.enums import ChannelMode, Direction, MessageStatus
 from django_communicator.models import Channel, Message, SendPolicy
-from django_communicator.services import alert_service, clock_service, delivery_service, policy_service
+from django_communicator.services import (
+    alert_service,
+    channel_service,
+    clock_service,
+    counter_service,
+    delivery_service,
+    policy_service,
+)
 from django_communicator.services.mail_builder import SmtpNotConfiguredError
 from django_communicator.services.message_service import InvalidTransitionError
 
 logger = logging.getLogger(__name__)
 
 DUE_STATUSES = (MessageStatus.APPROVED, MessageStatus.SCHEDULED)
-
-
-def live_allowed(channel: Channel) -> bool:
-    """`live` is double-gated: the channel flag and, unless the host opts out, `ENVIRONMENT == "production"`."""
-    if channel.mode != ChannelMode.LIVE:
-        return True
-    in_production = getattr(settings, "ENVIRONMENT", "") == "production"
-    return channel.live_enabled and (in_production or not communicator_settings.COMMUNICATOR_LIVE_REQUIRES_PRODUCTION)
 
 
 def due_messages(channel: Channel, now: datetime) -> QuerySet[Message]:
@@ -46,52 +43,66 @@ def due_messages(channel: Channel, now: datetime) -> QuerySet[Message]:
     )
 
 
-def run_send_due(rng: random.Random | None = None) -> Counter:
+def run_send_due() -> Counter:
     """Counts of `sent`, `would_send`, `suppressed`, `failed` and `deferred` over all channels."""
     totals = Counter({MessageStatus.SENT: 0, MessageStatus.WOULD_SEND: 0, MessageStatus.FAILED: 0, "deferred": 0})
     totals[MessageStatus.SUPPRESSED] = 0
     for policy in SendPolicy.objects.select_related("channel"):
         try:
-            totals.update(_run_channel(policy.channel, rng))
+            totals.update(_run_channel(policy.channel))
         except Exception:  # noqa: BLE001 — one broken channel must not stop the others
             logger.exception("communicator send_due failed for channel %s", policy.channel.idx)
     return totals
 
 
-def _run_channel(channel: Channel, rng: random.Random | None) -> Counter:
+def _run_channel(channel: Channel) -> Counter:
     now = clock_service.now_for(channel)
-    if not live_allowed(channel):
-        title = "Live sending refused"
-        alert_service.notify_once(channel, kind="live_refused", severity="critical", title=title, day=now.date())
+    delivery_service.fail_stale_sending(channel)
+    if channel.mode == ChannelMode.LIVE and not channel_service.live_allowed(channel):
+        delivery_service.refuse_live(channel, now)
         return Counter()
     policy = policy_service.load_policy(channel)
     if policy is None:
         return Counter()
     try:
-        return _send_channel(policy, now, rng)
+        return _send_channel(policy, now)
     except SmtpNotConfiguredError:
         title = "SMTP not configured"
         alert_service.notify_once(channel, kind="smtp_missing", severity="high", title=title, day=now.date())
         return Counter()
 
 
-def _send_channel(policy: SendPolicy, now: datetime, rng: random.Random | None) -> Counter:
-    counts = Counter()
-    for pk in list(due_messages(policy.channel, now).values_list("pk", flat=True)):
-        with transaction.atomic():
-            claimed = due_messages(policy.channel, now).filter(pk=pk).select_for_update(skip_locked=True, of=("self",))
-            message = claimed.first()
-            if message is not None:
-                counts[_decide(policy, message, now, rng)] += 1
+def _send_channel(policy: SendPolicy, now: datetime) -> Counter:
+    """Due order; once the run budget is used up the rest waits for a later run (spread, C-17)."""
+    counts, budget = Counter(), policy_service.run_budget(policy, now)
+    for message in list(due_messages(policy.channel, now)):
+        outcome = _deliver_within_cap(policy, message, now) if budget > 0 else delivery_service.DEFERRED
+        if outcome == MessageStatus.SENT:
+            budget -= 1
+        counts[outcome] += 1
     return counts
 
 
-def _decide(policy: SendPolicy, message: Message, now: datetime, rng: random.Random | None) -> str:
-    """Closed window/day (C-16), cap reached (C-17) or spread → `deferred`; else deliver."""
-    remaining = policy_service.remaining_today(policy, now)
-    if not policy_service.should_send_now(policy, now, remaining, rng):
-        return "deferred"
-    return delivery_service.deliver(message, now=now)
+def _deliver_within_cap(policy: SendPolicy, message: Message, now: datetime) -> str:
+    """Reserve a place under the cap before delivering; give it back unless the message was sent."""
+    day = policy_service.channel_day(policy, now)
+    if not counter_service.reserve(policy.channel, day, policy.daily_cap):
+        return delivery_service.DEFERRED
+    try:
+        outcome = delivery_service.deliver(message, now=now)
+    except SmtpNotConfiguredError:
+        _release(policy.channel, day)
+        raise
+    if outcome != MessageStatus.SENT:
+        _release(policy.channel, day)
+    return outcome
+
+
+def _release(channel: Channel, day: date) -> None:
+    try:
+        counter_service.release(channel, day)
+    except redis.RedisError:
+        logger.exception("communicator could not release a cap reservation of channel %s", channel.idx)
 
 
 def send_now(message: Message) -> Message:

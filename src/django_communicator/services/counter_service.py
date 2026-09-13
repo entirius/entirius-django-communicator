@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Daily delivery counter per channel in Redis: `INCR` on a key per channel day, expiring after 48 h."""
+"""Daily delivery counter per channel in Redis: a key per channel day, expiring after 48 h, reserved before SMTP."""
 
 from datetime import date
 from functools import cache
@@ -29,9 +29,22 @@ def sent_on(channel: Channel, day: date) -> int:
     return int(_client().get(_key(channel, day)) or 0)
 
 
-def increment(channel: Channel, day: date) -> int:
+def reserve(channel: Channel, day: date, cap: int) -> bool:
+    """Atomic cap check: `INCR` first, then `DECR` and False when the count went over `cap`."""
     key = _key(channel, day)
     pipeline = _client().pipeline()
     pipeline.incr(key)
     pipeline.expire(key, EXPIRE_S)
-    return int(pipeline.execute()[0])
+    if int(pipeline.execute()[0]) <= cap:
+        return True
+    _client().decr(key)
+    return False
+
+
+def release(channel: Channel, day: date) -> None:
+    """Give back a reservation that did not end in a delivery."""
+    _client().decr(_key(channel, day))
+
+
+def reset(channel: Channel, day: date) -> None:
+    _client().delete(_key(channel, day))

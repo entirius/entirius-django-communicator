@@ -2,8 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+from django.conf import settings
 from django.db import transaction
 
+from django_communicator.enums import ChannelMode
 from django_communicator.models import Channel
 
 CHANNEL_CONFIG_FIELDS = ("mode", "sandbox_mailbox", "live_enabled")
@@ -26,3 +28,9 @@ def set_mode(channel: Channel, **changes) -> Channel:
     for name in CHANNEL_CONFIG_FIELDS:
         setattr(channel, name, getattr(locked, name))
     return channel
+
+
+def live_allowed(channel: Channel) -> bool:
+    """The live double gate, with no setting to drop it: production, the channel flag and live mode."""
+    in_production = getattr(settings, "ENVIRONMENT", "") == "production"
+    return in_production and channel.live_enabled and channel.mode == ChannelMode.LIVE
