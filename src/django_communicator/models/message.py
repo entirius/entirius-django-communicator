@@ -26,6 +26,7 @@ class Message(BaseModel):
     model = models.CharField(max_length=128, blank=True, default="")
     usage = models.JSONField(default=dict, blank=True)
     attempts = models.PositiveSmallIntegerField(default=0)
+    send_attempts = models.PositiveSmallIntegerField(default=0, help_text="SMTP deliveries tried (4xx retries).")
     version = models.PositiveSmallIntegerField(default=1)
     parent = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="children")
     automated_rewrites = models.PositiveSmallIntegerField(default=0)

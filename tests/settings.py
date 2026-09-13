@@ -59,3 +59,20 @@ TIME_ZONE = "UTC"
 AI_TOOLBOX_BASE_URL = "http://toolbox.test"
 AI_TOOLBOX_API_KEY = "test-key"
 AI_TOOLBOX_CHANNEL = "zeno-test"
+
+# Mail stays in django.core.mail.outbox (pytest-django locmem); the channel entry makes django_email return a connection.
+DEFAULT_FROM_EMAIL = "fallback@example.test"
+EMAIL_SMTP_CONFIGURATION_CHANNELS = {
+    "default-europe": {
+        "EMAIL_HOST": "smtp.example.test",
+        "EMAIL_PORT": 25,
+        "EMAIL_HOST_USER": "",
+        "EMAIL_HOST_PASSWORD": "",
+        "EMAIL_USE_SSL": False,
+        "EMAIL_USE_TLS": False,
+        "DEFAULT_FROM_EMAIL": "outreach@mail.example.test",
+    }
+}
+# No celery app with a once backend here; tests that run tasks configure a file backend.
+COMMUNICATOR_REQUIRE_ONCE_BACKEND = False
+REDIS_URL = "redis://redis.test:6379"

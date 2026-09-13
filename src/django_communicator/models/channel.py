@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django_utils.models.base_model import BaseModel
 from idx_normalizator import validate_idx
@@ -30,6 +31,14 @@ class Channel(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.label} [{self.idx}]"
+
+    def clean(self) -> None:
+        """A sandbox needs its mailbox and live needs the live flag — a channel is never silently live (C-30)."""
+        super().clean()
+        if self.mode == ChannelMode.SANDBOX and not self.sandbox_mailbox:
+            raise ValidationError({"sandbox_mailbox": "sandbox mode requires a sandbox mailbox"})
+        if self.mode == ChannelMode.LIVE and not self.live_enabled:
+            raise ValidationError({"live_enabled": "live mode requires live_enabled"})
 
     def save(self, *args, **kwargs) -> None:
         validate_idx(str(self.idx))

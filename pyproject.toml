@@ -23,6 +23,11 @@ dependencies = [
     "entirius-django-utils>=2.1.0",
     "entirius-django-regional>=2.0.1",
     "entirius-py-idx-normalizator>=2.0.0",
+    "entirius-django-email>=4.0.1",
+    "celery>=5.3",
+    "celery-once>=3.0.1",
+    "redis>=5.0",
+    "holidays>=0.50",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +42,7 @@ test = [
     "psycopg[binary]>=3.1",
     "dj-database-url>=2.0",
     "entirius-django-notifications>=0.1.0",
+    "fakeredis>=2.20",
 ]
 
 [project.urls]
@@ -65,7 +71,7 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
-"tests/**" = ["S101", "S105"]
+"tests/**" = ["S101", "S105", "S311"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["django_communicator"]

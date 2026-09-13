@@ -15,3 +15,15 @@ groups:
       - Message
       - MessageTemplateVersion
       - Suppression
+  - name: sending
+    title: "Send Policy & Sequences"
+    models:
+      - Channel
+      - SendPolicy
+      - SendWindow
+      - Sequence
+      - SequenceStep
+      - TextPool
+      - Thread
+      - ThreadPoolUsage
+      - ThreadSequenceState

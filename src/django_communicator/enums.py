@@ -52,13 +52,23 @@ class FailureCode(models.TextChoices):
     SCHEMA = "schema", "Schema"
     MODEL = "model", "Model"
     UPSTREAM = "upstream", "Upstream"
+    SMTP = "smtp", "SMTP"
+
+
+class SequenceStopReason(models.TextChoices):
+    REPLIED = "replied", "Replied"
+    OPTOUT = "optout", "Opt-out"
+    BOUNCE = "bounce", "Bounce"
+    MANUAL = "manual", "Manual"
+    FINISHED = "finished", "Finished"
+    PAUSED = "paused", "Paused"
 
 
 _S = MessageStatus
 _DELIVERY_OUTCOMES = frozenset({_S.SENT.value, _S.FAILED.value, _S.SUPPRESSED.value, _S.WOULD_SEND.value})
 
 # The only legal status edges; `services.message_service.transition` enforces them. Terminal statuses map to
-# an empty set. Sending edges (approved/scheduled → sent | failed | suppressed | would_send) are used from plan 06.
+# an empty set. `scheduled` is an approved message waiting for an SMTP retry (4xx).
 MESSAGE_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
     _S.DRAFT.value: frozenset(
         {_S.REVIEW_REQUIRED.value, _S.APPROVED.value, _S.FAILED.value, _S.REJECTED.value, _S.SUPERSEDED.value}
