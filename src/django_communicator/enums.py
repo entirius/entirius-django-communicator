@@ -67,6 +67,12 @@ class ReplyKind(models.TextChoices):
     BOUNCE_SOFT = "bounce_soft", "Soft bounce"
 
 
+class QuarantineReason(models.TextChoices):
+    OVERSIZED = "oversized", "Oversized"
+    UNPARSEABLE = "unparseable", "Unparseable"
+    DATA_ERROR = "data_error", "Data error"
+
+
 class ReplyMatch(models.TextChoices):
     HEADER = "header", "Header"
     SENDER = "sender", "Sender"

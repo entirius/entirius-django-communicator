@@ -21,6 +21,7 @@ class MailboxConfig(BaseModel):
     imap_password = EncryptedTextField(blank=True, default="")
     folder = models.CharField(max_length=64, default="INBOX")
     last_uid = models.PositiveBigIntegerField(default=0)
+    uid_validity = models.PositiveBigIntegerField(null=True, blank=True, help_text="UIDVALIDITY the cursor belongs to.")
     is_active = models.BooleanField(default=True)
     last_polled_at = models.DateTimeField(null=True, blank=True)
 
