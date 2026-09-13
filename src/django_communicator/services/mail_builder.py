@@ -34,7 +34,7 @@ def build(message: Message) -> EmailMultiAlternatives:
     sender = from_email(channel)
     to, subject, headers = _addressing(message, channel)
     headers.update(_threading_headers(message))
-    headers["Message-ID"] = (
+    headers["Message-ID"] = message.message_id or (  # a soft-bounce retry keeps the Message-ID it was sent with
         f"<communicator-{message.pk}-{secrets.token_hex(4)}@{parseaddr(sender)[1].rpartition('@')[2]}>"
     )
     mail = EmailMultiAlternatives(subject, _text(message), sender, to, headers=headers, connection=connection)

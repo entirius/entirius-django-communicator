@@ -366,3 +366,20 @@ def test_dev_reset_counters_clears_channel_days(policy, admin_api):
 
     assert (response.status_code, response.json()) == (200, {"cleared": 1})
     assert counter_service.sent_on(policy.channel, MONDAY_10.date()) == 0
+
+
+def test_soft_bounce_retry_keeps_message_id_and_takes_no_cap_place(policy, sandbox, static_template):
+    message = approved_message()
+    _run()
+    message.refresh_from_db()
+    fields = {"bounce_retry_at": MONDAY_10, "scheduled_at": MONDAY_10}
+    message_service.transition(message, MessageStatus.SCHEDULED, fields=fields)
+
+    counts = _run()
+
+    message.refresh_from_db()
+    assert (counts["sent"], message.status, len(mail.outbox)) == (1, MessageStatus.SENT, 2)
+    assert (
+        mail.outbox[1].extra_headers["Message-ID"] == message.message_id == mail.outbox[0].extra_headers["Message-ID"]
+    )
+    assert counter_service.sent_on(policy.channel, MONDAY_10.date()) == 1

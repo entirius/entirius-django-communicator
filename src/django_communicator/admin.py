@@ -6,6 +6,7 @@ from django.contrib import admin
 
 from django_communicator.models import (
     Channel,
+    InboundQuarantine,
     MailboxConfig,
     Message,
     MessageTemplate,
@@ -19,7 +20,7 @@ from django_communicator.models import (
     TextPool,
     ThreadSequenceState,
 )
-from django_communicator.services import template_service
+from django_communicator.services import inbox_service, template_service
 
 
 @admin.register(Channel)
@@ -141,6 +142,24 @@ class MailboxConfigAdmin(admin.ModelAdmin):
     form = MailboxConfigForm
     list_display = ("channel", "imap_host", "imap_user", "folder", "is_active", "last_uid", "last_polled_at")
     readonly_fields = ("last_polled_at",)
+
+    def save_model(self, request, obj, form, change) -> None:
+        """Another host, user or folder is another mailbox: the cursor starts over (as `inbox_service.save_mailbox`)."""
+        if change and set(form.changed_data) & set(inbox_service.MAILBOX_IDENTITY):
+            obj.last_uid, obj.uid_validity = 0, None
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(InboundQuarantine)
+class InboundQuarantineAdmin(admin.ModelAdmin):
+    list_display = ("mailbox", "uid", "reason", "size", "received_at")
+    list_filter = ("reason",)
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False
 
 
 @admin.register(Reply)

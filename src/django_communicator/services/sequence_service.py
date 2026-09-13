@@ -14,6 +14,7 @@ import random
 from datetime import datetime, timedelta
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from django_communicator.enums import Direction, MessageStatus, SequenceStopReason, ThreadStatus
@@ -58,13 +59,28 @@ def start_sequence(thread: Thread, sequence: Sequence) -> ThreadSequenceState:
 
 
 def stop_sequence(thread: Thread, reason: str) -> None:
-    ThreadSequenceState.objects.filter(thread=thread, stopped_at=None).update(
+    """Stops a running or paused sequence; an already stopped one keeps its reason."""
+    active = Q(stopped_at=None) | Q(stop_reason=SequenceStopReason.PAUSED)
+    ThreadSequenceState.objects.filter(active, thread=thread).update(
         stopped_at=timezone.now(), stop_reason=reason, next_due_at=None
     )
 
 
 def pause_sequence(thread: Thread) -> None:
     stop_sequence(thread, SequenceStopReason.PAUSED)
+
+
+def resume_sequence(thread: Thread) -> ThreadSequenceState:
+    """A paused sequence runs again, re-armed from the last delivery. Raises `SequenceError` when it is not paused."""
+    state = ThreadSequenceState.objects.filter(thread=thread, stop_reason=SequenceStopReason.PAUSED).first()
+    if state is None:
+        raise SequenceError(f"thread {thread.pk} has no paused sequence")
+    state.stopped_at, state.stop_reason = None, ""
+    state.save(update_fields=["stopped_at", "stop_reason", "modified_at"])
+    last = _last_delivered(thread)
+    _arm(thread, last.sent_at if last else clock_service.now_for(thread.channel))
+    state.refresh_from_db()
+    return state
 
 
 def on_follow_up_finished(message: Message, outcome: str) -> None:

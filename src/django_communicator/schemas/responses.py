@@ -67,6 +67,7 @@ class MessageResponse(BaseModel):
     )
     message_id: str = Field(description="Our Message-ID header once sent.", examples=[""])
     send_attempts: int = Field(description="SMTP deliveries tried.", examples=[0])
+    replied_at: datetime | None = Field(description="A header-matched reply answered it.", examples=[None])
     failure_code: str = Field(
         description="no_template, render, budget, schema, model, upstream or smtp.", examples=[""]
     )
@@ -288,6 +289,10 @@ class SequenceStateResponse(BaseModel):
     sequence_id: int = Field(description="Sequence id.", examples=[1])
     step: int = Field(description="Follow-ups scheduled so far.", examples=[0])
     next_due_at: datetime | None = Field(description="Next follow-up due.", examples=[None])
+    stopped_at: datetime | None = Field(description="Stopped or paused; empty while running.", examples=[None])
+    stop_reason: str = Field(
+        description="replied, optout, bounce, paused, finished, …; empty while running.", examples=[""]
+    )
 
 
 class ThreadSummaryResponse(BaseModel):
@@ -323,6 +328,7 @@ class TimelineEntryResponse(BaseModel):
 
 
 class ThreadDetailResponse(ThreadSummaryResponse):
+    sequence: SequenceStateResponse | None = Field(description="Follow-up sequence of the thread.", examples=[None])
     timeline: list[TimelineEntryResponse] = Field(description="Messages and replies, oldest first.", examples=[[]])
 
 
@@ -370,4 +376,5 @@ class MailboxResponse(BaseModel):
 
 class PollNowResponse(BaseModel):
     ingested: int = Field(description="Mail that produced or matched a reply.", examples=[1])
-    skipped: int = Field(description="Mail dropped (unmatched, own, unreadable).", examples=[0])
+    skipped: int = Field(description="Mail dropped (unmatched, own, expunged).", examples=[0])
+    quarantined: int = Field(description="Mail recorded in the quarantine (oversized, unreadable).", examples=[0])

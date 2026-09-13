@@ -28,7 +28,10 @@ COMMUNICATOR_REQUIRE_ONCE_BACKEND = getattr(settings, "COMMUNICATOR_REQUIRE_ONCE
 # Inbound (beat `poll_inbox` every 5 minutes): messages fetched per mailbox per run, soft-bounce retry delay.
 COMMUNICATOR_INBOUND_BATCH = getattr(settings, "COMMUNICATOR_INBOUND_BATCH", 50)
 COMMUNICATOR_SOFT_BOUNCE_RETRY_H = getattr(settings, "COMMUNICATOR_SOFT_BOUNCE_RETRY_H", 24)
-# Lower-case phrases matched case-insensitively on the first 2 000 characters of the plain-text body; the
+# Mail above this RFC822.SIZE is quarantined unfetched; stored reply bodies are cut to this many characters.
+COMMUNICATOR_INBOUND_MAX_BYTES = getattr(settings, "COMMUNICATOR_INBOUND_MAX_BYTES", 10 * 1024 * 1024)
+COMMUNICATOR_INBOUND_BODY_MAX_CHARS = getattr(settings, "COMMUNICATOR_INBOUND_BODY_MAX_CHARS", 100_000)
+# Lower-case phrases matched case-insensitively on the first 2 000 characters of the reply above the quote; the
 # recipient's language list, all languages when the thread has no language with a list.
 COMMUNICATOR_OPTOUT_PHRASES = getattr(
     settings,

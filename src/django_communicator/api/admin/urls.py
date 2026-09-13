@@ -52,6 +52,11 @@ urlpatterns = [
     path("sequences/<int:pk>/texts/", sequence.TextListView.as_view(), name="admin-communicator-sequence-texts"),
     path("threads/", thread.ThreadListView.as_view(), name="admin-communicator-threads"),
     path("threads/<int:pk>/", thread.ThreadDetailView.as_view(), name="admin-communicator-thread"),
+    path(
+        "threads/<int:pk>/resume-sequence/",
+        thread.ResumeSequenceView.as_view(),
+        name="admin-communicator-thread-resume-sequence",
+    ),
     path("replies/", reply.ReplyListView.as_view(), name="admin-communicator-replies"),
     path(
         "replies/<int:pk>/confirm-optout/",

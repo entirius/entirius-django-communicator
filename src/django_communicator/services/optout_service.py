@@ -2,7 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""A human decides a suspected opt-out: confirm (suppression + `optout_confirmed`) or dismiss (a plain reply)."""
+"""A human decides a suspected opt-out: confirm (suppression of the thread recipient + `optout_confirmed`) or
+dismiss (a plain reply, the sequence stays paused until `resume`)."""
 
 import functools
 import logging
@@ -10,30 +11,29 @@ from types import ModuleType
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
 
 from django_communicator.enums import ReplyKind, SequenceStopReason
 from django_communicator.models import Reply, Thread, ThreadSequenceState
-from django_communicator.services import inbound_service, suppression_service
+from django_communicator.services import inbound_service, sequence_service, suppression_service
 from django_communicator.signals import optout_confirmed, reply_received
 
 logger = logging.getLogger(__name__)
 
+OBJECTION_RETRY_COUNTDOWN_S = 60
+
 
 class OptoutStateError(Exception):
-    """The reply is not an undecided suspected opt-out."""
+    """The reply is not an undecided suspected opt-out, or the thread cannot resume."""
 
 
 @transaction.atomic
 def confirm(reply: Reply, *, user) -> Reply:
     reply = _locked_suspicion(reply)
-    thread, email = reply.thread, reply.from_email
+    thread = reply.thread
+    email = thread.recipient_email
     suppression_service.suppress_email(thread.channel, email, reason="optout confirmed", user=user)
-    paused_or_running = Q(stopped_at=None) | Q(stop_reason=SequenceStopReason.PAUSED)
-    ThreadSequenceState.objects.filter(paused_or_running, thread=thread).update(
-        stopped_at=timezone.now(), stop_reason=SequenceStopReason.OPTOUT, next_due_at=None
-    )
+    sequence_service.stop_sequence(thread, SequenceStopReason.OPTOUT)
     reply.optout_confirmed_at, reply.optout_confirmed_by = timezone.now(), user
     reply.save(update_fields=["optout_confirmed_at", "optout_confirmed_by", "modified_at"])
     channel_idx = thread.channel.idx
@@ -57,6 +57,21 @@ def dismiss(reply: Reply) -> Reply:
     return reply
 
 
+@transaction.atomic
+def resume(thread: Thread) -> ThreadSequenceState:
+    """After a dismissed opt-out: sequence running again, thread `open`. Raises `OptoutStateError` while an
+    opt-out is undecided or when the sequence is not paused."""
+    thread = Thread.objects.select_for_update().select_related("channel").get(pk=thread.pk)
+    if Reply.objects.filter(thread=thread, kind=ReplyKind.SUSPECTED_OPTOUT, optout_confirmed_at=None).exists():
+        raise OptoutStateError(f"thread {thread.pk} has an undecided opt-out")
+    try:
+        state = sequence_service.resume_sequence(thread)
+    except sequence_service.SequenceError as error:
+        raise OptoutStateError(str(error)) from None
+    inbound_service.reopen(thread)
+    return state
+
+
 def _locked_suspicion(reply: Reply) -> Reply:
     locked = Reply.objects.select_for_update().select_related("thread__channel").get(pk=reply.pk)
     if locked.kind != ReplyKind.SUSPECTED_OPTOUT or locked.optout_confirmed_at is not None:
@@ -65,6 +80,24 @@ def _locked_suspicion(reply: Reply) -> Reply:
 
 
 def _record_objection(channel_idx: str, email: str) -> None:
+    """Runs after the confirm committed — any failure is logged by class and retried by a task, never raised."""
+    try:
+        record_objection_now(channel_idx, email)
+    except Exception as error:  # noqa: BLE001 — the confirm already committed; a 500 would invite a 409 retry
+        logger.warning("communicator objection in channel %s not recorded: %s", channel_idx, type(error).__name__)
+        _schedule_objection_retry(channel_idx, email)
+
+
+def _schedule_objection_retry(channel_idx: str, email: str) -> None:
+    from django_communicator.tasks import record_objection
+
+    try:
+        record_objection.apply_async((channel_idx, email), countdown=OBJECTION_RETRY_COUNTDOWN_S)
+    except Exception as error:  # noqa: BLE001 — broker down: the objection stays unrecorded, logged
+        logger.error("communicator objection retry in channel %s not queued: %s", channel_idx, type(error).__name__)
+
+
+def record_objection_now(channel_idx: str, email: str) -> None:
     objection_service = _objection_service()
     if objection_service is None:
         return

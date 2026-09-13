@@ -20,7 +20,7 @@ Reporting-MTA: dns; mx.example-shop-6.test
 Original-Message-ID: {message_id}
 
 Final-Recipient: rfc822; owner@example-shop-6.test
-Action: delayed
+Action: failed
 Status: 4.2.2
 Diagnostic-Code: smtp; 452 4.2.2 <owner@example-shop-6.test>: Mailbox full
 

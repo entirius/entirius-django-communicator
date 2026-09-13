@@ -6,6 +6,9 @@
 404 outside `ENVIRONMENT == "development"`.
 """
 
+from collections.abc import Callable
+from typing import TypeVar
+
 from celery_once import AlreadyQueued
 from drf_spectacular.utils import extend_schema
 from rest_framework.exceptions import NotFound, ValidationError
@@ -28,11 +31,25 @@ from django_communicator.schemas.responses import (
     SendDueResponse,
     SequenceStateResponse,
 )
-from django_communicator.services import clock_service, counter_service, sequence_service
+from django_communicator.services import clock_service, counter_service, poll_service, sequence_service
 from django_communicator.services.communicate_service import LegalFooterRequiredError, communicate
 from django_communicator.tasks import poll_inbox, schedule_follow_ups, send_due
 
 _TAGS = ["Communicator (development)"]
+T = TypeVar("T")
+
+
+def _run_locked(task, body: Callable[[], T]) -> T:
+    """`body` under the celery-once lock of the beat `task`; 409 while a beat run holds it."""
+    key = task.get_key((), {})
+    try:
+        task.once_backend.raise_or_lock(key, timeout=task.once.get("timeout", task.default_timeout))
+    except AlreadyQueued:
+        raise Conflict(f"{task.name.rpartition('.')[2]} is already running") from None
+    try:
+        return body()
+    finally:
+        task.once_backend.clear_lock(key)
 
 
 class DevCommunicateView(DevelopmentView):
@@ -79,15 +96,7 @@ class DevSendDueView(DevelopmentView):
     def post(self, request: Request, channel_idx: str) -> Response:
         self.channel(channel_idx)
         follow_ups = schedule_follow_ups.run()
-        key = send_due.get_key((), {})
-        try:
-            send_due.once_backend.raise_or_lock(key, timeout=send_due.once.get("timeout", send_due.default_timeout))
-        except AlreadyQueued:
-            raise Conflict("send_due is already running") from None
-        try:
-            counts = send_due.run()
-        finally:
-            send_due.once_backend.clear_lock(key)
+        counts = _run_locked(send_due, send_due.run)
         return Response(SendDueResponse(follow_ups_scheduled=follow_ups, **counts).model_dump(mode="json"))
 
 
@@ -131,10 +140,12 @@ class DevPollNowView(DevelopmentView):
     @extend_schema(
         tags=_TAGS,
         summary="Run the IMAP poll now (development only)",
-        description="Runs the poll_inbox body in-process over every active mailbox (no celery-once lock).",
+        description="Polls the active mailbox of this channel in-process under the poll_inbox celery-once lock of the "
+        "beat — 409 while a beat run holds it.",
         request=None,
-        responses={200: PollNowResponse, **ERROR_RESPONSES},
+        responses={200: PollNowResponse, **ERROR_RESPONSES, 409: None},
     )
     def post(self, request: Request, channel_idx: str) -> Response:
-        self.channel(channel_idx)
-        return Response(PollNowResponse(**poll_inbox.run()).model_dump(mode="json"))
+        channel = self.channel(channel_idx)
+        counts = _run_locked(poll_inbox, lambda: poll_service.poll_all(channel))
+        return Response(PollNowResponse(**counts).model_dump(mode="json"))

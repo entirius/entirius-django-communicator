@@ -4,20 +4,23 @@
 
 """Inbound mail → `Reply`. Fixed order: duplicate → DSN → thread match → autoresponder → opt-out → reply.
 
-The only writer of `Thread.status` besides the plan 05 close action. Unmatched mail is dropped, not stored.
+The only writer of `Thread.status` besides the plan 05 close action; a closed thread stays closed. Unmatched mail is
+dropped, not stored. Dedup is per channel: the same mail in two channels' mailboxes is ingested for each.
 """
 
 import logging
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from email.message import EmailMessage
 
 from django.db import transaction
+from django.db.models import Max, Q
 from django.utils import timezone
 
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import (
     MESSAGE_STATUS_TRANSITIONS,
+    ChannelMode,
     Direction,
     FailureCode,
     MessageStatus,
@@ -41,6 +44,7 @@ from django_communicator.signals import reply_received
 logger = logging.getLogger(__name__)
 
 OPTOUT_SCAN_CHARS = 2000
+NOTE_MAX_CHARS = 64
 AUTO_PRECEDENCE = frozenset({"auto_reply", "bulk", "junk"})
 
 
@@ -62,7 +66,7 @@ def ingest(channel: Channel, raw: bytes) -> Reply | None:
     """Store one inbound mail; the existing `Reply` for an already seen Message-ID, no side effects (C-26)."""
     msg = mail_parser.parse(raw)
     inbound = Inbound(msg=msg, message_id=mail_parser.inbound_message_id(msg, raw))
-    existing = Reply.objects.filter(inbound_message_id=inbound.message_id).first()
+    existing = Reply.objects.filter(channel=channel, inbound_message_id=inbound.message_id).first()
     if existing is not None:
         return existing
     if _outbound_by_ids(channel, [inbound.message_id]) is not None:
@@ -96,18 +100,25 @@ def _match_thread(channel: Channel, msg: EmailMessage) -> Match | None:
     if message is not None:
         return Match(thread=message.thread, message=message, matched_by=ReplyMatch.HEADER)
     sender = mail_parser.sender(msg)
+    thread = _sender_thread(channel, sender, mail_parser.sent_at(msg) or timezone.now()) if sender else None
+    return Match(thread=thread, message=None, matched_by=ReplyMatch.SENDER) if thread else None
+
+
+def _sender_thread(channel: Channel, sender: str, written_at: datetime) -> Thread | None:
+    """The newest open thread of the sender whose last outbound mail left before the inbound mail was written."""
+    last_out = Max("messages__sent_at", filter=Q(messages__direction=Direction.OUT))
     threads = Thread.objects.select_related("recipient_language").filter(
         channel=channel, status=ThreadStatus.OPEN, recipient_email__iexact=sender
     )
-    thread = threads.order_by("-created_at", "-pk").first() if sender else None
-    return Match(thread=thread, message=None, matched_by=ReplyMatch.SENDER) if thread else None
+    threads = threads.annotate(last_out=last_out).filter(last_out__lt=written_at)
+    return threads.order_by("-created_at", "-pk").first()
 
 
 def _classify(channel: Channel, inbound: Inbound, match: Match) -> Reply:
     if is_autoreply(inbound.msg):
         return _store(inbound, match, ReplyKind.AUTO)  # C-22: sequence, thread and notifications untouched
     body = mail_parser.body_text(inbound.msg)
-    if has_optout_phrase(match.thread, body):
+    if has_optout_phrase(match.thread, mail_parser.unquoted(body)):
         return _suspected_optout(channel, inbound, match, body)
     return _plain_reply(channel, inbound, match, body)
 
@@ -124,7 +135,7 @@ def is_autoreply(msg: EmailMessage) -> bool:
 
 
 def has_optout_phrase(thread: Thread, body: str) -> bool:
-    """Phrases of the recipient's language; every language when the thread has none with a list."""
+    """Phrases of the recipient's language (every language when it has no list) in the reply's unquoted text."""
     phrases = communicator_settings.COMMUNICATOR_OPTOUT_PHRASES
     language = thread.recipient_language.iso2.lower() if thread.recipient_language else ""
     candidates = phrases.get(language) or [phrase for group in phrases.values() for phrase in group]
@@ -134,12 +145,14 @@ def has_optout_phrase(thread: Thread, body: str) -> bool:
 
 def _store(inbound: Inbound, match: Match, kind: str, body: str | None = None) -> Reply:
     msg = inbound.msg
+    body_limit = communicator_settings.COMMUNICATOR_INBOUND_BODY_MAX_CHARS
     return Reply.objects.create(
+        channel_id=match.thread.channel_id,
         thread=match.thread,
         message=match.message,
         from_email=mail_parser.sender(msg),
         subject=mail_parser.subject(msg),
-        body_text=mail_parser.body_text(msg) if body is None else body,
+        body_text=mail_parser.clean(mail_parser.body_text(msg) if body is None else body, body_limit),
         kind=kind,
         matched_by=match.matched_by,
         inbound_message_id=inbound.message_id,
@@ -171,10 +184,20 @@ def _plain_reply(channel: Channel, inbound: Inbound, match: Match, body: str) ->
 
 
 def _mark_replied(thread: Thread, reply: Reply) -> None:
-    thread.status, thread.last_message_at = ThreadStatus.REPLIED, reply.received_at
+    """`replied`, unless a human closed the thread — then only `last_message_at` moves."""
+    status = thread.status if thread.status == ThreadStatus.CLOSED else ThreadStatus.REPLIED
+    thread.status, thread.last_message_at = status, reply.received_at
     Thread.objects.filter(pk=thread.pk).update(
         status=thread.status, last_message_at=thread.last_message_at, modified_at=timezone.now()
     )
+
+
+def reopen(thread: Thread) -> None:
+    """A human resumed the sequence after dismissing an opt-out: `replied` → `open`; a closed thread stays closed."""
+    Thread.objects.filter(pk=thread.pk, status=ThreadStatus.REPLIED).update(
+        status=ThreadStatus.OPEN, modified_at=timezone.now()
+    )
+    thread.refresh_from_db(fields=["status"])
 
 
 def mark_message_replied(reply: Reply) -> None:
@@ -190,32 +213,53 @@ def _ingest_dsn(channel: Channel, inbound: Inbound) -> Reply | None:
     if message is None or not (dsn.is_hard or dsn.is_soft):
         logger.info("communicator DSN %s (status %r) matched no message", inbound.message_id, dsn.status)
         return None
+    if dsn.final_recipient and dsn.final_recipient != message.thread.recipient_email.lower():
+        logger.info(
+            "communicator DSN %s ignored: final recipient is not the recipient of message %s",
+            inbound.message_id,
+            message.pk,
+        )
+        return None
     match = Match(thread=message.thread, message=message, matched_by=ReplyMatch.DSN)
+    if not dsn.is_failure:
+        return _delivery_note(inbound, match, dsn)
     if dsn.is_hard:
         return _hard_bounce(channel, inbound, match, dsn)
     return _soft_bounce(channel, inbound, match, dsn)
 
 
+def _delivery_note(inbound: Inbound, match: Match, dsn: dsn_service.Dsn) -> Reply:
+    """`Action: delayed` (or another non-failure report) is noted on the message — its status never changes."""
+    reply = _store(inbound, match, ReplyKind.BOUNCE_SOFT)
+    note = mail_parser.clean(f"{dsn.action} {dsn.status}", NOTE_MAX_CHARS)
+    Message.objects.filter(pk=match.message.pk).update(delivery_note=note, modified_at=timezone.now())
+    return reply
+
+
 def _hard_bounce(channel: Channel, inbound: Inbound, match: Match, dsn: dsn_service.Dsn) -> Reply:
-    """C-24: message failed(bounce), address suppressed, sequence stopped, low notification. Thread unchanged."""
+    """C-24: message failed(bounce), sequence stopped, low notification; the thread recipient is suppressed only in
+    live mode (as SMTP refusals in `delivery_service`). Thread unchanged."""
     reply = _store(inbound, match, ReplyKind.BOUNCE_HARD)
     _fail_bounced(match.message, dsn)
-    recipient = dsn.final_recipient or match.thread.recipient_email
-    suppression_service.suppress_email(channel, recipient, reason=f"dsn {dsn.status}")
+    if channel.mode == ChannelMode.LIVE:
+        suppression_service.suppress_email(channel, match.thread.recipient_email, reason=f"dsn {dsn.status}")
     sequence_service.stop_sequence(match.thread, SequenceStopReason.BOUNCE)
     alert_service.notify_subject(channel, subject_ref=match.thread.subject_ref, severity="low", title="Bounce")
     return reply
 
 
 def _soft_bounce(channel: Channel, inbound: Inbound, match: Match, dsn: dsn_service.Dsn) -> Reply:
-    """C-25: the first soft bounce retries after COMMUNICATOR_SOFT_BOUNCE_RETRY_H, the second fails."""
+    """C-25, `Action: failed` 4.x.x: the first schedules one retry after COMMUNICATOR_SOFT_BOUNCE_RETRY_H; another
+    while that retry waits is ignored; one for the sent retry fails the message."""
     reply = _store(inbound, match, ReplyKind.BOUNCE_SOFT)
     message = match.message
-    if message.bounce_retry_at is not None:
+    if message.bounce_retry_at is None:
+        retry_at = clock_service.now_for(channel) + timedelta(
+            hours=communicator_settings.COMMUNICATOR_SOFT_BOUNCE_RETRY_H
+        )
+        _transition_logged(message, MessageStatus.SCHEDULED, {"bounce_retry_at": retry_at, "scheduled_at": retry_at})
+    elif message.status == MessageStatus.SENT:
         _fail_bounced(message, dsn)
-        return reply
-    retry_at = clock_service.now_for(channel) + timedelta(hours=communicator_settings.COMMUNICATOR_SOFT_BOUNCE_RETRY_H)
-    _transition_logged(message, MessageStatus.SCHEDULED, {"bounce_retry_at": retry_at, "scheduled_at": retry_at})
     return reply
 
 

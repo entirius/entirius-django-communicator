@@ -2,7 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Delivery status notifications (RFC 3464): detection and the fields the inbound flow needs."""
+"""Delivery status notifications (RFC 3464): detection and the fields the inbound flow needs.
+
+Only the report's own parts are read — a message/rfc822 attachment is never walked into, so a reply that forwards a
+bounce is not a DSN.
+"""
 
 from dataclasses import dataclass
 from email import message_from_string, policy
@@ -26,10 +30,16 @@ class Dsn:
     def is_soft(self) -> bool:
         return self.status.startswith("4")
 
+    @property
+    def is_failure(self) -> bool:
+        """`Action: failed`; `delayed`, `delivered`, `relayed` and `expanded` report no failure."""
+        return self.action == "failed"
+
 
 def is_dsn(msg: EmailMessage) -> bool:
-    report = msg.get_content_type() == "multipart/report" and msg.get_param("report-type") == "delivery-status"
-    return report or any(part.get_content_type() == "message/delivery-status" for part in msg.walk())
+    """Top-level `multipart/report; report-type=delivery-status` only."""
+    report_type = str(msg.get_param("report-type", "")).lower()
+    return msg.get_content_type() == "multipart/report" and report_type == "delivery-status"
 
 
 def parse(msg: EmailMessage) -> Dsn:
@@ -45,7 +55,7 @@ def parse(msg: EmailMessage) -> Dsn:
 def _status_fields(msg: EmailMessage) -> dict[str, str]:
     """Per-message and first per-recipient fields of the delivery-status part, lower-cased names."""
     fields: dict[str, str] = {}
-    for part in msg.walk():
+    for part in msg.iter_parts():
         if part.get_content_type() != "message/delivery-status":
             continue
         for block in part.get_payload():
@@ -66,7 +76,7 @@ def _original_message_id(msg: EmailMessage, fields: dict[str, str]) -> str:
 def _returned_messages(msg: EmailMessage) -> list[EmailMessage]:
     """The attached original: a message/rfc822 part or its text/rfc822-headers."""
     returned = []
-    for part in msg.walk():
+    for part in msg.iter_parts():
         if part.get_content_type() == "message/rfc822":
             returned += part.get_payload()
         elif part.get_content_type() == "text/rfc822-headers":

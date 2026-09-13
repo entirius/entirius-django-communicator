@@ -61,7 +61,7 @@ class ConfirmOptoutView(AdminView):
     @extend_schema(
         tags=_TAGS,
         summary="Confirm a suspected opt-out",
-        description="Suppresses the sender, stops the sequence and emits optout_confirmed; any other reply → 409.",
+        description="Suppresses the thread recipient, stops the sequence and emits optout_confirmed; any other reply → 409.",
         request=None,
         responses={200: ReplyResponse, **ERROR_RESPONSES, 409: None},
     )
@@ -73,7 +73,7 @@ class DismissOptoutView(AdminView):
     @extend_schema(
         tags=_TAGS,
         summary="Dismiss a suspected opt-out",
-        description="The reply becomes a plain reply (no notification); the sequence stays paused; any other → 409.",
+        description="The reply becomes a plain reply (no notification); the sequence stays paused until resume-sequence; any other → 409.",
         request=None,
         responses={200: ReplyResponse, **ERROR_RESPONSES, 409: None},
     )

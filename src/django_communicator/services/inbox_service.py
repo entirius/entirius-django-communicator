@@ -10,6 +10,7 @@ from django_communicator.enums import Direction, MessageStatus
 from django_communicator.models import Channel, MailboxConfig, Message, Reply, Thread
 
 TIMELINE_HIDDEN_STATUSES = (MessageStatus.SUPERSEDED, MessageStatus.REJECTED)
+MAILBOX_IDENTITY = ("imap_host", "imap_user", "folder")
 
 
 def list_threads(channel: Channel, *, subject_ref: str | None = None) -> QuerySet[Thread]:
@@ -20,8 +21,8 @@ def list_threads(channel: Channel, *, subject_ref: str | None = None) -> QuerySe
 
 
 def get_thread(channel_idx: str, pk: int) -> Thread:
-    """One query (channel joined). Raises `Thread.DoesNotExist`."""
-    return Thread.objects.get(channel__idx=channel_idx, pk=pk)
+    """One query (channel and sequence state joined). Raises `Thread.DoesNotExist`."""
+    return Thread.objects.select_related("sequence_state").get(channel__idx=channel_idx, pk=pk)
 
 
 def timeline(thread: Thread) -> list[dict]:
@@ -77,10 +78,16 @@ def get_mailbox(channel: Channel) -> MailboxConfig | None:
 
 
 def save_mailbox(channel: Channel, *, imap_password: str | None = None, **fields) -> MailboxConfig:
-    """Create or update the channel's mailbox; a missing password keeps the stored one."""
+    """Create or update the channel's mailbox; a missing password keeps the stored one.
+
+    Another host, user or folder is another mailbox: the cursor and its UIDVALIDITY start over.
+    """
     config = get_mailbox(channel) or MailboxConfig(channel=channel)
+    identity = [getattr(config, name) for name in MAILBOX_IDENTITY]
     for name, value in fields.items():
         setattr(config, name, value)
+    if config.pk and identity != [getattr(config, name) for name in MAILBOX_IDENTITY]:
+        config.last_uid, config.uid_validity = 0, None
     if imap_password is not None:
         config.imap_password = imap_password
     config.save()

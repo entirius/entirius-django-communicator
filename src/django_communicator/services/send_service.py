@@ -84,7 +84,12 @@ def _send_channel(policy: SendPolicy, now: datetime) -> Counter:
 
 
 def _deliver_within_cap(policy: SendPolicy, message: Message, now: datetime) -> str:
-    """Reserve a place under the cap before delivering; give it back unless the message was sent."""
+    """Reserve a place under the cap before delivering; give it back unless the message was sent.
+
+    A soft-bounce retry took its place when it was first sent, so it does not count again.
+    """
+    if message.bounce_retry_at is not None:
+        return delivery_service.deliver(message, now=now)
     day = policy_service.channel_day(policy, now)
     if not counter_service.reserve(policy.channel, day, policy.daily_cap):
         return delivery_service.DEFERRED
