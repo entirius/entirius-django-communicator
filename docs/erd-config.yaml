@@ -1,0 +1,17 @@
+# ERD configuration for django-communicator — consumed by the ERD tooling (skill entirius-backend:erd-verify).
+app_label: django_communicator
+groups:
+  - name: templates
+    title: "Channels & Templates"
+    models:
+      - Channel
+      - MessageTemplate
+      - MessageTemplateVersion
+  - name: messages
+    title: "Threads, Messages & Suppressions"
+    models:
+      - Channel
+      - Thread
+      - Message
+      - MessageTemplateVersion
+      - Suppression

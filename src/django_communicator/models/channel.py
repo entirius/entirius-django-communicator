@@ -1,0 +1,36 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+from django.db import models
+from django_utils.models.base_model import BaseModel
+from idx_normalizator import validate_idx
+
+from django_communicator.enums import ChannelMode
+
+
+class Channel(BaseModel):
+    """A communication channel. `mode`, `sandbox_mailbox` and `live_enabled` are enforced by the sending layer."""
+
+    idx = models.CharField(max_length=128, unique=True)
+    label = models.CharField(max_length=128)
+    default_language = models.ForeignKey(
+        "django_regional.Language",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="communicator_default_channels",
+    )
+    languages = models.ManyToManyField("django_regional.Language", blank=True, related_name="communicator_channels")
+    timezone = models.CharField(max_length=64, default="Europe/Warsaw")
+    country = models.CharField(max_length=2, default="PL")
+    mode = models.CharField(max_length=16, choices=ChannelMode.choices, default=ChannelMode.DRY_RUN)
+    sandbox_mailbox = models.EmailField(blank=True, default="")
+    live_enabled = models.BooleanField(default=False)
+
+    def __str__(self) -> str:
+        return f"{self.label} [{self.idx}]"
+
+    def save(self, *args, **kwargs) -> None:
+        validate_idx(str(self.idx))
+        super().save(*args, **kwargs)

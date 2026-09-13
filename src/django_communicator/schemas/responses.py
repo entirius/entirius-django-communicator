@@ -1,0 +1,170 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+"""Response schemas of the communicator admin API v2."""
+
+from datetime import datetime
+from typing import Any
+
+from django_utils.toolbox import ModelInfo
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ThreadResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Thread id.", examples=[3])
+    subject_ref: str = Field(description="Opaque reference of the caller.", examples=["leads.Company:42"])
+    recipient_email: str = Field(description="Recipient email.", examples=["jan@shop.test"])
+    recipient_name: str = Field(description="Recipient name.", examples=["Jan Kowalski"])
+    recipient_language: str | None = Field(description="ISO 639-1 code.", examples=["pl"])
+    status: str = Field(description="open, replied or closed.", examples=["open"])
+
+    @classmethod
+    def of(cls, thread) -> "ThreadResponse":
+        language = thread.recipient_language.iso2.lower() if thread.recipient_language else None
+        return cls.model_validate({**cls._fields(thread), "recipient_language": language})
+
+    @classmethod
+    def _fields(cls, thread) -> dict:
+        return {name: getattr(thread, name) for name in cls.model_fields if name != "recipient_language"}
+
+
+class TemplateRefResponse(BaseModel):
+    template_id: int = Field(description="Template id.", examples=[1])
+    key: str = Field(description="Template key.", examples=["lead.cold.shop"])
+    kind: str = Field(description="static or ai_prompt.", examples=["ai_prompt"])
+    version_id: int = Field(description="Template version id the message was rendered with.", examples=[4])
+    version_number: int = Field(description="Version number.", examples=[2])
+
+
+class MessageResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Message id.", examples=[11])
+    status: str = Field(description="Message status.", examples=["review_required"])
+    direction: str = Field(description="out or in.", examples=["out"])
+    subject: str = Field(description="Subject.", examples=["Quick question"])
+    body_text: str = Field(description="Plain-text body (no footer).", examples=["Hello, ..."])
+    render_context: dict[str, Any] = Field(description="The caller's context, for the reviewer.", examples=[{}])
+    rendered_prompt: str = Field(description="Prompt sent to the toolbox (AI drafts).", examples=[""])
+    model: str = Field(description="Model that wrote the draft.", examples=["fake-chat"])
+    usage: dict[str, Any] = Field(description="input_tokens, output_tokens, cost.", examples=[{}])
+    attempts: int = Field(description="Toolbox calls made for this version.", examples=[1])
+    version: int = Field(description="Version in the rewrite chain.", examples=[1])
+    parent_id: int | None = Field(description="Previous version.", examples=[None])
+    automated_rewrites: int = Field(description="Automated rewrites in the chain.", examples=[0])
+    edited_by_human: bool = Field(description="Written by a reviewer.", examples=[False])
+    requires_review: bool = Field(description="The caller asked for review.", examples=[True])
+    reviewed_by_id: int | None = Field(description="Reviewer user id.", examples=[None])
+    reviewed_at: datetime | None = Field(description="When reviewed.", examples=[None])
+    reject_reason: str = Field(description="Why rejected.", examples=[""])
+    review_notes: str = Field(description="Notes that produced this version.", examples=[""])
+    legal_footer: str = Field(description="Footer carried verbatim.", examples=[""])
+    scheduled_at: datetime | None = Field(description="Send slot (sending layer).", examples=[None])
+    failure_code: str = Field(description="no_template, render, budget, schema, model or upstream.", examples=[""])
+    failure_detail: str = Field(description="Error class and codes — never the prompt.", examples=[""])
+    created_at: datetime = Field(description="Created.", examples=["2026-09-13T12:00:00Z"])
+
+
+class MessageDetailResponse(MessageResponse):
+    thread: ThreadResponse = Field(description="Conversation the message belongs to.")
+    template: TemplateRefResponse | None = Field(description="Template version used; null when none.")
+
+    @classmethod
+    def of(cls, message) -> "MessageDetailResponse":
+        version = message.template_version
+        template = None
+        if version:
+            ref = {"template_id": version.template_id, "key": version.template.key, "kind": version.template.kind}
+            template = TemplateRefResponse(version_id=version.pk, version_number=version.number, **ref)
+        base = MessageResponse.model_validate(message).model_dump()
+        return cls(**base, thread=ThreadResponse.of(message.thread), template=template)
+
+
+class MessageListResponse(BaseModel):
+    count: int = Field(description="Total matching messages.", examples=[1])
+    next: str | None = Field(description="Next page URL.", examples=[None])
+    previous: str | None = Field(description="Previous page URL.", examples=[None])
+    results: list[MessageDetailResponse] = Field(description="Oldest first.", examples=[[]])
+
+
+class TemplateVersionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Version id.", examples=[4])
+    number: int = Field(description="Version number.", examples=[2])
+    subject: str = Field(description="Subject.", examples=["Hello"])
+    body: str = Field(description="Body or prompt.", examples=["Hi {first_name}"])
+    json_schema: dict[str, Any] | None = Field(description="Output schema.", examples=[None])
+    model: str = Field(description="Toolbox model id.", examples=["fake-chat"])
+    created_by_id: int | None = Field(description="Author user id.", examples=[None])
+    created_at: datetime = Field(description="Created.", examples=["2026-09-13T12:00:00Z"])
+
+
+class TemplateResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Template id.", examples=[1])
+    key: str = Field(description="Template key.", examples=["lead.cold.shop"])
+    kind: str = Field(description="static or ai_prompt.", examples=["ai_prompt"])
+    language: str = Field(description="ISO 639-1 code.", examples=["pl"])
+    subject: str = Field(description="Subject.", examples=["Hello"])
+    body: str = Field(description="Body or prompt.", examples=["Hi {first_name}"])
+    json_schema: dict[str, Any] | None = Field(description="Output schema.", examples=[None])
+    model: str = Field(description="Toolbox model id.", examples=["fake-chat"])
+    requires_legal_footer: bool = Field(description="Calls need a footer.", examples=[True])
+    auto_approve: bool = Field(description="Static only.", examples=[False])
+    is_active: bool = Field(description="Resolvable.", examples=[True])
+    current_version_id: int | None = Field(description="Current version id.", examples=[4])
+    current_version_number: int | None = Field(description="Current version number.", examples=[2])
+
+    @classmethod
+    def of(cls, template) -> "TemplateResponse":
+        version = template.current_version
+        fields = {name: getattr(template, name) for name in cls.model_fields if name not in _TEMPLATE_COMPUTED}
+        return cls(
+            **fields,
+            language=template.language.iso2.lower(),
+            current_version_id=version.pk if version else None,
+            current_version_number=version.number if version else None,
+        )
+
+
+_TEMPLATE_COMPUTED = frozenset({"language", "current_version_id", "current_version_number"})
+
+
+class TemplateListResponse(BaseModel):
+    results: list[TemplateResponse] = Field(description="Templates of the channel by key.", examples=[[]])
+
+
+class TemplateVersionListResponse(BaseModel):
+    results: list[TemplateVersionResponse] = Field(description="Newest first.", examples=[[]])
+
+
+class DraftPreviewResponse(BaseModel):
+    subject: str = Field(description="Generated or rendered subject.", examples=["Quick question"])
+    body_text: str = Field(description="Generated or rendered body.", examples=["Hello, ..."])
+    rendered_prompt: str = Field(description="Prompt sent (ai_prompt), empty for static.", examples=[""])
+    model: str = Field(description="Model used.", examples=["fake-chat"])
+    usage: dict[str, Any] = Field(description="Usage of the call.", examples=[{}])
+
+
+class ModelListResponse(BaseModel):
+    results: list[ModelInfo] = Field(
+        description="Toolbox catalogue entries allowed for the channel, field names unchanged.", examples=[[]]
+    )
+
+
+class SuppressionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Suppression id.", examples=[1])
+    kind: str = Field(description="email or domain.", examples=["domain"])
+    value: str = Field(description="Lower-cased email or registrable domain.", examples=["shop.test"])
+    reason: str = Field(description="Why.", examples=[""])
+    created_at: datetime = Field(description="Created.", examples=["2026-09-13T12:00:00Z"])
+
+
+class SuppressionListResponse(BaseModel):
+    results: list[SuppressionResponse] = Field(description="Suppressions of the channel.", examples=[[]])

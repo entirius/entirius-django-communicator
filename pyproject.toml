@@ -15,14 +15,37 @@ requires-python = ">=3.11"
 license = "MPL-2.0"
 dependencies = [
     "Django>=4.2",
+    "djangorestframework>=3.14",
+    "djangorestframework-simplejwt>=5.3",
+    "drf-spectacular>=0.27",
+    "pydantic>=2.0",
+    "httpx>=0.27",
+    "entirius-django-utils>=2.1.0",
+    "entirius-django-regional>=2.0.1",
+    "entirius-py-idx-normalizator>=2.0.0",
 ]
 
 [project.optional-dependencies]
 dev  = ["ruff", "pre-commit"]
-test = ["pytest", "pytest-django", "psycopg[binary]>=3.1", "dj-database-url>=2.0"]
+# Soft dependency: toolbox failures raise a notification only when django_notifications is installed.
+notifications = ["entirius-django-notifications>=0.1.0"]
+test = [
+    "pytest",
+    "pytest-django",
+    "factory-boy",
+    "respx",
+    "psycopg[binary]>=3.1",
+    "dj-database-url>=2.0",
+    "entirius-django-notifications>=0.1.0",
+]
 
 [project.urls]
 Repository = "https://github.com/entirius/entirius-django-communicator"
+
+# utils 2.1.0 (toolbox client) and notifications are not on PyPI until their pre-releases — resolve the sibling clones.
+[tool.uv.sources]
+entirius-django-utils = { path = "../entirius-django-utils", editable = true }
+entirius-django-notifications = { path = "../entirius-django-notifications", editable = true }
 
 [build-system]
 requires = ["hatchling"]
