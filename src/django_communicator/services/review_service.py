@@ -13,6 +13,7 @@ from django_communicator.enums import MessageStatus
 from django_communicator.models import Channel, Message
 from django_communicator.services import drafting_service, message_service
 from django_communicator.services.drafting_service import DraftOutputError
+from django_communicator.services.send_service import initial_slot
 from django_communicator.signals import company_skipped, message_approved
 
 REWRITE_TAG = "communicator.rewrite"
@@ -47,9 +48,13 @@ def get_message(channel: Channel, pk: int) -> Message:
 
 
 def accept(message: Message, *, user) -> Message:
-    """`approved` with reviewer and timestamp; `scheduled_at` is left for the sending layer. Signals once, on commit."""
+    """`approved` with reviewer, timestamp and `scheduled_at` = next policy slot (none without a policy).
+
+    Signals once, on commit.
+    """
     with transaction.atomic():
-        message_service.transition(message, MessageStatus.APPROVED, user=user)
+        slot = initial_slot(message.thread.channel)
+        message_service.transition(message, MessageStatus.APPROVED, user=user, fields={"scheduled_at": slot})
         transaction.on_commit(lambda: message_approved.send(sender=Message, message=message))
     return message
 

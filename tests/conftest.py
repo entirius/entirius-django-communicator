@@ -1,14 +1,23 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
+
+import fakeredis
 import httpx
 import pytest
+from celery import current_app
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django_utils.toolbox.testing import CANNED_COMPLETION, mock_toolbox
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from django_communicator.services.communicate_service import RecipientData
+from django_communicator.enums import ChannelMode
+from django_communicator.models import Channel, Message, SendPolicy, SendWindow
+from django_communicator.services import channel_service, clock_service, counter_service
+from django_communicator.services.communicate_service import RecipientData, communicate
 from tests.factories import ChannelFactory, make_static, make_template
 
 CHANNEL_IDX = "default-europe"
@@ -72,3 +81,55 @@ def customer_api(db) -> APIClient:
 
 def api_url(path: str) -> str:
     return f"/api/communicator/v2/admin/{CHANNEL_IDX}/{path}"
+
+
+WARSAW = ZoneInfo("Europe/Warsaw")
+MONDAY_10 = datetime(2026, 9, 14, 10, 0, tzinfo=WARSAW)
+
+
+@pytest.fixture(autouse=True)
+def fake_redis(monkeypatch):
+    """The daily counter runs on fakeredis; the cache (clock override, alert dedup) starts empty."""
+    server = fakeredis.FakeRedis()
+    monkeypatch.setattr(counter_service, "_client", lambda: server)
+    cache.clear()
+    yield server
+    cache.clear()
+
+
+@pytest.fixture
+def once_backend(tmp_path):
+    """celery-once on a file backend, as the host app would configure it on Redis."""
+    config = {"backend": "celery_once.backends.File", "settings": {"location": str(tmp_path), "default_timeout": 60}}
+    current_app.conf.update(ONCE=config)
+    yield config
+    current_app.conf.update(ONCE=None)
+
+
+@pytest.fixture
+def policy(channel) -> SendPolicy:
+    """Business days, 08:00–17:00 Warsaw, cap 10, no spread; the channel clock stands at Monday 10:00."""
+    policy = SendPolicy.objects.create(channel=channel, daily_cap=10, spread=False)
+    SendWindow.objects.create(policy=policy, start_time=time(8), end_time=time(17))
+    clock_service.set_override(channel, MONDAY_10)
+    return policy
+
+
+@pytest.fixture
+def sandbox(channel) -> Channel:
+    return channel_service.set_mode(channel, mode=ChannelMode.SANDBOX, sandbox_mailbox="sandbox@mail.example.test")
+
+
+def approved_message(
+    email: str = "jan@example-shop-1.test", subject_ref: str = "send:1", footer: str = "", context: dict | None = None
+) -> Message:
+    """A static auto-approve message (needs the `static_template` fixture)."""
+    recipient = RecipientData(email=email, first_name="Jan", last_name="Kowalski", language="pl", legal_footer=footer)
+    return communicate(
+        channel_idx=CHANNEL_IDX,
+        template_key="followup",
+        recipient=recipient,
+        context=context or {},
+        subject_ref=subject_ref,
+        requires_review=False,
+    )

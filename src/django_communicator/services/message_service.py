@@ -39,14 +39,16 @@ def ensure_transition(message: Message, new_status: str) -> None:
         raise InvalidTransitionError(f"invalid message transition: {message.status} -> {new_status}")
 
 
-def transition(message: Message, new_status: str, *, user=None, reason: str = "") -> Message:
+def transition(
+    message: Message, new_status: str, *, user=None, reason: str = "", fields: dict | None = None
+) -> Message:
     """Validate and apply a status change as compare-and-set on the stored status.
 
     Accept and reject stamp the reviewer, reject also the reason. A row whose status changed since `message`
-    was read is not touched: `InvalidTransitionError`.
+    was read is not touched: `InvalidTransitionError`. `fields` are written in the same update.
     """
     ensure_transition(message, new_status)
-    changes = {"status": new_status, "modified_at": timezone.now()}
+    changes = {**(fields or {}), "status": new_status, "modified_at": timezone.now()}
     if new_status in _REVIEW_STATUSES:
         changes.update(reviewed_by=user, reviewed_at=changes["modified_at"])
     if new_status == MessageStatus.REJECTED:
