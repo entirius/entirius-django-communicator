@@ -21,6 +21,7 @@ VERSION_INHERITED_FIELDS = (
     "legal_footer",
     "requires_review",
     "automated_rewrites",
+    "sequence_step",
 )
 _REVIEW_STATUSES = frozenset({MessageStatus.APPROVED.value, MessageStatus.REJECTED.value})
 
@@ -66,11 +67,12 @@ def claim_for_sending(message: Message) -> Message | None:
     """Commit `approved|scheduled → sending` in a transaction of its own, before any SMTP call.
 
     Compare-and-set on the stored status: None when another run claimed or changed the message. Returns the row
-    re-read with its thread and channel, so the delivery decides on fresh data.
+    re-read with its thread and channel, so the delivery decides on fresh data. The claim is durable: inside an
+    outer atomic block it would share its transaction with SMTP, so it raises `RuntimeError` instead.
     """
     ensure_transition(message, MessageStatus.SENDING)
     now = timezone.now()
-    with transaction.atomic():
+    with transaction.atomic(durable=True):
         claimed = Message.objects.filter(pk=message.pk, status=message.status).update(
             status=MessageStatus.SENDING, send_attempted_at=now, modified_at=now
         )

@@ -141,6 +141,19 @@ def test_C28_rejected_follow_up_rearms(policy, sandbox, body_template, sequence,
     assert (state.step, state.stopped_at, state.next_due_at) == (1, None, MONDAY_10 + timedelta(days=5))
 
 
+def test_C28_edited_follow_up_keeps_step_and_rearms_on_reject(policy, sandbox, body_template, sequence, admin_api):
+    state = _sent_cold(sequence)
+    MessageTemplate.objects.filter(pk=body_template.pk).update(auto_approve=False)
+    follow_up = _create_follow_up(policy, state)
+
+    edited = review_service.edit(follow_up, subject="Hi again", body_text="TEST edited", user=admin_api.user)
+    review_service.skip(edited, user=admin_api.user)
+
+    state.refresh_from_db()
+    assert (edited.parent_id, edited.sequence_step) == (follow_up.pk, 1)
+    assert (state.step, state.stopped_at, state.next_due_at) == (1, None, MONDAY_10 + timedelta(days=5))
+
+
 def test_follow_up_not_sent_after_reply_or_pause(policy, sandbox, body_template, sequence):
     replied = _sent_cold(sequence)
     paused = _sent_cold(sequence, "anna@example-shop-2.test", "send:2")
