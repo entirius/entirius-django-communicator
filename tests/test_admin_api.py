@@ -159,3 +159,20 @@ def test_dev_communicate_endpoint(ai_template, admin_api, toolbox):
     ai_template.requires_legal_footer = True
     ai_template.save()
     assert admin_api.post(api_url("test/communicate/"), body, format="json").status_code == 400
+
+
+@pytest.mark.parametrize(
+    ("status", "code", "field_errors"),
+    [(402, "BUDGET_EXCEEDED", None), (403, "MODEL_NOT_ALLOWED", None), (422, "SCHEMA_INVALID", {"subject": ["x"]})],
+)
+def test_toolbox_error_message_not_echoed_by_test_generate(ai_template, admin_api, toolbox, status, code, field_errors):
+    leaked = "Write to Jan at Shop, upstream text"
+    toolbox["complete"].mock(return_value=error_response(status, code, leaked, field_errors))
+    context = {"first_name": "Jan", "company_name": "Shop"}
+
+    response = admin_api.post(
+        api_url(f"templates/{ai_template.pk}/test-generate/"), {"context": context}, format="json"
+    )
+
+    assert (response.status_code, response.json()["error"]) == (status, code)
+    assert leaked.encode() not in response.content
