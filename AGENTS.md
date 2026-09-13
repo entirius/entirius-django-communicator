@@ -103,28 +103,44 @@ Layers one way: API → services → models. Templates, `communicate()`, review,
 - Beat `django_communicator.poll_inbox` (`crontab(minute="*/5")`, queue `communicator_inbound`, `QueueOnce` graceful,
   autoretry on `IMAP4.error`/`OSError` ×3) → `services/poll_service.poll_all`: per active `MailboxConfig`
   (one per channel, password `EncryptedTextField` keyed from `SECRET_KEY`) EXAMINE (read-only) the folder,
-  `UID SEARCH last_uid+1:*`, at most `COMMUNICATOR_INBOUND_BATCH` mails, `last_uid` advanced after every mail
-  (an unreadable mail is logged and skipped). A highest UID below the cursor = UIDVALIDITY change → cursor 0 + warning.
-  IMAP failure → `notify(medium, "IMAP poll failed")` once per channel day, then the error re-raises for the retry.
+  `UID SEARCH last_uid+1:*`, at most `COMMUNICATOR_INBOUND_BATCH` mails. Every IMAP status is checked.
+  `last_uid` moves past a UID only when the mail was ingested/dropped or recorded in `InboundQuarantine` (mailbox,
+  uid, reason `oversized` | `unparseable` | `data_error`, size — no body). Transient failures (NO/BAD, connection loss,
+  database outage) stop that mailbox without moving the cursor; the next beat reads the mail again.
+  `RFC822.SIZE` is fetched first: above `COMMUNICATOR_INBOUND_MAX_BYTES` (10 MB) → quarantined unfetched.
+  UIDVALIDITY is read on EXAMINE and stored on the mailbox; a change (or another host/user/folder, API or Django admin)
+  resets the cursor to 0 and per-channel dedup skips known mail. Each mailbox fails on its own —
+  `notify(medium, "IMAP poll failed")` once per channel day, the last error re-raises after all mailboxes ran.
   Mail is never deleted or flagged; credentials and bodies are never logged.
 - `services/inbound_service.ingest(channel, raw) -> Reply | None`, fixed order:
-  1. duplicate inbound Message-ID (missing → `<sha256-…@communicator>`) → the existing `Reply`, nothing else (C-26);
+  1. duplicate inbound Message-ID in this channel (missing → `<sha256-…@communicator>`; unique per channel) → the
+     existing `Reply`, nothing else (C-26); NUL stripped and fields cut to column limits, body to
+     `COMMUNICATOR_INBOUND_BODY_MAX_CHARS` (100 000);
      our own outbound Message-ID (sandbox copy in the mailbox) → dropped;
-  2. DSN (`multipart/report; report-type=delivery-status` or a `message/delivery-status` part; original id from
-     `Original-Message-ID` → report `In-Reply-To`/`References` → returned message) — `5.x.x`: `bounce_hard`,
-     message `failed/bounce`, email suppressed, sequence stopped `bounce`, `notify(low)` (C-24); `4.x.x`:
-     `bounce_soft`, first → `scheduled` at now + `COMMUNICATOR_SOFT_BOUNCE_RETRY_H`, second → `failed/bounce` (C-25).
-     DSNs never change `Thread.status`; an unmatched DSN is dropped;
+  2. DSN — only a top-level `multipart/report; report-type=delivery-status` (a reply forwarding a bounce is a reply);
+     original id from `Original-Message-ID` → report `In-Reply-To`/`References` → returned message. A
+     `Final-Recipient` other than the thread recipient → dropped (forged). Non-`failed` actions (`delayed`, …) →
+     `bounce_soft` + `Message.delivery_note`, status unchanged. `failed` `5.x.x`: `bounce_hard`, message
+     `failed/bounce`, thread recipient suppressed in live mode only, sequence stopped `bounce`, `notify(low)` (C-24);
+     `failed` `4.x.x`: `bounce_soft`, first → `scheduled` at now + `COMMUNICATOR_SOFT_BOUNCE_RETRY_H`, ignored while
+     that retry waits, one for the sent retry → `failed/bounce` (C-25). The retry keeps its Message-ID and takes no
+     cap place. DSNs never change `Thread.status`; an unmatched DSN is dropped;
   3. thread: our Message-ID in `In-Reply-To`/`References` (`header`, C-20), else the newest open thread whose
-     recipient is the sender (`sender`, C-21); no match → dropped (logged, not stored);
+     recipient is the sender and whose last outbound mail predates the inbound `Date` (`sender`, C-21); no match →
+     dropped (logged, not stored);
   4. autoresponder (`Auto-Submitted` ≠ no, `X-Autoreply`, `X-Autorespond`, `Precedence` auto_reply/bulk/junk, subject
      patterns) → `auto`, nothing else (C-22) — beats an opt-out phrase;
-  5. opt-out phrase of the recipient language (all languages without one) in the first 2 000 body chars →
-     `suspected_optout`, sequence paused, thread `replied`, `notify(medium)` — no suppression (C-23);
+  5. opt-out phrase of the recipient language (all languages without one) in the first 2 000 chars of the text above
+     the quote (`>` lines and "On … wrote:" / "W dniu … pisze:" cut) → `suspected_optout`, sequence paused, thread
+     `replied`, `notify(medium)` — no suppression (C-23);
   6. reply → thread `replied`, `Message.replied_at`, sequence stopped `replied`, `reply_received`, `notify(high)`.
-- `services/optout_service.confirm(reply, user)` → email suppression, sequence `optout`, `optout_confirmed(subject_ref,
-  email, channel_idx)`, `django_agreements` `record_objection` when installed (soft, `functools.cache` guard);
-  `dismiss(reply)` → kind `reply`, `reply_received`, no notification, the sequence stays paused.
+  A closed thread stays closed: the reply is stored, the status untouched.
+- `services/optout_service.confirm(reply, user)` → suppression of the thread recipient, sequence `optout` (via
+  `sequence_service.stop_sequence`, which also stops a paused one), `optout_confirmed(subject_ref, email,
+  channel_idx)`, `django_agreements` `record_objection` when installed (soft, `functools.cache` guard) — any error
+  there is logged by class and retried by task `django_communicator.record_objection` (`communicator_default`);
+  `dismiss(reply)` → kind `reply`, `reply_received`, no notification, the sequence stays paused;
+  `resume(thread)` → `sequence_service.resume_sequence` (re-armed from the last delivery) + thread `open`.
 - `Reply.raw_headers` holds headers only; attachments are never stored.
 
 ## Admin API v2
@@ -144,11 +160,12 @@ Prefix `api/communicator/v2/admin/<channel_idx>/`, `JWTAuthentication` + `IsAdmi
 | `GET/PUT policy/` | policy + windows (PUT replaces), `sent_today`, `next_slot` |
 | `GET messages/?status=` · `POST messages/<id>/send-now/` | outbox with `next_slot`; send now of a non-waiting message → 409 |
 | `GET/POST sequences/`, `GET sequences/<id>/steps/`, `GET/POST sequences/<id>/texts/` | duplicate key → 409 |
-| `GET threads/?subject_ref=` · `GET threads/<id>/` | thread list; one thread with its `timeline` (messages + replies, 4 queries) |
+| `GET threads/?subject_ref=` · `GET threads/<id>/` | thread list; one thread with its `sequence` state and `timeline` (messages + replies, 4 queries) |
+| `POST threads/<id>/resume-sequence/` | paused sequence runs again, thread `open`; undecided opt-out or not paused → 409 |
 | `GET replies/?kind=&thread=` | newest first |
 | `POST replies/<id>/confirm-optout/` · `dismiss-optout/` | 200; not an undecided `suspected_optout` → 409 |
 | `GET/PUT mailbox/` | IMAP config; `imap_password` write-only (`has_password`), omitted on PUT = kept |
-| `POST test/communicate/` · `test/clock/` (`{iso_datetime}`) · `test/send-due/` · `test/start-sequence/` · `test/poll-now/` · `test/reset-counters/` (`{days}`) | `ENVIRONMENT == "development"` only, else 404; `send-due` takes the beat's celery-once lock (409 while held) |
+| `POST test/communicate/` · `test/clock/` (`{iso_datetime}`) · `test/send-due/` · `test/start-sequence/` · `test/poll-now/` · `test/reset-counters/` (`{days}`) | `ENVIRONMENT == "development"` only, else 404; `send-due` / `poll-now` take the beat's celery-once lock (409 while held); `poll-now` polls only this channel's mailbox |
 
 ## Host integration
 
@@ -158,7 +175,8 @@ Prefix `api/communicator/v2/admin/<channel_idx>/`, `JWTAuthentication` + `IsAdmi
   `ENVIRONMENT` (live needs `production`), `EMAIL_SMTP_CONFIGURATION_CHANNELS` (django_email),
   `REDIS_URL` / `COMMUNICATOR_REDIS_URL`, `COMMUNICATOR_SMTP_MAX_ATTEMPTS` (3), `COMMUNICATOR_SENDING_STALE_MINUTES` (30), `COMMUNICATOR_SEND_INTERVAL_MIN` (5),
   `COMMUNICATOR_SANDBOX_SUBJECT_PREFIX`, `COMMUNICATOR_REQUIRE_ONCE_BACKEND` (True), `COMMUNICATOR_INBOUND_BATCH` (50),
-  `COMMUNICATOR_SOFT_BOUNCE_RETRY_H` (24), `COMMUNICATOR_OPTOUT_PHRASES`, `COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS`.
+  `COMMUNICATOR_SOFT_BOUNCE_RETRY_H` (24), `COMMUNICATOR_INBOUND_MAX_BYTES` (10 MB),
+  `COMMUNICATOR_INBOUND_BODY_MAX_CHARS` (100 000), `COMMUNICATOR_OPTOUT_PHRASES`, `COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS`.
 - Runtime deps the host lock must carry: `holidays`, `celery-once`, `redis`, `entirius-django-email`, `cryptography`
   (tests: `fakeredis`).
 - Host beat schedule adds `poll_inbox` `crontab(minute="*/5")`; workers consume `communicator_inbound`.
@@ -172,8 +190,8 @@ Prefix `api/communicator/v2/admin/<channel_idx>/`, `JWTAuthentication` + `IsAdmi
 - `failure_detail` holds error class, toolbox code, HTTP status and field names — never the prompt.
 - `utils/domains.py` is a copy of the leads/siteintel rule, `utils/encryption.py` + `encrypted_field.py` of
   contact_forms — never import them across modules. Rotating `SECRET_KEY` empties stored IMAP passwords.
-- `Thread.status` is written only by `inbound_service` (and the plan 05 close action). There is no resume endpoint
-  for a paused sequence yet — a dismissed opt-out stays paused.
+- `Thread.status` is written only by `inbound_service` (and the plan 05 close action). A dismissed opt-out stays
+  paused until `POST threads/<id>/resume-sequence/`.
 
 ## Testing end-to-end
 
