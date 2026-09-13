@@ -82,20 +82,43 @@ def remaining_today(policy: SendPolicy, at: datetime) -> int:
     return max(policy.daily_cap - sent, 0)
 
 
-def runs_left(policy: SendPolicy, at: datetime) -> int:
-    """Beat runs left in the window containing `at`, this one included (1 outside any window)."""
-    local = _local(policy, at)
-    window = next((w for w in _windows(policy) if w.start_time <= local.time() < w.end_time), None)
-    if window is None:
-        return 1
-    end = datetime.combine(local.date(), window.end_time, tzinfo=local.tzinfo)
-    interval = timedelta(minutes=communicator_settings.COMMUNICATOR_SEND_INTERVAL_MIN)
-    return max(math.ceil((end - local) / interval), 1)
+def _interval() -> timedelta:
+    return timedelta(minutes=communicator_settings.COMMUNICATOR_SEND_INTERVAL_MIN)
+
+
+def _window_runs(window, day: date) -> int:
+    span = datetime.combine(day, window.end_time) - datetime.combine(day, window.start_time)
+    return max(math.ceil(span / _interval()), 0)
+
+
+def _elapsed_runs(window, local: datetime) -> int:
+    """Runs of `window` started by `local`, the one at `local` included."""
+    if local.time() < window.start_time:
+        return 0
+    start = datetime.combine(local.date(), window.start_time, tzinfo=local.tzinfo)
+    return min((local - start) // _interval() + 1, _window_runs(window, local.date()))
+
+
+def runs_today(policy: SendPolicy, at: datetime) -> int:
+    """Beat runs across all of today's windows."""
+    day = _local(policy, at).date()
+    return sum(_window_runs(window, day) for window in _windows(policy))
+
+
+def spread_allowed(policy: SendPolicy, at: datetime) -> int:
+    """Running quota: the daily cap in proportion to today's runs elapsed so far, this one included."""
+    total = runs_today(policy, at)
+    if total == 0:
+        return 0
+    elapsed = sum(_elapsed_runs(window, _local(policy, at)) for window in _windows(policy))
+    return policy.daily_cap * elapsed // total
 
 
 def run_budget(policy: SendPolicy, at: datetime) -> int:
-    """Deliveries this run may make: 0 when closed; with `spread`, today's remaining cap over the runs left."""
+    """Deliveries this run may make: 0 when closed; with `spread`, the running quota minus today's deliveries."""
     if not is_open(policy, at):
         return 0
-    remaining = remaining_today(policy, at)
-    return math.ceil(remaining / runs_left(policy, at)) if policy.spread else remaining
+    if not policy.spread:
+        return remaining_today(policy, at)
+    sent = counter_service.sent_on(policy.channel, channel_day(policy, at))
+    return max(spread_allowed(policy, at) - sent, 0)

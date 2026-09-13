@@ -72,9 +72,26 @@ def test_C17_spread_does_not_front_load_backlog(policy, sandbox, static_template
     clock_service.set_override(policy.channel, _at(2026, 9, 14, 16, 56))
     last = send_service.run_send_due()
 
-    assert policy_service.runs_left(policy, _at(2026, 9, 14, 8, 0)) == 108
-    assert (first["sent"], first["deferred"]) == (1, 4)  # ceil(10 remaining / 84 runs left)
-    assert (last["sent"], last["deferred"]) == (4, 0)  # the last run of the window may use the rest
+    assert policy_service.runs_today(policy, _at(2026, 9, 14, 8, 0)) == 108
+    assert (first["sent"], first["deferred"]) == (2, 3)  # floor(10 * 25 elapsed runs / 108)
+    assert (last["sent"], last["deferred"]) == (3, 0)  # the last run of the day may use the rest
+
+
+def test_C17_spread_cap_10_over_108_runs_spreads_evenly(policy, sandbox, static_template):
+    policy.spread = True
+    policy.save()
+    for n in range(12):
+        approved_message(subject_ref=f"spread-day:{n}")
+
+    sent_per_run = []
+    for run in range(108):
+        clock_service.set_override(policy.channel, _at(2026, 9, 14, 8, 0) + timedelta(minutes=5 * run))
+        sent_per_run.append(send_service.run_send_due()["sent"])
+
+    sending_runs = [run for run, sent in enumerate(sent_per_run) if sent]
+    gaps = {later - earlier for earlier, later in zip(sending_runs, sending_runs[1:], strict=False)}
+    assert (max(sent_per_run), sum(sent_per_run), len(mail.outbox)) == (1, 10, 10)
+    assert (sending_runs[0], sending_runs[-1], gaps) == (10, 107, {10, 11})
 
 
 def test_unknown_country_is_409_not_500(policy, static_template, admin_api):
