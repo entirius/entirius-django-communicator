@@ -25,3 +25,22 @@ COMMUNICATOR_CLOCK_CACHE_KEY = "communicator:clock:{channel_idx}"
 COMMUNICATOR_SENT_COUNTER_KEY = "communicator:sent:{channel_idx}:{day}"
 # Workers refuse to start without the celery-once backend (two beats must never send twice).
 COMMUNICATOR_REQUIRE_ONCE_BACKEND = getattr(settings, "COMMUNICATOR_REQUIRE_ONCE_BACKEND", True)
+
+# Inbound (beat `poll_inbox` every 5 minutes): messages fetched per mailbox per run, soft-bounce retry delay.
+COMMUNICATOR_INBOUND_BATCH = getattr(settings, "COMMUNICATOR_INBOUND_BATCH", 50)
+COMMUNICATOR_SOFT_BOUNCE_RETRY_H = getattr(settings, "COMMUNICATOR_SOFT_BOUNCE_RETRY_H", 24)
+# Lower-case phrases matched case-insensitively on the first 2 000 characters of the plain-text body; the
+# recipient's language list, all languages when the thread has no language with a list.
+COMMUNICATOR_OPTOUT_PHRASES = getattr(
+    settings,
+    "COMMUNICATOR_OPTOUT_PHRASES",
+    {
+        "pl": ["nie chcę", "proszę nie pisać", "wypisz", "usuń mnie", "rezygnuję"],
+        "en": ["unsubscribe", "stop emailing", "remove me", "do not contact", "opt out"],
+    },
+)
+COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS = getattr(
+    settings,
+    "COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS",
+    ["out of office", "auto-reply", "automatic reply", "autoreply", "poza biurem", "nieobecn"],
+)

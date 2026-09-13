@@ -28,6 +28,7 @@ dependencies = [
     "celery-once>=3.0.1",
     "redis>=5.0",
     "holidays>=0.50",
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]

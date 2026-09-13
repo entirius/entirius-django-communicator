@@ -27,3 +27,11 @@ groups:
       - Thread
       - ThreadPoolUsage
       - ThreadSequenceState
+  - name: inbound
+    title: "Inbound Replies & Mailbox"
+    models:
+      - Channel
+      - MailboxConfig
+      - Thread
+      - Message
+      - Reply

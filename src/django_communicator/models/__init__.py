@@ -3,9 +3,11 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 from django_communicator.models.channel import Channel
+from django_communicator.models.mailbox_config import MailboxConfig
 from django_communicator.models.message import Message
 from django_communicator.models.message_template import MessageTemplate
 from django_communicator.models.message_template_version import MessageTemplateVersion
+from django_communicator.models.reply import Reply
 from django_communicator.models.send_policy import SendPolicy
 from django_communicator.models.send_window import SendWindow
 from django_communicator.models.sequence import Sequence
@@ -18,9 +20,11 @@ from django_communicator.models.thread_sequence_state import ThreadSequenceState
 
 __all__ = [
     "Channel",
+    "MailboxConfig",
     "Message",
     "MessageTemplate",
     "MessageTemplateVersion",
+    "Reply",
     "SendPolicy",
     "SendWindow",
     "Sequence",

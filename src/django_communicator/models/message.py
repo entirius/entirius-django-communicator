@@ -47,6 +47,8 @@ class Message(BaseModel):
     message_id = models.CharField(max_length=255, blank=True, default="")
     failure_code = models.CharField(max_length=32, choices=FailureCode.choices, blank=True, default="")
     failure_detail = models.TextField(blank=True, default="")
+    replied_at = models.DateTimeField(null=True, blank=True)
+    bounce_retry_at = models.DateTimeField(null=True, blank=True, help_text="Set by the first soft bounce (4.x.x).")
 
     class Meta:
         indexes = [models.Index(fields=["status", "created_at"], name="communicator_msg_status_idx")]

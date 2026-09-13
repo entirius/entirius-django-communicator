@@ -53,6 +53,21 @@ class FailureCode(models.TextChoices):
     MODEL = "model", "Model"
     UPSTREAM = "upstream", "Upstream"
     SMTP = "smtp", "SMTP"
+    BOUNCE = "bounce", "Bounce"
+
+
+class ReplyKind(models.TextChoices):
+    REPLY = "reply", "Reply"
+    AUTO = "auto", "Autoresponder"
+    SUSPECTED_OPTOUT = "suspected_optout", "Suspected opt-out"
+    BOUNCE_HARD = "bounce_hard", "Hard bounce"
+    BOUNCE_SOFT = "bounce_soft", "Soft bounce"
+
+
+class ReplyMatch(models.TextChoices):
+    HEADER = "header", "Header"
+    SENDER = "sender", "Sender"
+    DSN = "dsn", "DSN"
 
 
 class SequenceStopReason(models.TextChoices):
@@ -68,7 +83,8 @@ _S = MessageStatus
 _DELIVERY_OUTCOMES = frozenset({_S.SENT.value, _S.FAILED.value, _S.SUPPRESSED.value, _S.WOULD_SEND.value})
 
 # The only legal status edges; `services.message_service.transition` enforces them. Terminal statuses map to
-# an empty set. `scheduled` is an approved message waiting for an SMTP retry (4xx).
+# an empty set. `scheduled` is an approved message waiting for an SMTP retry (4xx) or a soft-bounce retry;
+# a delivery status notification moves a `sent` message to `failed` (hard) or back to `scheduled` (soft).
 MESSAGE_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
     _S.DRAFT.value: frozenset(
         {_S.REVIEW_REQUIRED.value, _S.APPROVED.value, _S.FAILED.value, _S.REJECTED.value, _S.SUPERSEDED.value}
@@ -76,7 +92,7 @@ MESSAGE_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
     _S.REVIEW_REQUIRED.value: frozenset({_S.APPROVED.value, _S.REJECTED.value, _S.SUPERSEDED.value}),
     _S.APPROVED.value: _DELIVERY_OUTCOMES | {_S.SCHEDULED.value},
     _S.SCHEDULED.value: _DELIVERY_OUTCOMES,
-    _S.SENT.value: frozenset(),
+    _S.SENT.value: frozenset({_S.FAILED.value, _S.SCHEDULED.value}),
     _S.FAILED.value: frozenset(),
     _S.SUPPRESSED.value: frozenset(),
     _S.WOULD_SEND.value: frozenset(),
