@@ -80,7 +80,7 @@ def rewrite(message: Message, *, notes: str, automated: bool = False) -> Message
     if automated and message.automated_rewrites >= communicator_settings.COMMUNICATOR_AUTOMATED_REWRITE_LIMIT:
         raise RewriteLimitReachedError("automated rewrite limit reached")
     prompt = f"{message.rendered_prompt}\n\n{notes.strip()}"
-    counters = {"review_notes": notes, "automated_rewrites": message.automated_rewrites + int(automated)}
+    counters = {"review_notes": notes, "automated": automated}
     try:
         draft = drafting_service.generate(
             prompt=prompt, version=message.template_version, tag=REWRITE_TAG, channel_idx=message.thread.channel.idx

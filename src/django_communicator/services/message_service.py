@@ -55,12 +55,17 @@ def transition(message: Message, new_status: str, *, user=None, reason: str = ""
 
 
 @transaction.atomic
-def create_version(message: Message, *, status: str = MessageStatus.REVIEW_REQUIRED, **changes) -> Message:
-    """Next version of `message` (parent = message, version + 1). The old one is superseded unless the new failed."""
+def create_version(
+    message: Message, *, status: str = MessageStatus.REVIEW_REQUIRED, automated: bool = False, **changes
+) -> Message:
+    """Next version of `message` (parent = message, version + 1). The old one is superseded unless the new failed.
+
+    `automated` counts the version against the automated rewrite limit, read under the row lock.
+    """
     locked = Message.objects.select_for_update().get(pk=message.pk)
     if status != MessageStatus.FAILED:
         transition(locked, MessageStatus.SUPERSEDED)
         message.status = locked.status
     fields = {name: getattr(locked, name) for name in VERSION_INHERITED_FIELDS}
-    fields.update(changes)
+    fields.update(changes, automated_rewrites=locked.automated_rewrites + int(automated))
     return create_message(status=status, parent=locked, version=locked.version + 1, **fields)

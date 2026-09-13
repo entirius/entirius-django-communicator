@@ -18,6 +18,8 @@ MULTI_PART_SUFFIXES = frozenset(
 def registrable_domain(host: str) -> str:
     """`www.shop.pl` → `shop.pl`; raises `ValueError` on a host without usable labels."""
     host = host.strip().lower().rstrip(".")
+    if not host:
+        raise ValueError("not a domain")
     if _is_ip(host) or "." not in host:
         return host
     labels = [label for label in host.split(".") if label]

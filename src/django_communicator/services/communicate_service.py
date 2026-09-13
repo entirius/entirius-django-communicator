@@ -11,7 +11,13 @@ from pydantic import BaseModel, Field
 
 from django_communicator.enums import FailureCode, MessageStatus, TemplateKind, ThreadStatus
 from django_communicator.models import Channel, Message, MessageTemplate, Thread
-from django_communicator.services import drafting_service, message_service, suppression_service, template_service
+from django_communicator.services import (
+    channel_service,
+    drafting_service,
+    message_service,
+    suppression_service,
+    template_service,
+)
 from django_communicator.services.drafting_service import DraftOutputError
 from django_communicator.services.render_service import RenderError, render
 
@@ -41,7 +47,7 @@ def communicate(
     thread: Thread | None = None,
 ) -> Message:
     """Suppression → template → legal footer → render → static body or AI draft. Raises `Channel.DoesNotExist`."""
-    channel = Channel.objects.get(idx=channel_idx)
+    channel = channel_service.get_channel(channel_idx)
     base = {"render_context": context, "legal_footer": recipient.legal_footer, "requires_review": requires_review}
     if suppression_service.is_suppressed(channel, recipient.email):
         return _create(channel, recipient, subject_ref, thread, status=MessageStatus.SUPPRESSED, **base)

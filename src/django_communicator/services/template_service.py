@@ -4,6 +4,7 @@
 
 """Template resolution (recipient language → channel default → none) and content versioning on save."""
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Max, QuerySet
 from django_regional.models import Language
@@ -11,6 +12,7 @@ from django_regional.models import Language
 from django_communicator.models import Channel, MessageTemplate, MessageTemplateVersion
 
 CONTENT_FIELDS = ("subject", "body", "json_schema", "model")
+UPDATABLE_FIELDS = ("key", "kind", *CONTENT_FIELDS, "requires_legal_footer", "auto_approve", "is_active")
 
 
 class NoTemplateError(Exception):
@@ -41,6 +43,22 @@ def list_templates(channel: Channel) -> QuerySet[MessageTemplate]:
 def get_template(channel: Channel, pk: int) -> MessageTemplate:
     """Raises `MessageTemplate.DoesNotExist` when the template is not in this channel."""
     return list_templates(channel).get(pk=pk)
+
+
+def list_versions(template: MessageTemplate) -> QuerySet[MessageTemplateVersion]:
+    return template.versions.all()
+
+
+def update_template(template: MessageTemplate, *, language_code: str, user=None, **fields) -> MessageTemplate:
+    """Apply the whitelisted content fields and save with versioning; raises `ValidationError` (unknown language too)."""
+    language = find_language(language_code)
+    if language is None:
+        raise ValidationError({"language": ["Unknown language code."]})
+    for name in UPDATABLE_FIELDS:
+        if name in fields:
+            setattr(template, name, fields[name])
+    template.language = language
+    return save_template(template, user=user)
 
 
 @transaction.atomic

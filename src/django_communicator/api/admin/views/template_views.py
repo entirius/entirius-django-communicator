@@ -35,19 +35,13 @@ class DraftOutputInvalid(APIException):
 
 
 def _save(template: MessageTemplate, body: TemplateRequest, user) -> dict:
-    """Apply the whitelisted request fields and save through the versioning service."""
-    language = template_service.find_language(body.language)
-    if language is None:
-        raise ValidationError({"language": ["Unknown language code."]})
-    for field, value in body.model_dump(exclude={"language"}).items():
-        setattr(template, field, value)
-    template.language = language
+    """Save through the versioning service; model validation errors become the v2 400 shape."""
+    fields = body.model_dump(exclude={"language"})
     try:
-        template_service.save_template(template, user=user)
+        template_service.update_template(template, language_code=body.language, user=user, **fields)
     except DjangoValidationError as error:
-        raise ValidationError(
-            error.message_dict if hasattr(error, "error_dict") else {"non_field_errors": error.messages}
-        ) from None
+        detail = error.message_dict if hasattr(error, "error_dict") else {"non_field_errors": error.messages}
+        raise ValidationError(detail) from None
     return TemplateResponse.of(template).model_dump(mode="json")
 
 
@@ -109,7 +103,7 @@ class TemplateVersionsView(_TemplateObjectView):
         responses={200: TemplateVersionListResponse, **ERROR_RESPONSES},
     )
     def get(self, request: Request, channel_idx: str, pk: int) -> Response:
-        versions = self.template(channel_idx, pk).versions.all()
+        versions = template_service.list_versions(self.template(channel_idx, pk))
         results = [TemplateVersionResponse.model_validate(version) for version in versions]
         return Response(TemplateVersionListResponse(results=results).model_dump(mode="json"))
 

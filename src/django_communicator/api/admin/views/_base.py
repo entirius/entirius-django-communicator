@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from django_communicator.models import Channel
+from django_communicator.services import channel_service
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
@@ -41,7 +42,7 @@ class AdminView(APIView):
     @staticmethod
     def channel(channel_idx: str) -> Channel:
         try:
-            return Channel.objects.get(idx=channel_idx)
+            return channel_service.get_channel(channel_idx)
         except Channel.DoesNotExist:
             raise NotFound("Channel not found.") from None
 

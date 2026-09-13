@@ -136,3 +136,12 @@ def test_skip_company_rejects_and_emits_subject_ref(draft, admin_api):
 
     company_skipped.disconnect(dispatch_uid="tsc")
     assert (skipped.status, skipped.reject_reason, received) == ("rejected", "Not a fit", ["bdd:42"])
+
+
+def test_C08_automated_counter_is_read_under_the_lock(draft, toolbox):
+    stale = Message.objects.get(pk=draft.pk)
+    Message.objects.filter(pk=draft.pk).update(automated_rewrites=2)
+
+    rewritten = review_service.rewrite(stale, notes="Shorter.", automated=True)
+
+    assert rewritten.automated_rewrites == 3

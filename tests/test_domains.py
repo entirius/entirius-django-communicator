@@ -23,3 +23,8 @@ def test_email_domain_requires_a_host():
     assert email_domain("Jan@Sklep.Shop.pl") == "shop.pl"
     with pytest.raises(ValueError):
         email_domain("jan@")
+
+
+def test_empty_host_is_not_a_domain():
+    with pytest.raises(ValueError):
+        registrable_domain("  ")
