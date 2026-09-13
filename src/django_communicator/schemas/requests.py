@@ -3,11 +3,12 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Request schemas of the communicator admin API v2."""
 
+from datetime import datetime, time
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from django_communicator.enums import MessageStatus, SuppressionKind, TemplateKind
+from django_communicator.enums import ChannelMode, MessageStatus, SuppressionKind, TemplateKind
 from django_communicator.services.communicate_service import RecipientData
 
 
@@ -87,3 +88,92 @@ class DevCommunicateRequest(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict, description="Placeholder values.", examples=[{}])
     subject_ref: str = Field(min_length=1, max_length=200, description="Opaque reference.", examples=["bdd:c-01"])
     requires_review: bool = Field(default=True, description="False lets auto_approve templates pass.", examples=[True])
+
+
+class WindowRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    order: int = Field(default=0, ge=0, description="Display order.", examples=[0])
+    start_time: time = Field(description="Window start (inclusive), channel timezone.", examples=["08:00"])
+    end_time: time = Field(description="Window end (exclusive), channel timezone.", examples=["17:00"])
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> "WindowRequest":
+        if self.end_time <= self.start_time:
+            raise ValueError("end_time must be after start_time")
+        return self
+
+
+class PolicyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    business_days_only: bool = Field(default=True, description="Skip weekends and channel-country holidays.")
+    daily_cap: int = Field(ge=0, le=10000, description="Deliveries per channel day.", examples=[10])
+    spread: bool = Field(default=True, description="Spread the cap over the window runs.", examples=[True])
+    windows: list[WindowRequest] = Field(description="Hour windows; replaced as a whole.", examples=[[]])
+
+
+class OutboxQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    status: MessageStatus = Field(default=MessageStatus.APPROVED, description="Only messages in this status.")
+
+
+class SequenceStepRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    number: int = Field(ge=1, le=100, description="Step number, from 1.", examples=[1])
+    days_after_previous: int = Field(ge=0, le=365, description="Days after the previous delivery.", examples=[3])
+    template_key: str = Field(min_length=1, max_length=128, description="Static template key.", examples=["followup"])
+
+
+class SequenceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(
+        min_length=1, max_length=64, pattern=r"^[-a-zA-Z0-9_]+$", description="Slug.", examples=["followup"]
+    )
+    is_active: bool = Field(default=True, description="Schedules follow-ups.", examples=[True])
+    steps: list[SequenceStepRequest] = Field(min_length=1, description="Steps with unique numbers.", examples=[[]])
+
+    @model_validator(mode="after")
+    def _unique_numbers(self) -> "SequenceRequest":
+        if len({step.number for step in self.steps}) != len(self.steps):
+            raise ValueError("step numbers must be unique")
+        return self
+
+
+class TextRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    body: str = Field(min_length=1, max_length=4000, description="Follow-up text.", examples=["Just checking in."])
+    is_active: bool = Field(default=True, description="Can be picked.", examples=[True])
+
+
+class ChannelConfigRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: ChannelMode | None = Field(default=None, description="dry_run, sandbox or live.", examples=["sandbox"])
+    sandbox_mailbox: str | None = Field(
+        default=None,
+        max_length=254,
+        pattern=r"^([^@\s]+@[^@\s]+\.[^@\s]+)?$",
+        description="Sandbox recipient; empty clears.",
+        examples=["sandbox@mail.test"],
+    )
+    live_enabled: bool | None = Field(default=None, description="Allows live mode.", examples=[False])
+
+
+class DevClockRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    iso_datetime: datetime | None = Field(
+        description="Channel clock; naive = channel timezone; null clears.", examples=["2026-09-14T10:00:00"]
+    )
+
+
+class DevStartSequenceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    thread_id: int = Field(description="Thread of the channel.", examples=[3])
+    sequence_key: str = Field(min_length=1, max_length=64, description="Sequence key.", examples=["followup"])

@@ -3,7 +3,19 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 from django.contrib import admin
 
-from django_communicator.models import Channel, Message, MessageTemplate, MessageTemplateVersion, Suppression
+from django_communicator.models import (
+    Channel,
+    Message,
+    MessageTemplate,
+    MessageTemplateVersion,
+    SendPolicy,
+    SendWindow,
+    Sequence,
+    SequenceStep,
+    Suppression,
+    TextPool,
+    ThreadSequenceState,
+)
 from django_communicator.services import template_service
 
 
@@ -52,6 +64,50 @@ class MessageAdmin(admin.ModelAdmin):
     list_filter = ("status", "failure_code")
     search_fields = ("subject", "thread__subject_ref", "thread__recipient_email")
     list_select_related = ("thread",)
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        return False
+
+
+class SendWindowInline(admin.TabularInline):
+    model = SendWindow
+    extra = 0
+
+
+@admin.register(SendPolicy)
+class SendPolicyAdmin(admin.ModelAdmin):
+    list_display = ("channel", "business_days_only", "daily_cap", "spread")
+    inlines = [SendWindowInline]
+
+
+class SequenceStepInline(admin.TabularInline):
+    model = SequenceStep
+    extra = 0
+
+
+class TextPoolInline(admin.TabularInline):
+    model = TextPool
+    extra = 0
+
+
+@admin.register(Sequence)
+class SequenceAdmin(admin.ModelAdmin):
+    list_display = ("key", "channel", "is_active")
+    list_filter = ("channel", "is_active")
+    inlines = [SequenceStepInline, TextPoolInline]
+
+
+@admin.register(ThreadSequenceState)
+class ThreadSequenceStateAdmin(admin.ModelAdmin):
+    list_display = ("thread", "sequence", "step", "next_due_at", "stopped_at", "stop_reason")
+    list_filter = ("stop_reason",)
+    list_select_related = ("thread", "sequence")
 
     def has_add_permission(self, request) -> bool:
         return False

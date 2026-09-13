@@ -3,7 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Response schemas of the communicator admin API v2."""
 
-from datetime import datetime
+from datetime import datetime, time
 from typing import Any
 
 from django_utils.toolbox import ModelInfo
@@ -61,8 +61,15 @@ class MessageResponse(BaseModel):
     reject_reason: str = Field(description="Why rejected.", examples=[""])
     review_notes: str = Field(description="Notes that produced this version.", examples=[""])
     legal_footer: str = Field(description="Footer carried verbatim.", examples=[""])
-    scheduled_at: datetime | None = Field(description="Send slot (sending layer).", examples=[None])
-    failure_code: str = Field(description="no_template, render, budget, schema, model or upstream.", examples=[""])
+    scheduled_at: datetime | None = Field(description="Send slot; empty = due at once.", examples=[None])
+    sent_at: datetime | None = Field(
+        description="Delivered (sent or would_send) on the channel clock.", examples=[None]
+    )
+    message_id: str = Field(description="Our Message-ID header once sent.", examples=[""])
+    send_attempts: int = Field(description="SMTP deliveries tried.", examples=[0])
+    failure_code: str = Field(
+        description="no_template, render, budget, schema, model, upstream or smtp.", examples=[""]
+    )
     failure_detail: str = Field(description="Error class and codes — never the prompt.", examples=[""])
     created_at: datetime = Field(description="Created.", examples=["2026-09-13T12:00:00Z"])
 
@@ -168,3 +175,112 @@ class SuppressionResponse(BaseModel):
 
 class SuppressionListResponse(BaseModel):
     results: list[SuppressionResponse] = Field(description="Suppressions of the channel.", examples=[[]])
+
+
+class OutboxMessageResponse(MessageDetailResponse):
+    next_slot: datetime | None = Field(description="Earliest send slot of a waiting message.", examples=[None])
+
+
+class OutboxListResponse(BaseModel):
+    count: int = Field(description="Total matching messages.", examples=[1])
+    next: str | None = Field(description="Next page URL.", examples=[None])
+    previous: str | None = Field(description="Previous page URL.", examples=[None])
+    results: list[OutboxMessageResponse] = Field(description="Oldest first.", examples=[[]])
+
+
+class WindowResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    order: int = Field(description="Display order.", examples=[0])
+    start_time: time = Field(description="Start (inclusive).", examples=["08:00:00"])
+    end_time: time = Field(description="End (exclusive).", examples=["17:00:00"])
+
+
+class PolicyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    business_days_only: bool = Field(description="Weekends and holidays skipped.", examples=[True])
+    daily_cap: int = Field(description="Deliveries per channel day.", examples=[10])
+    spread: bool = Field(description="Cap spread over the window runs.", examples=[True])
+    windows: list[WindowResponse] = Field(description="Hour windows.", examples=[[]])
+    timezone: str = Field(description="Channel timezone.", examples=["Europe/Warsaw"])
+    country: str = Field(description="Holiday country.", examples=["PL"])
+    sent_today: int = Field(description="Deliveries counted today on the channel clock.", examples=[0])
+    next_slot: datetime | None = Field(description="Next open moment from the channel clock.", examples=[None])
+
+
+class SequenceStepResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Step id.", examples=[1])
+    number: int = Field(description="Step number.", examples=[1])
+    days_after_previous: int = Field(description="Days after the previous delivery.", examples=[3])
+    template_key: str = Field(description="Static template key.", examples=["followup"])
+
+
+class SequenceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Sequence id.", examples=[1])
+    key: str = Field(description="Slug.", examples=["followup"])
+    is_active: bool = Field(description="Schedules follow-ups.", examples=[True])
+    steps: list[SequenceStepResponse] = Field(description="Steps by number.", examples=[[]])
+
+    @classmethod
+    def of(cls, sequence) -> "SequenceResponse":
+        steps = [SequenceStepResponse.model_validate(step) for step in sequence.steps.all()]
+        return cls(id=sequence.pk, key=sequence.key, is_active=sequence.is_active, steps=steps)
+
+
+class SequenceListResponse(BaseModel):
+    results: list[SequenceResponse] = Field(description="Sequences of the channel by key.", examples=[[]])
+
+
+class SequenceStepListResponse(BaseModel):
+    results: list[SequenceStepResponse] = Field(description="Steps by number.", examples=[[]])
+
+
+class TextResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Text id.", examples=[1])
+    body: str = Field(description="Follow-up text.", examples=["Just checking in."])
+    is_active: bool = Field(description="Can be picked.", examples=[True])
+
+
+class TextListResponse(BaseModel):
+    results: list[TextResponse] = Field(description="Texts of the sequence.", examples=[[]])
+
+
+class ChannelConfigResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    idx: str = Field(description="Channel idx.", examples=["default-europe"])
+    label: str = Field(description="Label.", examples=["Default Europe"])
+    mode: str = Field(description="dry_run, sandbox or live.", examples=["sandbox"])
+    sandbox_mailbox: str = Field(description="Sandbox recipient.", examples=["sandbox@mail.test"])
+    live_enabled: bool = Field(description="Live mode allowed.", examples=[False])
+    timezone: str = Field(description="Timezone.", examples=["Europe/Warsaw"])
+    country: str = Field(description="Holiday country.", examples=["PL"])
+
+
+class SendDueResponse(BaseModel):
+    sent: int = Field(description="Delivered over SMTP.", examples=[1])
+    would_send: int = Field(description="Recorded by dry_run channels.", examples=[0])
+    suppressed: int = Field(description="Recipient suppressed after approval.", examples=[0])
+    failed: int = Field(description="Failed on SMTP.", examples=[0])
+    deferred: int = Field(description="Left for a later run (window, cap, spread, 4xx).", examples=[0])
+    follow_ups_scheduled: int = Field(description="Follow-ups created before sending.", examples=[0])
+
+
+class ClockResponse(BaseModel):
+    now: datetime = Field(description="Channel clock after the change.", examples=["2026-09-14T10:00:00+02:00"])
+
+
+class SequenceStateResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    thread_id: int = Field(description="Thread id.", examples=[3])
+    sequence_id: int = Field(description="Sequence id.", examples=[1])
+    step: int = Field(description="Follow-ups scheduled so far.", examples=[0])
+    next_due_at: datetime | None = Field(description="Next follow-up due.", examples=[None])

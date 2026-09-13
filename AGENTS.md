@@ -31,7 +31,7 @@ Same rule applies to PR descriptions: no `Generated with [Claude Code]` footer.
 
 ## Architecture
 
-Layers one way: API → services → models. Plan 05 ships templates, `communicate()` and review; sending and inbound come later.
+Layers one way: API → services → models. Templates, `communicate()`, review and sending ship; inbound comes later.
 
 - `models/` — `Channel` (`idx`, mode/sandbox/live flags for the sending layer), `MessageTemplate` (channel + key +
   language, `static` | `ai_prompt`, `current_version`), `MessageTemplateVersion` (immutable content snapshot),
@@ -52,6 +52,33 @@ Layers one way: API → services → models. Plan 05 ships templates, `communica
 - Toolbox tags: `communicator.draft` | `communicator.rewrite` | `communicator.test_generate` + `channel:<idx>`.
 - Soft dependency: extra `notifications` — without it a failed draft only logs a warning.
 
+## Sending
+
+- One send path: beat `django_communicator.send_due` (every 5 min, queue `communicator_send`, `QueueOnce`
+  graceful) → `services/send_service.run_send_due` → `delivery_service.deliver` — nothing else calls `deliver(`
+  (a test greps for it). Each due message is claimed with `select_for_update(skip_locked=True)` in its own transaction.
+- Due = outbound `approved`/`scheduled` with `scheduled_at` empty or reached on the channel clock
+  (`clock_service.now_for`, dev-only cache override). `accept` sets `scheduled_at` = next policy slot;
+  `send_now` sets it to now and nothing else.
+- Policy (`SendPolicy` + `SendWindow`, tz/country from the channel): business day (`holidays`), window, daily cap
+  (Redis `communicator:sent:<idx>:<channel day>`, 48 h TTL; dry_run does not count), spread = send with
+  probability remaining / runs left in the window.
+- Modes: `dry_run` → `would_send`, no SMTP; `sandbox` → `sandbox_mailbox`, `X-Original-To`, `[SANDBOX] ` prefix;
+  `live` only with `live_enabled` and `ENVIRONMENT == "production"` — otherwise the channel is skipped and a
+  critical notification goes out once per channel day. `Channel.clean()` / `channel_service.set_mode` refuse
+  sandbox without mailbox and live without the flag.
+- Mail (`mail_builder`): multipart/alternative, footer after `-- `, `Message-ID: <communicator-<id>-<hex8>@<from
+  domain>>`, `In-Reply-To`/`References` from earlier sent messages of the thread; connection from
+  `EMAIL_SMTP_CONFIGURATION_CHANNELS[<channel idx>]` via django_email — missing → messages stay, high alert once a day.
+- SMTP: 5xx → `failed/smtp` (+ email suppression on 550/551/553/554 in live); 4xx / transport → `scheduled`,
+  `failed/smtp` at `COMMUNICATOR_SMTP_MAX_ATTEMPTS` (`Message.send_attempts`; `attempts` stays toolbox calls).
+- Sequences: `start_sequence` / `stop_sequence` / `pause_sequence`; beat `django_communicator.schedule_follow_ups`
+  (hourly, `communicator_default`) creates the next follow-up via `communicate(requires_review=False)` with the
+  previous context + `body` = a random unused pool text (whole pool + warning once used up). The next due date
+  counts from the delivery; the delivery of the last step stops the state `finished` and emits `sequence_finished`.
+- Host beat schedule: `send_due` `crontab(minute="*/5")`, `schedule_follow_ups` `crontab(minute=0)`.
+  Workers need `app.conf.ONCE` (Redis) — `AppConfig.ready()` raises otherwise (`COMMUNICATOR_REQUIRE_ONCE_BACKEND`).
+
 ## Admin API v2
 
 Prefix `api/communicator/v2/admin/<channel_idx>/`, `JWTAuthentication` + `IsAdminUser`:
@@ -65,14 +92,21 @@ Prefix `api/communicator/v2/admin/<channel_idx>/`, `JWTAuthentication` + `IsAdmi
 | `POST templates/<id>/test-generate/` (`{context}`) | draft without saving; toolbox errors keep their status |
 | `GET models/` | toolbox catalogue passthrough |
 | `GET/POST suppressions/`, `DELETE suppressions/<id>/` | duplicate → 409 |
-| `POST test/communicate/` | `ENVIRONMENT == "development"` only, else 404 |
+| `GET/PATCH channel/` (`{mode, sandbox_mailbox, live_enabled}`) | unsafe mode combination → 409 |
+| `GET/PUT policy/` | policy + windows (PUT replaces), `sent_today`, `next_slot` |
+| `GET messages/?status=` · `POST messages/<id>/send-now/` | outbox with `next_slot`; send now of a non-waiting message → 409 |
+| `GET/POST sequences/`, `GET sequences/<id>/steps/`, `GET/POST sequences/<id>/texts/` | duplicate key → 409 |
+| `POST test/communicate/` · `test/clock/` (`{iso_datetime}`) · `test/send-due/` · `test/start-sequence/` | `ENVIRONMENT == "development"` only, else 404 |
 
 ## Host integration
 
 - `INSTALLED_APPS += ["django_communicator"]` (after `django_regional`, `django_notifications`);
   `urlpatterns.append(path("", include("django_communicator.urls")))`.
 - Settings: `AI_TOOLBOX_*` (utils), `COMMUNICATOR_AUTOMATED_REWRITE_LIMIT` (3), `COMMUNICATOR_QUEUE_*`,
-  `COMMUNICATOR_LIVE_REQUIRES_PRODUCTION` (True).
+  `COMMUNICATOR_LIVE_REQUIRES_PRODUCTION` (True), `EMAIL_SMTP_CONFIGURATION_CHANNELS` (django_email),
+  `REDIS_URL` / `COMMUNICATOR_REDIS_URL`, `COMMUNICATOR_SMTP_MAX_ATTEMPTS` (3), `COMMUNICATOR_SEND_INTERVAL_MIN` (5),
+  `COMMUNICATOR_SANDBOX_SUBJECT_PREFIX`, `COMMUNICATOR_REQUIRE_ONCE_BACKEND` (True).
+- Runtime deps the host lock must carry: `holidays`, `celery-once`, `redis`, `entirius-django-email` (tests: `fakeredis`).
 
 ## Gotchas
 
@@ -87,7 +121,10 @@ Prefix `api/communicator/v2/admin/<channel_idx>/`, `JWTAuthentication` + `IsAdmi
 
 - Host: `make check && make test` (`DATABASE_URL`, else `postgres:postgres@localhost:5432/test_communicator`);
   toolbox mocked with `django_utils.toolbox.testing.mock_toolbox`.
-- Covered IDs: C-01…C-09, C-10…C-12 (consumer mapping), C-29, C-33 (`tests/test_communicate.py`, `tests/test_review.py`).
+- Covered IDs: C-01…C-09, C-10…C-12 (consumer mapping), C-29, C-33 (`tests/test_communicate.py`, `tests/test_review.py`);
+  C-13…C-19, C-31, C-32 (`tests/test_sending.py`, `tests/test_policy.py`), C-27, C-28 (`tests/test_sequences.py`), C-30.
+  Counter on fakeredis, mail in `django.core.mail.outbox`, celery-once on a file backend.
 - Zeno: `make module-test MODULE=entirius-django-communicator`; BDD: `make toolbox-check && make seed &&
   make bdd TAGS=@communicator` (emporium `fixtures/django_communicator.cfg.yaml`,
-  `features/communicator/communicator_draft.feature`). End-to-end guide: plan 12.
+  `features/communicator/communicator_draft.feature`, `communicator_send.feature` — `@communicator-oneshot` needs a
+  fresh seed). End-to-end guide: plan 12.
