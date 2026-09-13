@@ -2,6 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+import holidays
 from django.core.exceptions import ValidationError
 from django.db import models
 from django_utils.models.base_model import BaseModel
@@ -39,7 +42,18 @@ class Channel(BaseModel):
             raise ValidationError({"sandbox_mailbox": "sandbox mode requires a sandbox mailbox"})
         if self.mode == ChannelMode.LIVE and not self.live_enabled:
             raise ValidationError({"live_enabled": "live mode requires live_enabled"})
+        self.validate_locale()
+
+    def validate_locale(self) -> None:
+        """`country` must be known to `holidays` and `timezone` to `zoneinfo` — the send policy reads both."""
+        if self.country not in holidays.list_supported_countries():
+            raise ValidationError({"country": f"country {self.country!r} is not supported by holidays"})
+        try:
+            ZoneInfo(self.timezone)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValidationError({"timezone": f"unknown timezone {self.timezone!r}"}) from None
 
     def save(self, *args, **kwargs) -> None:
         validate_idx(str(self.idx))
+        self.validate_locale()
         super().save(*args, **kwargs)

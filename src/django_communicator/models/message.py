@@ -44,6 +44,8 @@ class Message(BaseModel):
     legal_footer = models.TextField(blank=True, default="")
     scheduled_at = models.DateTimeField(null=True, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
+    send_attempted_at = models.DateTimeField(null=True, blank=True, help_text="Wall clock of the `sending` claim.")
+    sequence_step = models.PositiveSmallIntegerField(null=True, blank=True, help_text="Set on sequence follow-ups.")
     message_id = models.CharField(max_length=255, blank=True, default="")
     failure_code = models.CharField(max_length=32, choices=FailureCode.choices, blank=True, default="")
     failure_detail = models.TextField(blank=True, default="")

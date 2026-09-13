@@ -32,12 +32,14 @@ class MessageStatus(models.TextChoices):
     REVIEW_REQUIRED = "review_required", "Review required"
     APPROVED = "approved", "Approved"
     SCHEDULED = "scheduled", "Scheduled"
+    SENDING = "sending", "Sending"
     SENT = "sent", "Sent"
     FAILED = "failed", "Failed"
     SUPPRESSED = "suppressed", "Suppressed"
     WOULD_SEND = "would_send", "Would send"
     REJECTED = "rejected", "Rejected"
     SUPERSEDED = "superseded", "Superseded"
+    SKIPPED = "skipped", "Skipped"
 
 
 class SuppressionKind(models.TextChoices):
@@ -54,6 +56,7 @@ class FailureCode(models.TextChoices):
     UPSTREAM = "upstream", "Upstream"
     SMTP = "smtp", "SMTP"
     BOUNCE = "bounce", "Bounce"
+    SEND_OUTCOME_UNKNOWN = "send_outcome_unknown", "Send outcome unknown"
 
 
 class ReplyKind(models.TextChoices):
@@ -77,25 +80,32 @@ class SequenceStopReason(models.TextChoices):
     MANUAL = "manual", "Manual"
     FINISHED = "finished", "Finished"
     PAUSED = "paused", "Paused"
+    FAILED = "failed", "Failed"
+    SUPPRESSED = "suppressed", "Suppressed"
 
 
 _S = MessageStatus
-_DELIVERY_OUTCOMES = frozenset({_S.SENT.value, _S.FAILED.value, _S.SUPPRESSED.value, _S.WOULD_SEND.value})
+_DELIVERY_OUTCOMES = frozenset(
+    {_S.SENT.value, _S.FAILED.value, _S.SUPPRESSED.value, _S.WOULD_SEND.value, _S.SKIPPED.value}
+)
 
 # The only legal status edges; `services.message_service.transition` enforces them. Terminal statuses map to
 # an empty set. `scheduled` is an approved message waiting for an SMTP retry (4xx) or a soft-bounce retry;
-# a delivery status notification moves a `sent` message to `failed` (hard) or back to `scheduled` (soft).
+# `sending` is the committed claim of one delivery (never re-sent: a stale claim ends `failed`); a delivery
+# status notification moves a `sent` message to `failed` (hard) or back to `scheduled` (soft).
 MESSAGE_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
     _S.DRAFT.value: frozenset(
         {_S.REVIEW_REQUIRED.value, _S.APPROVED.value, _S.FAILED.value, _S.REJECTED.value, _S.SUPERSEDED.value}
     ),
     _S.REVIEW_REQUIRED.value: frozenset({_S.APPROVED.value, _S.REJECTED.value, _S.SUPERSEDED.value}),
-    _S.APPROVED.value: _DELIVERY_OUTCOMES | {_S.SCHEDULED.value},
-    _S.SCHEDULED.value: _DELIVERY_OUTCOMES,
+    _S.APPROVED.value: frozenset({_S.SENDING.value, _S.SCHEDULED.value}),
+    _S.SCHEDULED.value: frozenset({_S.SENDING.value}),
+    _S.SENDING.value: _DELIVERY_OUTCOMES | {_S.SCHEDULED.value},
     _S.SENT.value: frozenset({_S.FAILED.value, _S.SCHEDULED.value}),
     _S.FAILED.value: frozenset(),
     _S.SUPPRESSED.value: frozenset(),
     _S.WOULD_SEND.value: frozenset(),
     _S.REJECTED.value: frozenset(),
     _S.SUPERSEDED.value: frozenset(),
+    _S.SKIPPED.value: frozenset(),
 }
