@@ -31,7 +31,7 @@ Same rule applies to PR descriptions: no `Generated with [Claude Code]` footer.
 
 ## Architecture
 
-Layers one way: API → services → models. Templates, `communicate()`, review and sending ship; inbound comes later.
+Layers one way: API → services → models. Templates, `communicate()`, review, sending and inbound ship.
 
 - `models/` — `Channel` (`idx`, mode/sandbox/live flags for the sending layer), `MessageTemplate` (channel + key +
   language, `static` | `ai_prompt`, `current_version`), `MessageTemplateVersion` (immutable content snapshot),
@@ -79,6 +79,35 @@ Layers one way: API → services → models. Templates, `communicate()`, review 
 - Host beat schedule: `send_due` `crontab(minute="*/5")`, `schedule_follow_ups` `crontab(minute=0)`.
   Workers need `app.conf.ONCE` (Redis) — `AppConfig.ready()` raises otherwise (`COMMUNICATOR_REQUIRE_ONCE_BACKEND`).
 
+## Inbound
+
+- Beat `django_communicator.poll_inbox` (`crontab(minute="*/5")`, queue `communicator_inbound`, `QueueOnce` graceful,
+  autoretry on `IMAP4.error`/`OSError` ×3) → `services/poll_service.poll_all`: per active `MailboxConfig`
+  (one per channel, password `EncryptedTextField` keyed from `SECRET_KEY`) EXAMINE (read-only) the folder,
+  `UID SEARCH last_uid+1:*`, at most `COMMUNICATOR_INBOUND_BATCH` mails, `last_uid` advanced after every mail
+  (an unreadable mail is logged and skipped). A highest UID below the cursor = UIDVALIDITY change → cursor 0 + warning.
+  IMAP failure → `notify(medium, "IMAP poll failed")` once per channel day, then the error re-raises for the retry.
+  Mail is never deleted or flagged; credentials and bodies are never logged.
+- `services/inbound_service.ingest(channel, raw) -> Reply | None`, fixed order:
+  1. duplicate inbound Message-ID (missing → `<sha256-…@communicator>`) → the existing `Reply`, nothing else (C-26);
+     our own outbound Message-ID (sandbox copy in the mailbox) → dropped;
+  2. DSN (`multipart/report; report-type=delivery-status` or a `message/delivery-status` part; original id from
+     `Original-Message-ID` → report `In-Reply-To`/`References` → returned message) — `5.x.x`: `bounce_hard`,
+     message `failed/bounce`, email suppressed, sequence stopped `bounce`, `notify(low)` (C-24); `4.x.x`:
+     `bounce_soft`, first → `scheduled` at now + `COMMUNICATOR_SOFT_BOUNCE_RETRY_H`, second → `failed/bounce` (C-25).
+     DSNs never change `Thread.status`; an unmatched DSN is dropped;
+  3. thread: our Message-ID in `In-Reply-To`/`References` (`header`, C-20), else the newest open thread whose
+     recipient is the sender (`sender`, C-21); no match → dropped (logged, not stored);
+  4. autoresponder (`Auto-Submitted` ≠ no, `X-Autoreply`, `X-Autorespond`, `Precedence` auto_reply/bulk/junk, subject
+     patterns) → `auto`, nothing else (C-22) — beats an opt-out phrase;
+  5. opt-out phrase of the recipient language (all languages without one) in the first 2 000 body chars →
+     `suspected_optout`, sequence paused, thread `replied`, `notify(medium)` — no suppression (C-23);
+  6. reply → thread `replied`, `Message.replied_at`, sequence stopped `replied`, `reply_received`, `notify(high)`.
+- `services/optout_service.confirm(reply, user)` → email suppression, sequence `optout`, `optout_confirmed(subject_ref,
+  email, channel_idx)`, `django_agreements` `record_objection` when installed (soft, `functools.cache` guard);
+  `dismiss(reply)` → kind `reply`, `reply_received`, no notification, the sequence stays paused.
+- `Reply.raw_headers` holds headers only; attachments are never stored.
+
 ## Admin API v2
 
 Prefix `api/communicator/v2/admin/<channel_idx>/`, `JWTAuthentication` + `IsAdminUser`:
@@ -96,7 +125,11 @@ Prefix `api/communicator/v2/admin/<channel_idx>/`, `JWTAuthentication` + `IsAdmi
 | `GET/PUT policy/` | policy + windows (PUT replaces), `sent_today`, `next_slot` |
 | `GET messages/?status=` · `POST messages/<id>/send-now/` | outbox with `next_slot`; send now of a non-waiting message → 409 |
 | `GET/POST sequences/`, `GET sequences/<id>/steps/`, `GET/POST sequences/<id>/texts/` | duplicate key → 409 |
-| `POST test/communicate/` · `test/clock/` (`{iso_datetime}`) · `test/send-due/` · `test/start-sequence/` | `ENVIRONMENT == "development"` only, else 404 |
+| `GET threads/?subject_ref=` · `GET threads/<id>/` | thread list; one thread with its `timeline` (messages + replies, 4 queries) |
+| `GET replies/?kind=&thread=` | newest first |
+| `POST replies/<id>/confirm-optout/` · `dismiss-optout/` | 200; not an undecided `suspected_optout` → 409 |
+| `GET/PUT mailbox/` | IMAP config; `imap_password` write-only (`has_password`), omitted on PUT = kept |
+| `POST test/communicate/` · `test/clock/` (`{iso_datetime}`) · `test/send-due/` · `test/start-sequence/` · `test/poll-now/` | `ENVIRONMENT == "development"` only, else 404 |
 
 ## Host integration
 
@@ -105,8 +138,11 @@ Prefix `api/communicator/v2/admin/<channel_idx>/`, `JWTAuthentication` + `IsAdmi
 - Settings: `AI_TOOLBOX_*` (utils), `COMMUNICATOR_AUTOMATED_REWRITE_LIMIT` (3), `COMMUNICATOR_QUEUE_*`,
   `COMMUNICATOR_LIVE_REQUIRES_PRODUCTION` (True), `EMAIL_SMTP_CONFIGURATION_CHANNELS` (django_email),
   `REDIS_URL` / `COMMUNICATOR_REDIS_URL`, `COMMUNICATOR_SMTP_MAX_ATTEMPTS` (3), `COMMUNICATOR_SEND_INTERVAL_MIN` (5),
-  `COMMUNICATOR_SANDBOX_SUBJECT_PREFIX`, `COMMUNICATOR_REQUIRE_ONCE_BACKEND` (True).
-- Runtime deps the host lock must carry: `holidays`, `celery-once`, `redis`, `entirius-django-email` (tests: `fakeredis`).
+  `COMMUNICATOR_SANDBOX_SUBJECT_PREFIX`, `COMMUNICATOR_REQUIRE_ONCE_BACKEND` (True), `COMMUNICATOR_INBOUND_BATCH` (50),
+  `COMMUNICATOR_SOFT_BOUNCE_RETRY_H` (24), `COMMUNICATOR_OPTOUT_PHRASES`, `COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS`.
+- Runtime deps the host lock must carry: `holidays`, `celery-once`, `redis`, `entirius-django-email`, `cryptography`
+  (tests: `fakeredis`).
+- Host beat schedule adds `poll_inbox` `crontab(minute="*/5")`; workers consume `communicator_inbound`.
 
 ## Gotchas
 
@@ -115,16 +151,21 @@ Prefix `api/communicator/v2/admin/<channel_idx>/`, `JWTAuthentication` + `IsAdmi
   fire on commit. Automated rewrites are counted on the locked row before the toolbox call — failures count.
 - Static templates and suppressed recipients never reach the toolbox; `complete()` is never retried.
 - `failure_detail` holds error class, toolbox code, HTTP status and field names — never the prompt.
-- `utils/domains.py` is a copy of the leads/siteintel rule — never import it across modules.
+- `utils/domains.py` is a copy of the leads/siteintel rule, `utils/encryption.py` + `encrypted_field.py` of
+  contact_forms — never import them across modules. Rotating `SECRET_KEY` empties stored IMAP passwords.
+- `Thread.status` is written only by `inbound_service` (and the plan 05 close action). There is no resume endpoint
+  for a paused sequence yet — a dismissed opt-out stays paused.
 
 ## Testing end-to-end
 
 - Host: `make check && make test` (`DATABASE_URL`, else `postgres:postgres@localhost:5432/test_communicator`);
   toolbox mocked with `django_utils.toolbox.testing.mock_toolbox`.
 - Covered IDs: C-01…C-09, C-10…C-12 (consumer mapping), C-29, C-33 (`tests/test_communicate.py`, `tests/test_review.py`);
-  C-13…C-19, C-31, C-32 (`tests/test_sending.py`, `tests/test_policy.py`), C-27, C-28 (`tests/test_sequences.py`), C-30.
+  C-13…C-19, C-31, C-32 (`tests/test_sending.py`, `tests/test_policy.py`), C-27, C-28 (`tests/test_sequences.py`), C-30; C-20…C-26 (`tests/test_inbound.py` on
+  `tests/fixtures/mail/*.eml`, copies of the emporium fixtures; imaplib faked).
   Counter on fakeredis, mail in `django.core.mail.outbox`, celery-once on a file backend.
 - Zeno: `make module-test MODULE=entirius-django-communicator`; BDD: `make toolbox-check && make seed &&
   make bdd TAGS=@communicator` (emporium `fixtures/django_communicator.cfg.yaml`,
-  `features/communicator/communicator_draft.feature`, `communicator_send.feature` — `@communicator-oneshot` needs a
+  `features/communicator/communicator_draft.feature`, `communicator_send.feature`, `communicator_inbound.feature` (C-20…C-24,
+  needs `make mail`) — `@communicator-oneshot` needs a
   fresh seed). End-to-end guide: plan 12.
