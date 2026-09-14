@@ -45,6 +45,7 @@ class MessageStatus(models.TextChoices):
 class SuppressionKind(models.TextChoices):
     EMAIL = "email", "Email"
     DOMAIN = "domain", "Domain"
+    EMAIL_TOKEN = "email_token", "Erased address token (all channels)"
 
 
 class FailureCode(models.TextChoices):

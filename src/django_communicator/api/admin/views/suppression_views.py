@@ -3,7 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Admin API v2 — suppression list: list, add, remove."""
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -22,10 +22,13 @@ class SuppressionListView(AdminView):
         tags=_TAGS,
         operation_id="communicator_suppressions_list",
         summary="List suppressions of the channel",
+        description="Includes the global `email_token` rows of erased or anonymised addresses (no plain address).",
+        parameters=[OpenApiParameter("value", str, description="Only rows with this value (lower-cased).")],
         responses={200: SuppressionListResponse, **ERROR_RESPONSES},
     )
     def get(self, request: Request, channel_idx: str) -> Response:
-        rows = suppression_service.list_suppressions(self.channel(channel_idx))
+        value = request.query_params.get("value", "")
+        rows = suppression_service.list_suppressions(self.channel(channel_idx), value)
         results = [SuppressionResponse.model_validate(row) for row in rows]
         return Response(SuppressionListResponse(results=results).model_dump(mode="json"))
 

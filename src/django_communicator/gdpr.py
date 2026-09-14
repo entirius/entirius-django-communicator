@@ -4,43 +4,43 @@
 
 """GDPR hooks (art. 15 export, art. 17 erasure) discovered by `django_leads.gdpr.registry`.
 
-Erasure pseudonymises (rows stay for counters and the audit trail) and suppresses the address on every channel
-that wrote to it — that suppression is the only place the plain address remains, so `communicate()` answers
-`suppressed` afterwards."""
+Erasure pseudonymises (rows stay for counters and the audit trail) and suppresses the address's token on every
+channel (`email_token`, no channel) — the plain address is kept nowhere, and `communicate()` answers `suppressed`
+for it afterwards, whether or not a thread ever existed."""
 
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Q
 
 from django_communicator.enums import SuppressionKind
-from django_communicator.models import Channel, Message, Suppression
+from django_communicator.models import Suppression
 from django_communicator.services import anonymisation_service, suppression_service
-from django_communicator.utils.emails import anonymised_address, normalize_email
+from django_communicator.utils.emails import anonymised_address, email_hash, normalize_email
 
 THREAD_FIELDS = ("id", "channel__idx", "subject_ref", "recipient_email", "recipient_name", "status", "created_at")
-MESSAGE_FIELDS = ("id", "thread_id", "direction", "subject", "body_text", "status", "sent_at")
+MESSAGE_FIELDS = ("id", "thread_id", "direction", "subject", "body_text", "body_html", "legal_footer",
+                  "rendered_prompt", "render_context", "status", "sent_at")  # fmt: skip
 REPLY_FIELDS = ("id", "thread_id", "from_email", "subject", "body_text", "kind", "received_at")
 
 
 def gdpr_export(email: str) -> dict[str, Any]:
-    threads = anonymisation_service.threads_of_email(email)
-    thread_ids = list(threads.values_list("pk", flat=True))
-    replies = anonymisation_service.replies_of_email(email, thread_ids)
-    suppressions = Suppression.objects.filter(kind=SuppressionKind.EMAIL, value=normalize_email(email))
+    thread_ids = list(anonymisation_service.threads_of_email(email).values_list("pk", flat=True))
+    token_rows = Q(kind=SuppressionKind.EMAIL_TOKEN, value=anonymised_address(email))
+    suppressions = Suppression.objects.filter(Q(kind=SuppressionKind.EMAIL, value=normalize_email(email)) | token_rows)
     return {
-        "Thread": list(threads.values(*THREAD_FIELDS)),
-        "Message": list(Message.objects.filter(thread_id__in=thread_ids).values(*MESSAGE_FIELDS)),
-        "Reply": list(replies.values(*REPLY_FIELDS)),
-        "Suppression": list(suppressions.values("channel__idx", "reason", "created_at")),
+        "Thread": list(anonymisation_service.threads_of_email(email).values(*THREAD_FIELDS)),
+        "Message": list(anonymisation_service.outbound_messages(thread_ids).values(*MESSAGE_FIELDS)),
+        "Reply": list(anonymisation_service.replies_of_email(email).values(*REPLY_FIELDS)),
+        "Suppression": list(suppressions.values("channel__idx", "kind", "reason", "created_at")),
     }
 
 
 def gdpr_erase(email: str) -> dict[str, int]:
+    token = anonymised_address(email)
     thread_ids = list(anonymisation_service.threads_of_email(email).values_list("pk", flat=True))
-    channels = list(Channel.objects.filter(threads__pk__in=thread_ids).distinct())
     with transaction.atomic():
         counts = anonymisation_service.erase_contents(thread_ids, email)
-        counts["threads"] = anonymisation_service.anonymise_recipients(thread_ids, anonymised_address(email))["threads"]
-        for channel in channels:
-            suppression_service.suppress_email(channel, email, reason="gdpr_erase")
-    return {**counts, "suppressions": len(channels)}
+        anonymised = anonymisation_service.anonymise_recipients(thread_ids, token, email_hash(email))
+        suppression_service.suppress_token(token, reason="gdpr_erase")
+    return {**counts, "threads": anonymised["threads"], "suppressions": 1}

@@ -12,7 +12,7 @@ from django.db.models import Q, QuerySet
 from django_communicator.enums import SuppressionKind
 from django_communicator.models import Channel, Suppression
 from django_communicator.utils.domains import email_domain, registrable_domain
-from django_communicator.utils.emails import is_anonymised
+from django_communicator.utils.emails import anonymised_address, is_anonymised
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,8 @@ class DuplicateSuppressionError(Exception):
 
 
 def is_suppressed(channel: Channel, email: str) -> bool:
-    """Listed email or domain; an anonymised token (retention, GDPR erasure) is suppressed without a row."""
+    """The address's token suppressed globally (erased or anonymised), or its email or domain listed on the channel;
+    a token address itself is suppressed without a row."""
     email = email.strip().lower()
     if is_anonymised(email):
         return True
@@ -30,8 +31,15 @@ def is_suppressed(channel: Channel, email: str) -> bool:
         domain = email_domain(email)
     except ValueError:
         domain = ""
-    matches = Q(kind=SuppressionKind.EMAIL, value=email) | Q(kind=SuppressionKind.DOMAIN, value=domain)
-    return Suppression.objects.filter(matches, channel=channel).exists()
+    erased = Q(channel=None, kind=SuppressionKind.EMAIL_TOKEN, value=anonymised_address(email))
+    listed = Q(kind=SuppressionKind.EMAIL, value=email) | Q(kind=SuppressionKind.DOMAIN, value=domain)
+    return Suppression.objects.filter(erased | Q(listed, channel=channel)).exists()
+
+
+def suppress_token(token: str, *, reason: str) -> None:
+    """Idempotent global suppression of an erased or anonymised address by its token (never the plain address)."""
+    row = Suppression(channel=None, kind=SuppressionKind.EMAIL_TOKEN, value=token, reason=reason)
+    Suppression.objects.bulk_create([row], ignore_conflicts=True)
 
 
 def normalise_value(kind: str, value: str) -> str:
@@ -52,8 +60,10 @@ def _is_dotted(host: str) -> bool:
     return len(labels) > 1 and all(labels)
 
 
-def list_suppressions(channel: Channel) -> QuerySet[Suppression]:
-    return Suppression.objects.filter(channel=channel).order_by("kind", "value")
+def list_suppressions(channel: Channel, value: str = "") -> QuerySet[Suppression]:
+    """The channel's rows and the global token rows; `value` narrows to one normalised value."""
+    rows = Suppression.objects.filter(Q(channel=channel) | Q(channel=None)).order_by("kind", "value")
+    return rows.filter(value=value.strip().lower()) if value.strip() else rows
 
 
 def create_suppression(channel: Channel, *, kind: str, value: str, reason: str = "", user=None) -> Suppression:

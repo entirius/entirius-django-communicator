@@ -168,7 +168,7 @@ class SuppressionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int = Field(description="Suppression id.", examples=[1])
-    kind: str = Field(description="email or domain.", examples=["domain"])
+    kind: str = Field(description="email, domain or email_token (global).", examples=["domain"])
     value: str = Field(description="Lower-cased email or registrable domain.", examples=["shop.test"])
     reason: str = Field(description="Why.", examples=[""])
     created_at: datetime = Field(description="Created.", examples=["2026-09-13T12:00:00Z"])

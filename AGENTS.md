@@ -37,7 +37,7 @@ Layers one way: API → services → models. Templates, `communicate()`, review,
   language, `static` | `ai_prompt`, `current_version`), `MessageTemplateVersion` (immutable content snapshot),
   `Thread` (channel + opaque `subject_ref` + recipient), `Message` (one version; `parent` chain), `Suppression`.
 - `services/communicate_service.communicate(*, channel_idx, template_key, recipient, context, subject_ref,
-  requires_review=True, thread=None) -> Message`: suppression (email / registrable domain) → `suppressed`;
+  requires_review=True, thread=None) -> Message`: suppression (global token / email / registrable domain) → `suppressed`;
   template by recipient language → channel default → `failed/no_template`; footer required and empty →
   `LegalFooterRequiredError` (nothing created); missing placeholder → `failed/render`; static → `approved` when
   `auto_approve and not requires_review`, else `review_required`; ai_prompt → one toolbox completion →
@@ -150,15 +150,22 @@ Layers one way: API → services → models. Templates, `communicate()`, review,
 ## Retention and GDPR
 
 - `signals/leads_receivers.py` (connected in `apps.ready()` only when django_leads is installed): leads'
-  `contact_anonymised(email_hash, anonymised_email, subject_ref)` → threads of that `subject_ref` whose recipient
-  hashes to `email_hash` (`utils/emails.email_hash`, a verbatim copy of leads') get the token as recipient and an
-  empty name, their replies the token as sender and no headers; bodies stay. Queryset updates, idempotent, never raises.
-- `gdpr.py` (discovered by django_leads): export threads (by address or its token), messages, replies and email
-  suppressions; erase = the same anonymisation on every such thread plus bodies, footers, prompts and render contexts
-  scrubbed (`[erased]`), and `Suppression(email, reason="gdpr_erase")` on every channel that had a thread — the only
-  place the plain address remains.
-- `suppression_service.is_suppressed` is true for any address on `LEADS_ANONYMISED_DOMAIN`: `communicate()` and the
-  delivery refuse tokens, so an approved message of an anonymised thread ends `suppressed`, never sent.
+  `contact_anonymised(email_hash, anonymised_email, subject_ref)` (retention and erasure alike) → the token suppressed
+  globally (below), then threads of that `subject_ref` whose recipient hashes to `email_hash` get the token as
+  recipient and an empty name, and the replies in them whose sender hashes to `email_hash` the token as sender and no
+  headers; bodies stay. Queryset updates, idempotent, never raises.
+- Subject scope: a subject's rows are outbound messages of threads to the address (or its token) and replies *sent
+  by* the address — a colleague's or mailer-daemon's reply in the same thread is neither exported nor rewritten.
+- `gdpr.py` (discovered by django_leads): export threads, messages (incl. `body_html`, `legal_footer`,
+  `rendered_prompt`, `render_context`), replies and suppressions (plain email rows and the token row); erase = the same
+  anonymisation plus subjects and bodies `[erased]`, footers, prompts and render contexts cleared, and the global token
+  suppression.
+- Global suppression: `Suppression(kind=email_token, channel=None, value=<token>)` (`suppression_service.
+  suppress_token`, idempotent, partial unique constraint) — never the plain address. `is_suppressed` matches it for
+  every channel, also for an address that never had a thread; a token address itself is always suppressed.
+- Tokens: `utils/emails.email_hash` / `anonymised_address` are verbatim copies of `django_leads.utils.emails` (never
+  imported); `tests/test_gdpr.py::test_token_parity_with_django_leads` compares them on tricky inputs when leads is
+  installed (skipped otherwise).
 
 ## Admin API v2
 
@@ -172,7 +179,7 @@ Prefix `api/communicator/v2/admin/<channel_idx>/`, `JWTAuthentication` + `IsAdmi
 | `GET/POST templates/`, `GET/PUT templates/<id>/`, `GET templates/<id>/versions/` | editor; PUT versions content |
 | `POST templates/<id>/test-generate/` (`{context}`) | draft without saving; toolbox errors keep their status |
 | `GET models/` | toolbox catalogue passthrough |
-| `GET/POST suppressions/`, `DELETE suppressions/<id>/` | duplicate → 409 |
+| `GET suppressions/?value=`, `POST suppressions/`, `DELETE suppressions/<id>/` | list includes global `email_token` rows (not deletable per channel); duplicate → 409 |
 | `GET/PATCH channel/` (`{mode, sandbox_mailbox, live_enabled}`) | unsafe mode combination → 409 |
 | `GET/PUT policy/` | policy + windows (PUT replaces), `sent_today`, `next_slot` |
 | `GET messages/?status=` · `POST messages/<id>/send-now/` | outbox with `next_slot`; send now of a non-waiting message → 409 |
