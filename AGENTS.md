@@ -147,6 +147,19 @@ Layers one way: API → services → models. Templates, `communicate()`, review,
   `resume(thread)` → `sequence_service.resume_sequence` (re-armed from the last delivery) + thread `open`.
 - `Reply.raw_headers` holds headers only; attachments are never stored.
 
+## Retention and GDPR
+
+- `signals/leads_receivers.py` (connected in `apps.ready()` only when django_leads is installed): leads'
+  `contact_anonymised(email_hash, anonymised_email, subject_ref)` → threads of that `subject_ref` whose recipient
+  hashes to `email_hash` (`utils/emails.email_hash`, a verbatim copy of leads') get the token as recipient and an
+  empty name, their replies the token as sender and no headers; bodies stay. Queryset updates, idempotent, never raises.
+- `gdpr.py` (discovered by django_leads): export threads (by address or its token), messages, replies and email
+  suppressions; erase = the same anonymisation on every such thread plus bodies, footers, prompts and render contexts
+  scrubbed (`[erased]`), and `Suppression(email, reason="gdpr_erase")` on every channel that had a thread — the only
+  place the plain address remains.
+- `suppression_service.is_suppressed` is true for any address on `LEADS_ANONYMISED_DOMAIN`: `communicate()` and the
+  delivery refuse tokens, so an approved message of an anonymised thread ends `suppressed`, never sent.
+
 ## Admin API v2
 
 Prefix `api/communicator/v2/admin/<channel_idx>/`, `JWTAuthentication` + `IsAdminUser`:

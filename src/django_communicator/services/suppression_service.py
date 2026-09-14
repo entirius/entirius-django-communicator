@@ -12,6 +12,7 @@ from django.db.models import Q, QuerySet
 from django_communicator.enums import SuppressionKind
 from django_communicator.models import Channel, Suppression
 from django_communicator.utils.domains import email_domain, registrable_domain
+from django_communicator.utils.emails import is_anonymised
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,10 @@ class DuplicateSuppressionError(Exception):
 
 
 def is_suppressed(channel: Channel, email: str) -> bool:
+    """Listed email or domain; an anonymised token (retention, GDPR erasure) is suppressed without a row."""
     email = email.strip().lower()
+    if is_anonymised(email):
+        return True
     try:
         domain = email_domain(email)
     except ValueError:
