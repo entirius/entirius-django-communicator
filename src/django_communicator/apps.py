@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-from django.apps import AppConfig
+from django.apps import AppConfig, apps
 
 
 class DjangoCommunicatorConfig(AppConfig):
@@ -17,3 +17,7 @@ class DjangoCommunicatorConfig(AppConfig):
 
         if communicator_settings.COMMUNICATOR_REQUIRE_ONCE_BACKEND:
             assert_once_backend_configured()
+        if apps.is_installed("django_leads"):
+            from django_communicator.signals import leads_receivers
+
+            leads_receivers.connect()

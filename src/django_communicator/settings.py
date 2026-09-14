@@ -22,6 +22,8 @@ COMMUNICATOR_SANDBOX_SUBJECT_PREFIX = getattr(settings, "COMMUNICATOR_SANDBOX_SU
 COMMUNICATOR_REDIS_URL = getattr(settings, "COMMUNICATOR_REDIS_URL", getattr(settings, "REDIS_URL", ""))
 COMMUNICATOR_CLOCK_CACHE_KEY = "communicator:clock:{channel_idx}"
 COMMUNICATOR_SENT_COUNTER_KEY = "communicator:sent:{channel_idx}:{day}"
+# Host of the tokens that replace anonymised addresses (same setting as django_leads): always suppressed.
+LEADS_ANONYMISED_DOMAIN = getattr(settings, "LEADS_ANONYMISED_DOMAIN", "anonymised.invalid")
 # Workers refuse to start without the celery-once backend (two beats must never send twice).
 COMMUNICATOR_REQUIRE_ONCE_BACKEND = getattr(settings, "COMMUNICATOR_REQUIRE_ONCE_BACKEND", True)
 
