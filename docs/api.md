@@ -65,7 +65,7 @@ Every 409 uses the v2 error shape; `error` tells the kinds apart, `message` expl
 | `CHANNEL_CONFIG_INVALID` | the stored channel country or timezone cannot drive a policy |
 | `DUPLICATE_SUPPRESSION` · `DUPLICATE_SEQUENCE` | the suppression value or sequence key already exists |
 | `OPTOUT_STATE` | opt-out action on anything but an undecided `suspected_optout`; `resume-sequence/` while an opt-out is undecided or the sequence is not paused |
-| `ALREADY_RUNNING` | development `test/send-due/` or `test/poll-now/` while the beat holds the lock |
+| `ALREADY_RUNNING` | development `test/send-due/`, `test/poll-now/` or `test/retry-drafts/` while the beat holds the lock |
 
 `communicate()` failures on the review path never surface as HTTP errors — they are `failed` messages.
 
@@ -82,6 +82,8 @@ They exist for BDD and e2e and are not part of `openapi.yaml`.
 | `POST test/start-sequence/` (`{thread_id, sequence_key}`) | start a sequence in a thread |
 | `POST test/poll-now/` | poll this channel's mailbox under the `poll_inbox` lock (409 while held) |
 | `POST test/reset-counters/` (`{days}`) | clear the daily send counters |
+| `POST test/retry-drafts/` | `retry_failed_drafts` in-process under its celery-once lock (409 while held) → `{recovered, failed}` |
+| `POST test/toolbox-outage/` (`{down}`) | turn the `django_utils.toolbox.outage` switch on / off; 404 where the switch is not allowed (no `DEBUG` and no `AI_TOOLBOX_TEST_SWITCH`, or production) |
 
 ## OpenAPI
 

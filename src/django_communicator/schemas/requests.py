@@ -173,6 +173,10 @@ class DevClockRequest(BaseModel):
     )
 
 
+class DevToolboxOutageRequest(BaseModel):
+    down: bool = Field(description="True simulates a toolbox outage, false ends it.", examples=[True])
+
+
 class DevResetCountersRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

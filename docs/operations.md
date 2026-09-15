@@ -12,7 +12,16 @@ Install-time facts (prerequisites, settings, beat schedule, bootstrap order) are
 | `django_communicator.send_due` | `*/5` min | `communicator_send` | the only send path; `QueueOnce`, graceful |
 | `django_communicator.schedule_follow_ups` | hourly | `communicator_default` | creates due sequence follow-ups; `QueueOnce`, graceful |
 | `django_communicator.poll_inbox` | `*/5` min | `communicator_inbound` | IMAP poll of every active mailbox; `QueueOnce`, graceful, retried ×3 on IMAP / socket errors |
+| `django_communicator.retry_failed_drafts` | `*/10` min | `communicator_default` | retries AI drafts that failed transiently (toolbox down, timeout, 5xx) once `status()` is `configured`; `QueueOnce`, graceful |
 | `django_communicator.record_objection` | — | `communicator_default` | retry of a confirmed opt-out's agreements objection (×5, backoff) |
+
+**After a toolbox outage** drafts ended `failed/upstream`. `retry_failed_drafts` retries each first-version
+AI draft whose last failure was transient (`ToolboxConnectionError`, `ToolboxTimeoutError`, HTTP 5xx) at most
+`COMMUNICATOR_DRAFT_RETRY_LIMIT` times, from the stored prompt and template version; a success moves it to
+`review_required` (never approved or sent), every attempt adds a `retry N: …` line to `failure_detail`. Skipped:
+budget / model / schema / auth failures, follow-ups, rewrite versions, drafts with a newer outbound message in the
+thread, suppressed recipients, and drafts that failed before the retry existed (no stored prompt). An alert
+fires only when a retry ends the retries (a permanent error or the limit).
 
 A queue missing from a worker's `-Q` makes its task queue forever without an error. Workers have no
 autoreload — restart them after a module upgrade.

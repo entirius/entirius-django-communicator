@@ -12,6 +12,8 @@ QUEUE_INBOUND = getattr(settings, "COMMUNICATOR_QUEUE_INBOUND", "communicator_in
 
 # Automated rewrite loops stop after this many rewrites of one draft chain; human rewrites are unlimited.
 COMMUNICATOR_AUTOMATED_REWRITE_LIMIT = getattr(settings, "COMMUNICATOR_AUTOMATED_REWRITE_LIMIT", 3)
+# Beat `retry_failed_drafts` retries an AI draft that failed transiently at most this many times.
+COMMUNICATOR_DRAFT_RETRY_LIMIT = getattr(settings, "COMMUNICATOR_DRAFT_RETRY_LIMIT", 3)
 
 # Sending (beat `send_due` every COMMUNICATOR_SEND_INTERVAL_MIN minutes — also the unit of the spread formula).
 COMMUNICATOR_SEND_INTERVAL_MIN = getattr(settings, "COMMUNICATOR_SEND_INTERVAL_MIN", 5)

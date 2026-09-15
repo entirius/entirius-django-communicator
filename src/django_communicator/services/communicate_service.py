@@ -94,7 +94,9 @@ def _ai_draft(channel, recipient, subject_ref, thread, template: MessageTemplate
             channel_idx=channel.idx, subject_ref=subject_ref, code=code, template_key=template.key
         )
         detail = drafting_service.failure_detail(error)
-        return _fail(channel, recipient, subject_ref, thread, code, detail, {**base, "attempts": 1})
+        # A transient failure keeps the prompt for `draft_retry_service`; any other failure stores none.
+        retry = {"rendered_prompt": prompt} if drafting_service.is_transient(detail) else {}
+        return _fail(channel, recipient, subject_ref, thread, code, detail, {**base, "attempts": 1, **retry})
     return _create(
         channel,
         recipient,

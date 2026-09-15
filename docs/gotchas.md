@@ -16,7 +16,13 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   failing model cannot loop past `COMMUNICATOR_AUTOMATED_REWRITE_LIMIT`.
 - **Static templates and suppressed recipients never reach the toolbox; `complete()` is never retried** —
   it is paid and non-idempotent.
-- **`failure_detail` holds error class, toolbox code, HTTP status and field names — never the prompt.**
+- **`failure_detail` holds error class, toolbox code, HTTP status and field names — never the prompt.** Its
+  last line decides whether a draft is retried (`drafting_service.is_transient`) — keep the `failure_detail()`
+  format, and append retry lines, never rewrite them.
+- **A draft retry is a new whole generation, not a `complete()` retry.** `retry_failed_drafts` counts it on the
+  row (`draft_retries`, compare-and-set) before the call, holds no lock or transaction during it, and only
+  `message_service.recover_draft` moves `failed → review_required`. Only transient failures keep
+  `rendered_prompt` on a failed draft — that stored prompt is what the retry sends.
 - **A template content change goes through `template_service.save_template`** (Django admin included) —
   a direct `save()` would change content without a version and break C-29.
 

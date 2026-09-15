@@ -45,10 +45,10 @@ src/django_communicator/
 │               clock_service  channel_service (live_allowed)  mail_builder  alert_service
 │               sequence_service  sending_config_service  suppression_service
 │               poll_service  inbound_service (ingest)  mail_parser  dsn_service  optout_service  inbox_service
-│               anonymisation_service
+│               anonymisation_service  draft_retry_service (transient failure retry)
 ├── signals/    __init__.py (message_approved, company_skipped, message_sent, sequence_finished,
 │               reply_received, optout_confirmed)  leads_receivers.py (contact_anonymised)
-├── tasks/      send_due  schedule_follow_ups  poll_inbox  record_objection
+├── tasks/      send_due  schedule_follow_ups  poll_inbox  record_objection  retry_failed_drafts
 └── utils/      domains  emails  encryption  encrypted_field (copies — never cross-imported)
 ```
 
@@ -89,7 +89,8 @@ Flow: caller `communicate()` → `Message` (`review_required` | `approved` | `fa
   (`communicator_inbound.feature`, needs `make mail`).
 - One-shot tag: `@communicator-oneshot` (C-17, daily cap) — a re-run needs a fresh `make seed`.
 - Dev-only test endpoints (`ENVIRONMENT == "development"`, else 404): `test/communicate/`, `test/clock/`,
-  `test/send-due/`, `test/start-sequence/`, `test/poll-now/`, `test/reset-counters/` — `docs/api.md`.
+  `test/send-due/`, `test/start-sequence/`, `test/poll-now/`, `test/reset-counters/`, `test/retry-drafts/`,
+  `test/toolbox-outage/` — `docs/api.md`.
 - zeno: `make toolbox-check && make seed && make mail && make bdd TAGS=@communicator`; the funnel journey:
   `make e2e-funnel` (Emporium `e2e/cms/test_leads_funnel.py`).
 - Guides: portal `guides/leads-end-to-end-testing.md` (modes A/B/C, funnel steps); Emporium
