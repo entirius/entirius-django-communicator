@@ -5,12 +5,12 @@
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from drf_spectacular.utils import OpenApiParameter, extend_schema
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from django_communicator.api.admin.views._base import ERROR_RESPONSES, AdminPagination, AdminView, Conflict, parse
-from django_communicator.enums import MessageStatus
+from django_communicator.enums import ChannelMode, MessageStatus
 from django_communicator.models import Message
 from django_communicator.schemas.requests import ChannelConfigRequest, OutboxQuery, PolicyRequest
 from django_communicator.schemas.responses import (
@@ -58,18 +58,21 @@ class ChannelConfigView(AdminView):
 
     @extend_schema(
         tags=_TAGS,
-        summary="Change mode, sandbox mailbox or live flag",
-        description="sandbox without a mailbox or live without live_enabled answers 409 (C-30).",
+        summary="Change mode or sandbox mailbox",
+        description="live and live_enabled are set in Django admin only: `mode=live` or any `live_enabled` answers "
+        "400. sandbox without a mailbox answers 409 (C-30).",
         request=ChannelConfigRequest,
         responses={200: ChannelConfigResponse, **ERROR_RESPONSES, 409: None},
     )
     def patch(self, request: Request, channel_idx: str) -> Response:
         body = parse(ChannelConfigRequest, request.data)
         channel = self.channel(channel_idx)
+        if body.mode == ChannelMode.LIVE and channel.mode != ChannelMode.LIVE:
+            raise ValidationError({"mode": ["live is set in Django admin only"]})
         try:
             channel_service.set_mode(channel, **body.model_dump(mode="json"))
         except DjangoValidationError as error:
-            raise Conflict("; ".join(error.messages)) from None
+            raise Conflict("; ".join(error.messages), code="channel_mode_invalid") from None
         return Response(ChannelConfigResponse.model_validate(channel).model_dump(mode="json"))
 
 
@@ -140,5 +143,5 @@ class SendNowView(AdminView):
         except Message.DoesNotExist:
             raise NotFound("Message not found.") from None
         except InvalidTransitionError as error:
-            raise Conflict(str(error)) from None
+            raise Conflict(str(error), code="not_waiting") from None
         return Response(MessageDetailResponse.of(message).model_dump(mode="json"))

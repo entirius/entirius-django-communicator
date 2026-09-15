@@ -315,6 +315,7 @@ class ThreadListResponse(BaseModel):
 
 class TimelineEntryResponse(BaseModel):
     kind: str = Field(description="message or reply.", examples=["reply"])
+    message_id: int | None = Field(description="Message id; null for a reply.", examples=[None])
     at: datetime = Field(description="Sent, received or created.", examples=["2026-09-14T10:15:00Z"])
     direction: str = Field(description="out or in.", examples=["in"])
     status: str = Field(description="Message status; empty for a reply.", examples=[""])

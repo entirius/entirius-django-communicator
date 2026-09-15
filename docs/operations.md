@@ -22,8 +22,8 @@ autoreload — restart them after a module upgrade.
 | From → to | How | Refused when |
 |---|---|---|
 | `dry_run` → `sandbox` | `PATCH channel/` `{"mode": "sandbox", "sandbox_mailbox": "..."}` or Django admin | no `sandbox_mailbox` (409 / validation error, C-30) |
-| any → `live` | `live_enabled = true` and `mode = live` (Django admin or `PATCH channel/`) | `live_enabled` false |
-| `live` → `sandbox` / `dry_run` | the same | — |
+| any → `live` | `live_enabled = true` and `mode = live`, Django admin only — `PATCH channel/` answers 400 to `mode = live` or any `live_enabled` | `live_enabled` false |
+| `live` → `sandbox` / `dry_run` | Django admin or `PATCH channel/` | — |
 
 Saving `mode = live` is not sending live. Delivery also needs `ENVIRONMENT == "production"`; on any
 other environment a live channel's messages wait and a `critical` "Live sending refused" alert goes out
@@ -34,8 +34,9 @@ built for another mode is deferred, not sent.
 
 Every alert is `django_notifications.notify(channel_idx=<communicator channel idx>,
 recipient_role="sales_admin", …)`. **The notifications channel must have the same `idx` as the
-communicator channel** — `notify` raises for an unknown channel, and communicator only logs a warning,
-so a missing notifications channel silently loses every alert. Without django_notifications
+communicator channel** — `notify` raises for an unknown channel; communicator catches it and logs an ERROR
+`communicator alert lost: communicator channel <idx> -> notifications channel <idx> …` with the severity,
+subject and title, so the alert survives only in the log. Alert on that line. Without django_notifications
 installed, only log lines remain.
 
 | Severity | Title | When | Repeats |
@@ -84,8 +85,8 @@ Channel: `________` · Date: `________` · Operator: `________` · Sales owner: 
       other setting relaxes it).
 - [ ] **Double gate set deliberately.** In Django admin (Grappelli) the channel has `live_enabled = true`
       and `mode = live` — set by the operator as the last step of this list. `GET channel/` reads
-      `{"mode": "live", "live_enabled": true}`. Note: any staff JWT can also set both with
-      `PATCH channel/`; restrict staff accounts accordingly.
+      `{"mode": "live", "live_enabled": true}`. The admin API cannot set either (`PATCH channel/` answers
+      400).
 - [ ] **Legal texts final.** For every legal basis × language the channel sends in, the current published
       `django_agreements` `ClauseSet` (info, opt-out and retention clauses) holds the lawyer's final text,
       not a TEST placeholder. Every template used by the channel keeps `requires_legal_footer = true`.

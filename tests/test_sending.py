@@ -1,6 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
+import logging
 import re
 import smtplib
 from datetime import datetime, timedelta
@@ -93,6 +94,20 @@ def test_C15_live_outside_production_refused_notify_critical_once(policy, static
     with override_settings(ENVIRONMENT="production"), mock.patch("django.utils.timezone.now", return_value=MONDAY_10):
         _run()
     assert mail.outbox[0].to == ["jan@example-shop-1.test"] and "X-Original-To" not in mail.outbox[0].extra_headers
+
+
+def test_item2_alert_without_notifications_channel_is_an_error_not_an_exception(
+    policy, static_template, once_backend, caplog
+):
+    channel_service.set_mode(policy.channel, mode=ChannelMode.LIVE, live_enabled=True)
+    approved_message()
+
+    with caplog.at_level(logging.ERROR, logger="django_communicator.services.alert_service"):
+        send_due.run()
+
+    [record] = [r for r in caplog.records if r.levelno == logging.ERROR]
+    expected = f"communicator channel {CHANNEL_IDX} -> notifications channel {CHANNEL_IDX}"
+    assert expected in record.getMessage() and "Live sending refused" in record.getMessage()
 
 
 def test_C18_once_backend_missing_fails_loud_and_second_run_exits(
@@ -218,6 +233,23 @@ def test_channel_config_and_policy_api(policy, admin_api):
     assert admin_api.get(api_url("channel/")).json()["mode"] == "dry_run"
 
 
+@pytest.mark.parametrize(
+    ("body", "field"),
+    [
+        ({"mode": "live"}, "mode"),
+        ({"live_enabled": True}, "live_enabled"),
+        ({"mode": "live", "live_enabled": True}, "live_enabled"),
+    ],
+)
+def test_item1_admin_api_cannot_switch_a_channel_live(policy, admin_api, body, field):
+    response = admin_api.patch(api_url("channel/"), body, format="json")
+
+    channel = Channel.objects.get(pk=policy.channel.pk)
+    assert response.status_code == 400
+    assert field in {detail["field"] for detail in response.json()["details"]}
+    assert (channel.mode, channel.live_enabled) == (ChannelMode.DRY_RUN, False)
+
+
 def test_sequence_api(channel, admin_api):
     body = {"key": "followup", "steps": [{"number": 1, "days_after_previous": 3, "template_key": "followup"}]}
     created = admin_api.post(api_url("sequences/"), body, format="json").json()
@@ -267,7 +299,7 @@ def test_broken_channel_does_not_stop_the_others(policy, sandbox, static_templat
 
 
 @pytest.mark.django_db(transaction=True)
-def test_C15_worker_killed_after_smtp_does_not_resend(policy, sandbox, static_template):
+def test_C18_worker_killed_after_smtp_does_not_resend(policy, sandbox, static_template):
     message = approved_message()
 
     with mock.patch.object(delivery_service, "_finish", side_effect=RuntimeError("killed after SMTP")):
@@ -355,7 +387,7 @@ def test_C13_no_setting_drops_production_gate(policy, static_template):
     assert not hasattr(communicator_settings, "COMMUNICATOR_LIVE_REQUIRES_PRODUCTION")
 
 
-def test_C16_sender_refused_does_not_suppress_recipient(policy, static_template):
+def test_C19_sender_refused_does_not_suppress_recipient(policy, static_template):
     channel_service.set_mode(policy.channel, mode=ChannelMode.LIVE, live_enabled=True)
     messages = [approved_message(), approved_message(email="anna@example-shop-2.test", subject_ref="send:2")]
     errors = [
@@ -376,7 +408,7 @@ def test_C16_sender_refused_does_not_suppress_recipient(policy, static_template)
     assert (notify.call_count, notify.call_args.kwargs["severity"]) == (1, "high")
 
 
-def test_C14_overlapping_runs_respect_cap(policy, sandbox, static_template, admin_api, once_backend):
+def test_C17_C18_overlapping_runs_respect_cap(policy, sandbox, static_template, admin_api, once_backend):
     policy.daily_cap = 2
     policy.save()
     for n in range(3):

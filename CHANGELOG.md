@@ -29,5 +29,10 @@ and gets a reviewed, policy-bound, single delivery and the replies that come bac
 - **Admin API v2** under `api/communicator/v2/admin/<channel_idx>/` (JWT + `IsAdminUser`): review, templates,
   models, suppressions, channel mode, policy, outbox, sequences, threads with timeline, replies, mailbox;
   development-only `test/` endpoints for BDD and e2e.
+- **Pre-release fixes.** `PATCH channel/` answers 400 to `mode=live` or any `live_enabled` — the live double
+  gate is set in Django admin only. An alert whose notifications channel (same idx) is missing or failing is
+  logged at ERROR with both idx values instead of a warning. Every 409 carries a distinct `error` code
+  (`ALREADY_REVIEWED`, `REVIEW_REFUSED`, `NOT_WAITING`, …, listed in `docs/api.md`; needs django_utils 2.1.0).
+  `GET review/<id>/` reads one message of the channel; timeline entries carry `message_id`.
 - Module docs (`docs/api.md`, `concept.md`, `install.md`, `operations.md` with the go/no-go checklist for live
   channels, `testing.md`, `gotchas.md`), `docs/openapi.yaml` and ERD config (`docs/erd-config.yaml`).

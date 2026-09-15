@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from django_communicator.enums import FailureCode
 from django_communicator.models import MessageTemplateVersion
+from django_communicator.services import alert_service
 
 logger = logging.getLogger(__name__)
 
@@ -106,21 +107,10 @@ def failure_detail(error: Exception) -> str:
 
 
 def notify_failure(*, channel_idx: str, subject_ref: str, code: str, template_key: str) -> None:
-    """Soft dependency on django_notifications: without it, or without its channel, only a warning is logged."""
+    """Soft dependency on django_notifications: without it a warning is logged; without its channel an ERROR."""
     if not apps.is_installed("django_notifications"):
         logger.warning("communicator draft failed (%s) for %s; notifications not installed", code, subject_ref)
         return
-    from django_notifications.services.notify_service import notify
-
     severity = "high" if code in _HIGH_SEVERITY_CODES else "medium"
     title = f"Message draft failed: {code} ({template_key})"
-    try:
-        notify(
-            channel_idx=channel_idx,
-            recipient_role="sales_admin",
-            severity=severity,
-            subject_ref=subject_ref,
-            title=title,
-        )
-    except Exception:  # noqa: BLE001 — a notification failure must not hide the draft failure
-        logger.warning("communicator could not notify about a failed draft for %s", subject_ref, exc_info=True)
+    alert_service.send(channel_idx, subject_ref=subject_ref, severity=severity, title=title)

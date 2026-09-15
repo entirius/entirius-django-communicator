@@ -36,6 +36,7 @@ def timeline(thread: Thread) -> list[dict]:
 def _message_entry(message: Message) -> dict:
     return {
         "kind": "message",
+        "message_id": message.pk,
         "at": message.sent_at or message.created_at,
         "direction": message.direction,
         "status": message.status,
@@ -49,6 +50,7 @@ def _message_entry(message: Message) -> dict:
 def _reply_entry(reply: Reply) -> dict:
     return {
         "kind": "reply",
+        "message_id": None,
         "at": reply.received_at,
         "direction": Direction.IN,
         "status": "",

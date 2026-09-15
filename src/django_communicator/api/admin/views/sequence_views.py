@@ -56,7 +56,7 @@ class SequenceListView(AdminView):
         try:
             row = sending_config_service.create_sequence(self.channel(channel_idx), **body.model_dump())
         except sending_config_service.DuplicateSequenceError as error:
-            raise Conflict(str(error)) from None
+            raise Conflict(str(error), code="duplicate_sequence") from None
         return Response(SequenceResponse.of(row).model_dump(mode="json"), status=201)
 
 

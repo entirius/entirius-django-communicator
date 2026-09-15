@@ -19,6 +19,7 @@ from django_communicator.api.admin.views._base import is_development
 urlpatterns = [
     path("review/", review.ReviewListView.as_view(), name="admin-communicator-review-list"),
     path("review/next/", review.ReviewNextView.as_view(), name="admin-communicator-review-next"),
+    path("review/<int:pk>/", review.ReviewDetailView.as_view(), name="admin-communicator-review-detail"),
     path("review/<int:pk>/accept/", review.AcceptView.as_view(), name="admin-communicator-review-accept"),
     path("review/<int:pk>/rewrite/", review.RewriteView.as_view(), name="admin-communicator-review-rewrite"),
     path("review/<int:pk>/edit/", review.EditView.as_view(), name="admin-communicator-review-edit"),
