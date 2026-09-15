@@ -21,6 +21,7 @@ generated document is `docs/openapi.yaml`. Views are thin: parse, call a service
 |---|---|
 | `GET review/?status=&page=&page_size=` | messages by status (default `review_required`), oldest first |
 | `GET review/next/` | oldest `review_required`; 404 when the queue is empty |
+| `GET review/<id>/` | one message of the channel, any status (`MessageDetailResponse`); 404 for another channel's message |
 | `POST review/<id>/accept/` | 200 `approved` |
 | `POST review/<id>/skip/` · `skip-company/` (`{reason}`) | 200 `rejected`; `skip-company` also emits `company_skipped` |
 | `POST review/<id>/rewrite/` (`{notes}`) | 201 new AI version (or a `failed` version on a toolbox error) |
@@ -29,12 +30,12 @@ generated document is `docs/openapi.yaml`. Views are thin: parse, call a service
 | `POST templates/<id>/test-generate/` (`{context}`) | draft preview, nothing saved |
 | `GET models/` | toolbox catalogue of the configured toolbox channel |
 | `GET suppressions/?value=` · `POST suppressions/` · `DELETE suppressions/<id>/` | channel `email` / `domain` rows; the list includes global `email_token` rows, which are not deletable here |
-| `GET/PATCH channel/` (`{mode, sandbox_mailbox, live_enabled}`) | sending mode |
+| `GET/PATCH channel/` (`{mode, sandbox_mailbox}`; `live_enabled` read-only) | sending mode; `mode=live` or any `live_enabled` in a PATCH is a 400 — live is set in Django admin only |
 | `GET/PUT policy/` | policy + windows (PUT replaces the windows), `timezone`, `country`, `sent_today`, `next_slot` |
 | `GET messages/?status=` | outbox (default `approved`) with `next_slot` per message |
 | `POST messages/<id>/send-now/` | `scheduled_at` = channel now; mode, policy and cap still apply (C-31) |
 | `GET/POST sequences/` · `GET sequences/<id>/steps/` · `GET/POST sequences/<id>/texts/` | sequences, steps, text pool |
-| `GET threads/?subject_ref=` · `GET threads/<id>/` | threads, newest first; one thread with `sequence` state and `timeline` (messages + replies) |
+| `GET threads/?subject_ref=` · `GET threads/<id>/` | threads, newest first; one thread with `sequence` state and `timeline` (messages + replies; `message_id` on message entries, null on replies) |
 | `POST threads/<id>/resume-sequence/` | paused sequence runs again, thread `open` |
 | `GET replies/?kind=&thread=` | replies, newest first |
 | `POST replies/<id>/confirm-optout/` · `dismiss-optout/` | decide a `suspected_optout` |
@@ -47,11 +48,24 @@ List endpoints `review/`, `messages/`, `threads/` and `replies/` are paginated (
 
 | Status | Cause |
 |---|---|
-| 400 | Pydantic validation (v2 error shape via `raise_pydantic_as_drf`); template model validation; unrenderable `test-generate` context; invalid suppression value |
+| 400 | `PATCH channel/` with `mode=live` or `live_enabled` (field named in `details`); Pydantic validation (v2 error shape via `raise_pydantic_as_drf`); template model validation; unrenderable `test-generate` context; invalid suppression value |
 | 401 / 403 | no or invalid JWT / not staff |
 | 404 | unknown channel or object; empty review queue; no policy (`GET policy/`); no mailbox (`GET mailbox/`) |
-| 409 | illegal status transition (accept twice, send-now of a non-waiting message, rewrite of a non-AI draft); duplicate suppression or sequence key; unsafe channel mode (`sandbox` without mailbox, `live` without `live_enabled`); opt-out action on anything but an undecided `suspected_optout`; `CHANNEL_CONFIG_INVALID` when the stored channel country or timezone cannot drive a policy |
+| 409 | a conflict; `error` names its kind — see the table below |
 | 402 / 403 / 502 / 503 / 504 | `test-generate/` and `models/` only: toolbox budget, `MODEL_NOT_ALLOWED`, provider error or invalid draft output, toolbox not configured, timeout (`django_utils.toolbox.views.handle_toolbox_error`) |
+
+Every 409 uses the v2 error shape; `error` tells the kinds apart, `message` explains:
+
+| `error` | When |
+|---|---|
+| `ALREADY_REVIEWED` | a review action (accept, skip, skip-company, rewrite, edit) on a message no longer waiting for review |
+| `REVIEW_REFUSED` | rewrite of a message that is not an AI draft |
+| `NOT_WAITING` | `send-now/` of a message that is not `approved` / `scheduled` |
+| `CHANNEL_MODE_INVALID` | `PATCH channel/` `sandbox` without a mailbox (C-30) |
+| `CHANNEL_CONFIG_INVALID` | the stored channel country or timezone cannot drive a policy |
+| `DUPLICATE_SUPPRESSION` · `DUPLICATE_SEQUENCE` | the suppression value or sequence key already exists |
+| `OPTOUT_STATE` | opt-out action on anything but an undecided `suspected_optout`; `resume-sequence/` while an opt-out is undecided or the sequence is not paused |
+| `ALREADY_RUNNING` | development `test/send-due/` or `test/poll-now/` while the beat holds the lock |
 
 `communicate()` failures on the review path never surface as HTTP errors — they are `failed` messages.
 

@@ -47,7 +47,7 @@ def _run_locked(task, body: Callable[[], T]) -> T:
     try:
         task.once_backend.raise_or_lock(key, timeout=task.once.get("timeout", task.default_timeout))
     except AlreadyQueued:
-        raise Conflict(f"{task.name.rpartition('.')[2]} is already running") from None
+        raise Conflict(f"{task.name.rpartition('.')[2]} is already running", code="already_running") from None
     try:
         return body()
     finally:

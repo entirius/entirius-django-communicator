@@ -153,7 +153,9 @@ class TextRequest(BaseModel):
 class ChannelConfigRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    mode: ChannelMode | None = Field(default=None, description="dry_run, sandbox or live.", examples=["sandbox"])
+    mode: ChannelMode | None = Field(
+        default=None, description="dry_run or sandbox; live is set in Django admin only.", examples=["sandbox"]
+    )
     sandbox_mailbox: str | None = Field(
         default=None,
         max_length=254,
@@ -161,7 +163,6 @@ class ChannelConfigRequest(BaseModel):
         description="Sandbox recipient; empty clears.",
         examples=["sandbox@mail.test"],
     )
-    live_enabled: bool | None = Field(default=None, description="Allows live mode.", examples=[False])
 
 
 class DevClockRequest(BaseModel):

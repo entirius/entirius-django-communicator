@@ -47,7 +47,7 @@ class SuppressionListView(AdminView):
         except ValueError as error:
             raise ValidationError({"value": [str(error)]}) from None
         except suppression_service.DuplicateSuppressionError as error:
-            raise Conflict(str(error)) from None
+            raise Conflict(str(error), code="duplicate_suppression") from None
         return Response(SuppressionResponse.model_validate(row).model_dump(mode="json"), status=201)
 
 

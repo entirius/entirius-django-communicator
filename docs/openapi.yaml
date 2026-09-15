@@ -37,8 +37,9 @@ paths:
           description: No response body
     patch:
       operationId: api_communicator_v2_admin_channel_partial_update
-      description: sandbox without a mailbox or live without live_enabled answers 409 (C-30).
-      summary: Change mode, sandbox mailbox or live flag
+      description: 'live and live_enabled are set in Django admin only: `mode=live` or any `live_enabled` answers 400. sandbox
+        without a mailbox answers 409 (C-30).'
+      summary: Change mode or sandbox mailbox
       parameters:
       - in: path
         name: channel_idx
@@ -506,6 +507,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/review/{id}/:
+    get:
+      operationId: api_communicator_v2_admin_review_retrieve
+      description: Any status; 404 for an unknown id or another channel's message.
+      summary: One message of the channel by id
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator review
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageDetailResponse'
           description: ''
         '400':
           description: No response body
@@ -2294,7 +2330,7 @@ components:
           - $ref: '#/components/schemas/ChannelMode'
           - type: 'null'
           default: null
-          description: dry_run, sandbox or live.
+          description: dry_run or sandbox; live is set in Django admin only.
           examples:
           - sandbox
         sandbox_mailbox:
@@ -2308,15 +2344,6 @@ components:
           examples:
           - sandbox@mail.test
           title: Sandbox Mailbox
-        live_enabled:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          default: null
-          description: Allows live mode.
-          examples:
-          - false
-          title: Live Enabled
       title: ChannelConfigRequest
       type: object
     PolicyRequest:
@@ -3499,6 +3526,14 @@ components:
           - reply
           title: Kind
           type: string
+        message_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Message id; null for a reply.
+          examples:
+          - null
+          title: Message Id
         at:
           description: Sent, received or created.
           examples:
@@ -3544,6 +3579,7 @@ components:
           type: string
       required:
       - kind
+      - message_id
       - at
       - direction
       - status

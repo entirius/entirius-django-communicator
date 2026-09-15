@@ -7,6 +7,7 @@ from django_utils.toolbox.testing import error_response
 from django_communicator.models import Message, MessageTemplate, Suppression
 from django_communicator.services.communicate_service import communicate
 from tests.conftest import CHANNEL_IDX, DRAFT, api_url
+from tests.factories import ChannelFactory
 
 
 @pytest.fixture
@@ -176,3 +177,34 @@ def test_toolbox_error_message_not_echoed_by_test_generate(ai_template, admin_ap
 
     assert (response.status_code, response.json()["error"]) == (status, code)
     assert leaked.encode() not in response.content
+
+
+def test_item11_accept_twice_409_body_is_already_reviewed(draft, admin_api):
+    admin_api.post(api_url(f"review/{draft.pk}/accept/"))
+
+    body = admin_api.post(api_url(f"review/{draft.pk}/accept/")).json()
+
+    assert body["error"] == "ALREADY_REVIEWED" and body["message"]
+
+
+def test_item11_rewrite_of_a_non_ai_draft_409_body_is_review_refused(draft, admin_api):
+    Message.objects.filter(pk=draft.pk).update(rendered_prompt="")
+
+    response = admin_api.post(api_url(f"review/{draft.pk}/rewrite/"), {"notes": "Shorter."}, format="json")
+
+    assert (response.status_code, response.json()["error"]) == (409, "REVIEW_REFUSED")
+    assert response.json()["message"] == "only AI drafts can be rewritten"
+
+
+def test_item12_review_message_by_id(draft, admin_api):
+    response = admin_api.get(api_url(f"review/{draft.pk}/"))
+
+    assert (response.status_code, response.json()["id"], response.json()["status"]) == (200, draft.pk, draft.status)
+    ChannelFactory(idx="other-channel", label="Other channel")
+    other_channel_response = admin_api.get(f"/api/communicator/v2/admin/other-channel/review/{draft.pk}/")
+    assert other_channel_response.status_code == 404  # the channel exists; the message belongs to another one
+    assert admin_api.get(api_url("review/999999/")).status_code == 404
+
+
+def test_item12_review_message_by_id_needs_an_admin(draft, customer_api):
+    assert customer_api.get(api_url(f"review/{draft.pk}/")).status_code == 403

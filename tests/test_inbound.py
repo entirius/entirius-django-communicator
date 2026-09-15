@@ -451,6 +451,16 @@ def test_thread_timeline_in_at_most_4_queries(channel, admin_api, django_assert_
     assert admin_api.get(api_url("threads/999999/")).status_code == 404
 
 
+def test_item13_timeline_entries_carry_the_message_id(channel, admin_api):
+    message = make_sent(channel, "owner@example-shop-1.test")
+    with mock.patch(NOTIFY):
+        ingest(channel, eml("reply_plain.eml"))
+
+    timeline = admin_api.get(api_url(f"threads/{message.thread_id}/")).json()["timeline"]
+
+    assert [(e["kind"], e["message_id"]) for e in timeline] == [("message", message.pk), ("reply", None)]
+
+
 def test_inbound_admin_pages_render(client, channel, mailbox):
     client.force_login(get_user_model().objects.create_superuser("root", "root@example.test", "pw"))
     for url in ("mailboxconfig", "reply", "inboundquarantine", f"mailboxconfig/{mailbox.pk}/change"):

@@ -71,11 +71,24 @@ class _MessageActionView(AdminView):
             raise NotFound("Message not found.") from None
 
     def act(self, action, *args, status: int = 200, **kwargs) -> Response:
-        """Run a review action; illegal transitions answer 409."""
+        """Run a review action; a message no longer waiting (`ALREADY_REVIEWED`) or a refused action answers 409."""
         try:
             return Response(_payload(action(*args, **kwargs)), status=status)
-        except (InvalidTransitionError, review_service.ReviewError) as error:
-            raise Conflict(str(error)) from None
+        except InvalidTransitionError as error:
+            raise Conflict(str(error), code="already_reviewed") from None
+        except review_service.ReviewError as error:
+            raise Conflict(str(error), code="review_refused") from None
+
+
+class ReviewDetailView(_MessageActionView):
+    @extend_schema(
+        tags=_TAGS,
+        summary="One message of the channel by id",
+        description="Any status; 404 for an unknown id or another channel's message.",
+        responses={200: MessageDetailResponse, **ERROR_RESPONSES},
+    )
+    def get(self, request: Request, channel_idx: str, pk: int) -> Response:
+        return Response(_payload(self.message(channel_idx, pk)))
 
 
 class AcceptView(_MessageActionView):
