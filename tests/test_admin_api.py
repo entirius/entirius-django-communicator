@@ -7,6 +7,7 @@ from django_utils.toolbox.testing import error_response
 from django_communicator.models import Message, MessageTemplate, Suppression
 from django_communicator.services.communicate_service import communicate
 from tests.conftest import CHANNEL_IDX, DRAFT, api_url
+from tests.factories import ChannelFactory
 
 
 @pytest.fixture
@@ -199,7 +200,9 @@ def test_item12_review_message_by_id(draft, admin_api):
     response = admin_api.get(api_url(f"review/{draft.pk}/"))
 
     assert (response.status_code, response.json()["id"], response.json()["status"]) == (200, draft.pk, draft.status)
-    assert admin_api.get(f"/api/communicator/v2/admin/other/review/{draft.pk}/").status_code == 404
+    ChannelFactory(idx="other-channel", label="Other channel")
+    other_channel_response = admin_api.get(f"/api/communicator/v2/admin/other-channel/review/{draft.pk}/")
+    assert other_channel_response.status_code == 404  # the channel exists; the message belongs to another one
     assert admin_api.get(api_url("review/999999/")).status_code == 404
 
 

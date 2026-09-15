@@ -3648,13 +3648,6 @@ components:
       title: WindowResponse
       type: object
   securitySchemes:
-    basicAuth:
-      type: http
-      scheme: basic
-    cookieAuth:
-      type: apiKey
-      in: cookie
-      name: sessionid
     jwtAuth:
       type: http
       scheme: bearer
