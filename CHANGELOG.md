@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0 — 2026-09-15
 
 Initial release. Channel-agnostic communication for Volkanos: a caller asks for a message by template key
 and gets a reviewed, policy-bound, single delivery and the replies that come back.
