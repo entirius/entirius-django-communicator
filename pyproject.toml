@@ -50,9 +50,6 @@ test = [
 Repository = "https://github.com/entirius/entirius-django-communicator"
 
 # utils 2.1.0 (toolbox client) and notifications are not on PyPI until their pre-releases — resolve the sibling clones.
-[tool.uv.sources]
-entirius-django-utils = { path = "../entirius-django-utils", editable = true }
-entirius-django-notifications = { path = "../entirius-django-notifications", editable = true }
 
 [build-system]
 requires = ["hatchling"]
