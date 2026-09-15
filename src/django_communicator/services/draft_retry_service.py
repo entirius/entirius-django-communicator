@@ -6,8 +6,11 @@
 
 Each retry is a new attempt of the whole draft generation from the stored prompt and template version: counted on
 the row before the call, one `complete()`, recorded as a line of `failure_detail`. Success moves the draft to
-`review_required` and nothing else. Budget, model and schema failures are never retried.
+`review_required` and nothing else. Budget, model and schema failures are never retried. The owner of the subject
+(`draft_retry_requested`) can block a retry for good: the draft stays `failed` with `blocked_by_subject <reason>`.
 """
+
+import logging
 
 from django_utils.toolbox import ToolboxError, ToolboxStatus, status
 
@@ -17,6 +20,9 @@ from django_communicator.models import Message
 from django_communicator.services import drafting_service, message_service, suppression_service
 from django_communicator.services.communicate_service import DRAFT_TAG
 from django_communicator.services.drafting_service import DraftOutputError
+from django_communicator.signals import draft_retry_requested
+
+logger = logging.getLogger(__name__)
 
 
 def retry_failed_drafts() -> dict[str, int]:
@@ -54,8 +60,8 @@ def _open(message: Message) -> bool:
 
 
 def retry(message: Message) -> bool | None:
-    """True recovered, False failed again, None when another run claimed the retry first."""
-    if not message_service.claim_draft_retry(message):
+    """True recovered, False failed again, None when the subject blocks it or another run claimed the retry first."""
+    if _blocked_by_subject(message) or not message_service.claim_draft_retry(message):
         return None
     channel_idx = message.thread.channel.idx
     try:
@@ -68,6 +74,20 @@ def retry(message: Message) -> bool | None:
     history = f"{message.failure_detail}\nretry {message.draft_retries}: recovered"
     fields = {"subject": draft.subject, "body_text": draft.body_text, "model": draft.model, "usage": draft.usage}
     return message_service.recover_draft(message, attempts=draft.attempts, failure_detail=history, **fields) or None
+
+
+def _blocked_by_subject(message: Message) -> bool:
+    """A reason from a receiver ends the retries without spending one; a failing receiver skips this run only."""
+    responses = draft_retry_requested.send_robust(sender=Message, message=message)
+    errors = [response for _, response in responses if isinstance(response, Exception)]
+    if errors:
+        logger.error("communicator: subject check of draft %s failed: %r", message.pk, errors[0])
+        return True
+    reason = next((response for _, response in responses if response), None)
+    if reason:
+        history = f"{message.failure_detail}\nretry: blocked_by_subject {reason}"
+        Message.objects.filter(pk=message.pk, status=MessageStatus.FAILED).update(failure_detail=history)
+    return bool(reason)
 
 
 def _record_failure(message: Message, error: Exception, channel_idx: str) -> None:

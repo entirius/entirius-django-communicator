@@ -10,6 +10,9 @@
   A transiently failed draft now keeps `rendered_prompt`; every retry appends a line to `failure_detail`.
 - Development endpoints `test/retry-drafts/` and `test/toolbox-outage/` (the `django_utils.toolbox.outage`
   switch — needs `entirius-django-utils` with the outage switch).
+- Draft retries ask the subject owner first: new synchronous signal `draft_retry_requested(sender=Message,
+  message=...)`; a returned reason ends the retries without spending one (`failure_detail` line
+  `retry: blocked_by_subject <reason>`). `test/toolbox-outage/` rejects unknown keys with 400.
 
 ## 0.1.0 (unreleased)
 

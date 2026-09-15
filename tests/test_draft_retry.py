@@ -14,6 +14,7 @@ from django_communicator.enums import FailureCode, MessageStatus
 from django_communicator.models import Message
 from django_communicator.services import draft_retry_service, suppression_service
 from django_communicator.services.communicate_service import communicate
+from django_communicator.signals import draft_retry_requested
 from tests.conftest import CHANNEL_IDX, DRAFT, api_url, draft_response
 
 
@@ -178,3 +179,50 @@ def test_item3_outage_endpoint_fails_drafts_then_recovery_retries_them(
     message.refresh_from_db()
     assert message.status == MessageStatus.REVIEW_REQUIRED
     assert toolbox["complete"].call_count == 1
+
+
+# --- FIX-16a ---
+
+
+@pytest.fixture
+def subject_answer():
+    answers = []
+
+    def receiver(sender, message, **kwargs):
+        answer = answers[-1] if answers else None
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    draft_retry_requested.connect(receiver, dispatch_uid="tests.subject_answer")
+    yield answers
+    draft_retry_requested.disconnect(dispatch_uid="tests.subject_answer")
+
+
+def test_item2_subject_blocked_during_outage_does_not_revive_the_draft(outage_draft, toolbox, subject_answer):
+    subject_answer.append("do_not_contact")
+
+    assert draft_retry_service.retry_failed_drafts() == {"recovered": 0, "failed": 0}
+    subject_answer.append(None)
+    assert draft_retry_service.retry_failed_drafts() == {"recovered": 0, "failed": 0}
+
+    outage_draft.refresh_from_db()
+    assert (outage_draft.status, outage_draft.draft_retries) == (MessageStatus.FAILED, 0)
+    assert outage_draft.failure_detail.endswith("\nretry: blocked_by_subject do_not_contact")
+    assert toolbox["complete"].call_count == 1
+
+
+def test_item2_failing_subject_check_skips_the_run_only(outage_draft, toolbox, subject_answer):
+    subject_answer.append(RuntimeError("leads down"))
+    assert draft_retry_service.retry_failed_drafts() == {"recovered": 0, "failed": 0}
+
+    subject_answer.append(None)
+    assert draft_retry_service.retry_failed_drafts() == {"recovered": 1, "failed": 0}
+
+
+def test_item4_outage_endpoint_rejects_unknown_keys(channel, admin_api, settings):
+    settings.AI_TOOLBOX_TEST_SWITCH = True
+
+    response = admin_api.post(api_url("test/toolbox-outage/"), {"down": True, "minutes": 5}, format="json")
+
+    assert response.status_code == 400
