@@ -32,6 +32,7 @@ groups:
     models:
       - Channel
       - MailboxConfig
+      - InboundQuarantine
       - Thread
       - Message
       - Reply

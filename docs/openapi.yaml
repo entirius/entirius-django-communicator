@@ -1,0 +1,3618 @@
+# Generated: manage.py spectacular in the zeno service container, filtered to /api/communicator/.
+# Development-only test/ endpoints are omitted (mounted only under ENVIRONMENT=development).
+openapi: 3.1.0
+info:
+  title: entirius-django-communicator Admin API v2
+  version: 0.1.0
+  description: Templates, review, sending, sequences and inbound replies of one communicator channel.
+paths:
+  /api/communicator/v2/admin/{channel_idx}/channel/:
+    get:
+      operationId: api_communicator_v2_admin_channel_retrieve
+      summary: Channel sending mode
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator sending
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelConfigResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    patch:
+      operationId: api_communicator_v2_admin_channel_partial_update
+      description: sandbox without a mailbox or live without live_enabled answers 409 (C-30).
+      summary: Change mode, sandbox mailbox or live flag
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator sending
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedChannelConfigRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedChannelConfigRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedChannelConfigRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelConfigResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/mailbox/:
+    get:
+      operationId: api_communicator_v2_admin_mailbox_retrieve
+      summary: IMAP mailbox of the channel
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator inbox
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailboxResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    put:
+      operationId: api_communicator_v2_admin_mailbox_update
+      description: The password is stored encrypted and never returned; omit it to keep the stored one.
+      summary: Create or replace the IMAP mailbox
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator inbox
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MailboxRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MailboxRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MailboxRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailboxResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/messages/:
+    get:
+      operationId: api_communicator_v2_admin_messages_retrieve
+      summary: Outbound messages by status with their next slot
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: page
+        schema:
+          type: integer
+      - in: query
+        name: page_size
+        schema:
+          type: integer
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - approved
+          - draft
+          - failed
+          - rejected
+          - review_required
+          - scheduled
+          - sending
+          - sent
+          - skipped
+          - superseded
+          - suppressed
+          - would_send
+        description: Default approved.
+      tags:
+      - Communicator sending
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboxListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/messages/{id}/send-now/:
+    post:
+      operationId: api_communicator_v2_admin_messages_send_now_create
+      description: Sets scheduled_at to the channel clock only; the next beat run still applies mode, policy and cap.
+      summary: Send now
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator sending
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageDetailResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/models/:
+    get:
+      operationId: api_communicator_v2_admin_models_retrieve
+      summary: Toolbox models available for templates
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator templates
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '502':
+          description: No response body
+        '503':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/policy/:
+    get:
+      operationId: api_communicator_v2_admin_policy_retrieve
+      summary: Send policy of the channel
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator sending
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+    put:
+      operationId: api_communicator_v2_admin_policy_update
+      summary: Create or replace the send policy
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator sending
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PolicyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PolicyRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/replies/:
+    get:
+      operationId: communicator_replies_list
+      summary: Replies of the channel, newest first
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: kind
+        schema:
+          type: string
+          enum:
+          - auto
+          - bounce_hard
+          - bounce_soft
+          - reply
+          - suspected_optout
+        description: Only replies of this kind.
+      - in: query
+        name: page
+        schema:
+          type: integer
+      - in: query
+        name: page_size
+        schema:
+          type: integer
+      - in: query
+        name: thread
+        schema:
+          type: integer
+        description: Only replies of this thread.
+      tags:
+      - Communicator inbox
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplyListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/replies/{id}/confirm-optout/:
+    post:
+      operationId: api_communicator_v2_admin_replies_confirm_optout_create
+      description: Suppresses the thread recipient, stops the sequence and emits optout_confirmed; any other reply → 409.
+      summary: Confirm a suspected opt-out
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator inbox
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplyResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/replies/{id}/dismiss-optout/:
+    post:
+      operationId: api_communicator_v2_admin_replies_dismiss_optout_create
+      description: The reply becomes a plain reply (no notification); the sequence stays paused until resume-sequence; any
+        other → 409.
+      summary: Dismiss a suspected opt-out
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator inbox
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplyResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/review/:
+    get:
+      operationId: communicator_review_list
+      description: Oldest first, paginated (`page`, `page_size` ≤ 100). Default status `review_required`.
+      summary: List messages of the channel by status
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: page
+        schema:
+          type: integer
+        description: Page number.
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Message status.
+      tags:
+      - Communicator review
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/review/{id}/accept/:
+    post:
+      operationId: api_communicator_v2_admin_review_accept_create
+      summary: Accept a message
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator review
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageDetailResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/review/{id}/edit/:
+    post:
+      operationId: api_communicator_v2_admin_review_edit_create
+      description: Creates the next version with `edited_by_human`; no toolbox call.
+      summary: Edit a message by hand
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EditRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EditRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageDetailResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/review/{id}/rewrite/:
+    post:
+      operationId: api_communicator_v2_admin_review_rewrite_create
+      description: Creates the next version through the toolbox; the reviewed one becomes `superseded`. A toolbox failure
+        returns a `failed` version and keeps the reviewed message in the queue.
+      summary: Rewrite an AI draft with reviewer notes
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RewriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RewriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RewriteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageDetailResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/review/{id}/skip/:
+    post:
+      operationId: api_communicator_v2_admin_review_skip_create
+      summary: Reject a message
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkipRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SkipRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SkipRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageDetailResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/review/{id}/skip-company/:
+    post:
+      operationId: api_communicator_v2_admin_review_skip_company_create
+      description: Emits `company_skipped(subject_ref)`; the owner of the reference decides what that means.
+      summary: Reject a message and skip its subject
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkipRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SkipRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SkipRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageDetailResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/review/next/:
+    get:
+      operationId: api_communicator_v2_admin_review_next_retrieve
+      description: With thread, template version and the caller's context; 404 when the queue is empty.
+      summary: Oldest message waiting for review
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator review
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageDetailResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/sequences/:
+    get:
+      operationId: communicator_sequences_list
+      summary: Sequences of the channel
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator sequences
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SequenceListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    post:
+      operationId: api_communicator_v2_admin_sequences_create
+      summary: Create a sequence with its steps
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator sequences
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SequenceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SequenceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SequenceRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SequenceResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/sequences/{id}/steps/:
+    get:
+      operationId: api_communicator_v2_admin_sequences_steps_retrieve
+      summary: Steps of a sequence
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator sequences
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SequenceStepListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/sequences/{id}/texts/:
+    get:
+      operationId: communicator_sequence_texts_list
+      summary: Text pool of a sequence
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator sequences
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    post:
+      operationId: api_communicator_v2_admin_sequences_texts_create
+      summary: Add a text to the pool
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator sequences
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TextRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TextRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/suppressions/:
+    get:
+      operationId: communicator_suppressions_list
+      description: Includes the global `email_token` rows of erased or anonymised addresses (no plain address).
+      summary: List suppressions of the channel
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: value
+        schema:
+          type: string
+        description: Only rows with this value (lower-cased).
+      tags:
+      - Communicator suppressions
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuppressionListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    post:
+      operationId: api_communicator_v2_admin_suppressions_create
+      description: Emails are lower-cased; a domain or host is stored as its registrable domain.
+      summary: Suppress an email or a registrable domain
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator suppressions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuppressionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SuppressionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SuppressionRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuppressionResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/suppressions/{id}/:
+    delete:
+      operationId: api_communicator_v2_admin_suppressions_destroy
+      summary: Remove a suppression
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator suppressions
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/templates/:
+    get:
+      operationId: communicator_templates_list
+      summary: List templates of the channel
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator templates
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    post:
+      operationId: api_communicator_v2_admin_templates_create
+      summary: Create a template (version 1)
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TemplateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/templates/{id}/:
+    get:
+      operationId: api_communicator_v2_admin_templates_retrieve
+      summary: Get one template
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator templates
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    put:
+      operationId: api_communicator_v2_admin_templates_update
+      description: A change of subject, body, json_schema or model creates the next version; existing drafts keep the version
+        they were rendered with.
+      summary: Replace a template
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TemplateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/templates/{id}/test-generate/:
+    post:
+      operationId: api_communicator_v2_admin_templates_test_generate_create
+      description: Static templates only render; ai_prompt templates call the toolbox (tag `communicator.test_generate`).
+        Toolbox errors keep their v2 status and code.
+      summary: Draft with a sample context without saving
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestGenerateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TestGenerateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TestGenerateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DraftPreviewResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '402':
+          description: No response body
+        '502':
+          description: No response body
+        '503':
+          description: No response body
+        '504':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/templates/{id}/versions/:
+    get:
+      operationId: api_communicator_v2_admin_templates_versions_retrieve
+      summary: List versions of a template
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator templates
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateVersionListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/threads/:
+    get:
+      operationId: communicator_threads_list
+      summary: Threads of the channel, newest first
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: page
+        schema:
+          type: integer
+      - in: query
+        name: page_size
+        schema:
+          type: integer
+      - in: query
+        name: subject_ref
+        schema:
+          type: string
+        description: Only threads about this reference.
+      tags:
+      - Communicator inbox
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreadListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/threads/{id}/:
+    get:
+      operationId: api_communicator_v2_admin_threads_retrieve
+      summary: One thread with its messages and replies
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator inbox
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreadDetailResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/threads/{id}/resume-sequence/:
+    post:
+      operationId: api_communicator_v2_admin_threads_resume_sequence_create
+      description: 'After a dismissed opt-out: the thread is open again and the sequence runs, re-armed from the last delivery.
+        An undecided opt-out or a sequence that is not paused → 409.'
+      summary: Resume the paused sequence of a thread
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator inbox
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SequenceStateResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+components:
+  schemas:
+    ChannelConfigResponse:
+      properties:
+        idx:
+          description: Channel idx.
+          examples:
+          - default-europe
+          title: Idx
+          type: string
+        label:
+          description: Label.
+          examples:
+          - Default Europe
+          title: Label
+          type: string
+        mode:
+          description: dry_run, sandbox or live.
+          examples:
+          - sandbox
+          title: Mode
+          type: string
+        sandbox_mailbox:
+          description: Sandbox recipient.
+          examples:
+          - sandbox@mail.test
+          title: Sandbox Mailbox
+          type: string
+        live_enabled:
+          description: Live mode allowed.
+          examples:
+          - false
+          title: Live Enabled
+          type: boolean
+        timezone:
+          description: Timezone.
+          examples:
+          - Europe/Warsaw
+          title: Timezone
+          type: string
+        country:
+          description: Holiday country.
+          examples:
+          - PL
+          title: Country
+          type: string
+      required:
+      - idx
+      - label
+      - mode
+      - sandbox_mailbox
+      - live_enabled
+      - timezone
+      - country
+      title: ChannelConfigResponse
+      type: object
+    ChannelMode:
+      enum:
+      - dry_run
+      - sandbox
+      - live
+      title: ChannelMode
+      type: string
+    DraftPreviewResponse:
+      properties:
+        subject:
+          description: Generated or rendered subject.
+          examples:
+          - Quick question
+          title: Subject
+          type: string
+        body_text:
+          description: Generated or rendered body.
+          examples:
+          - Hello, ...
+          title: Body Text
+          type: string
+        rendered_prompt:
+          description: Prompt sent (ai_prompt), empty for static.
+          examples:
+          - ''
+          title: Rendered Prompt
+          type: string
+        model:
+          description: Model used.
+          examples:
+          - fake-chat
+          title: Model
+          type: string
+        usage:
+          additionalProperties: true
+          description: Usage of the call.
+          examples:
+          - {}
+          title: Usage
+          type: object
+      required:
+      - subject
+      - body_text
+      - rendered_prompt
+      - model
+      - usage
+      title: DraftPreviewResponse
+      type: object
+    EditRequest:
+      additionalProperties: false
+      properties:
+        subject:
+          description: Edited subject.
+          examples:
+          - Quick question
+          maxLength: 255
+          minLength: 1
+          title: Subject
+          type: string
+        body_text:
+          description: Edited plain-text body.
+          examples:
+          - Hello, ...
+          minLength: 1
+          title: Body Text
+          type: string
+      required:
+      - subject
+      - body_text
+      title: EditRequest
+      type: object
+    MailboxRequest:
+      additionalProperties: false
+      properties:
+        imap_host:
+          description: IMAP host.
+          examples:
+          - imap.mail.test
+          maxLength: 255
+          minLength: 1
+          title: Imap Host
+          type: string
+        imap_port:
+          default: 993
+          description: IMAP port.
+          examples:
+          - 993
+          maximum: 65535
+          minimum: 1
+          title: Imap Port
+          type: integer
+        imap_use_ssl:
+          default: true
+          description: IMAP over TLS.
+          examples:
+          - true
+          title: Imap Use Ssl
+          type: boolean
+        imap_user:
+          description: IMAP login.
+          examples:
+          - outreach
+          maxLength: 255
+          minLength: 1
+          title: Imap User
+          type: string
+        imap_password:
+          anyOf:
+          - maxLength: 1024
+            type: string
+          - type: 'null'
+          default: null
+          description: Write-only; omitted or null keeps the stored one.
+          title: Imap Password
+        folder:
+          default: INBOX
+          description: Folder polled.
+          examples:
+          - INBOX
+          maxLength: 64
+          minLength: 1
+          title: Folder
+          type: string
+        is_active:
+          default: true
+          description: Polled by the beat.
+          examples:
+          - true
+          title: Is Active
+          type: boolean
+      required:
+      - imap_host
+      - imap_user
+      title: MailboxRequest
+      type: object
+    MailboxResponse:
+      properties:
+        imap_host:
+          description: IMAP host.
+          examples:
+          - imap.mail.test
+          title: Imap Host
+          type: string
+        imap_port:
+          description: IMAP port.
+          examples:
+          - 993
+          title: Imap Port
+          type: integer
+        imap_use_ssl:
+          description: IMAP over TLS.
+          examples:
+          - true
+          title: Imap Use Ssl
+          type: boolean
+        imap_user:
+          description: IMAP login.
+          examples:
+          - outreach
+          title: Imap User
+          type: string
+        has_password:
+          description: A password is stored (never returned).
+          examples:
+          - true
+          title: Has Password
+          type: boolean
+        folder:
+          description: Folder polled.
+          examples:
+          - INBOX
+          title: Folder
+          type: string
+        last_uid:
+          description: Poll cursor.
+          examples:
+          - 0
+          title: Last Uid
+          type: integer
+        is_active:
+          description: Polled by the beat.
+          examples:
+          - true
+          title: Is Active
+          type: boolean
+        last_polled_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Last successful poll.
+          examples:
+          - null
+          title: Last Polled At
+      required:
+      - imap_host
+      - imap_port
+      - imap_use_ssl
+      - imap_user
+      - has_password
+      - folder
+      - last_uid
+      - is_active
+      - last_polled_at
+      title: MailboxResponse
+      type: object
+    MessageDetailResponse:
+      properties:
+        id:
+          description: Message id.
+          examples:
+          - 11
+          title: Id
+          type: integer
+        status:
+          description: Message status.
+          examples:
+          - review_required
+          title: Status
+          type: string
+        direction:
+          description: out or in.
+          examples:
+          - out
+          title: Direction
+          type: string
+        subject:
+          description: Subject.
+          examples:
+          - Quick question
+          title: Subject
+          type: string
+        body_text:
+          description: Plain-text body (no footer).
+          examples:
+          - Hello, ...
+          title: Body Text
+          type: string
+        render_context:
+          additionalProperties: true
+          description: The caller's context, for the reviewer.
+          examples:
+          - {}
+          title: Render Context
+          type: object
+        rendered_prompt:
+          description: Prompt sent to the toolbox (AI drafts).
+          examples:
+          - ''
+          title: Rendered Prompt
+          type: string
+        model:
+          description: Model that wrote the draft.
+          examples:
+          - fake-chat
+          title: Model
+          type: string
+        usage:
+          additionalProperties: true
+          description: input_tokens, output_tokens, cost.
+          examples:
+          - {}
+          title: Usage
+          type: object
+        attempts:
+          description: Toolbox calls made for this version.
+          examples:
+          - 1
+          title: Attempts
+          type: integer
+        version:
+          description: Version in the rewrite chain.
+          examples:
+          - 1
+          title: Version
+          type: integer
+        parent_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Previous version.
+          examples:
+          - null
+          title: Parent Id
+        automated_rewrites:
+          description: Automated rewrites in the chain.
+          examples:
+          - 0
+          title: Automated Rewrites
+          type: integer
+        edited_by_human:
+          description: Written by a reviewer.
+          examples:
+          - false
+          title: Edited By Human
+          type: boolean
+        requires_review:
+          description: The caller asked for review.
+          examples:
+          - true
+          title: Requires Review
+          type: boolean
+        reviewed_by_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Reviewer user id.
+          examples:
+          - null
+          title: Reviewed By Id
+        reviewed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: When reviewed.
+          examples:
+          - null
+          title: Reviewed At
+        reject_reason:
+          description: Why rejected.
+          examples:
+          - ''
+          title: Reject Reason
+          type: string
+        review_notes:
+          description: Notes that produced this version.
+          examples:
+          - ''
+          title: Review Notes
+          type: string
+        legal_footer:
+          description: Footer carried verbatim.
+          examples:
+          - ''
+          title: Legal Footer
+          type: string
+        scheduled_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Send slot; empty = due at once.
+          examples:
+          - null
+          title: Scheduled At
+        sent_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Delivered (sent or would_send) on the channel clock.
+          examples:
+          - null
+          title: Sent At
+        message_id:
+          description: Our Message-ID header once sent.
+          examples:
+          - ''
+          title: Message Id
+          type: string
+        send_attempts:
+          description: SMTP deliveries tried.
+          examples:
+          - 0
+          title: Send Attempts
+          type: integer
+        replied_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: A header-matched reply answered it.
+          examples:
+          - null
+          title: Replied At
+        failure_code:
+          description: no_template, render, budget, schema, model, upstream or smtp.
+          examples:
+          - ''
+          title: Failure Code
+          type: string
+        failure_detail:
+          description: Error class and codes — never the prompt.
+          examples:
+          - ''
+          title: Failure Detail
+          type: string
+        created_at:
+          description: Created.
+          examples:
+          - '2026-09-13T12:00:00Z'
+          format: date-time
+          title: Created At
+          type: string
+        thread:
+          $ref: '#/components/schemas/ThreadResponse'
+          description: Conversation the message belongs to.
+        template:
+          anyOf:
+          - $ref: '#/components/schemas/TemplateRefResponse'
+          - type: 'null'
+          description: Template version used; null when none.
+      required:
+      - id
+      - status
+      - direction
+      - subject
+      - body_text
+      - render_context
+      - rendered_prompt
+      - model
+      - usage
+      - attempts
+      - version
+      - parent_id
+      - automated_rewrites
+      - edited_by_human
+      - requires_review
+      - reviewed_by_id
+      - reviewed_at
+      - reject_reason
+      - review_notes
+      - legal_footer
+      - scheduled_at
+      - sent_at
+      - message_id
+      - send_attempts
+      - replied_at
+      - failure_code
+      - failure_detail
+      - created_at
+      - thread
+      - template
+      title: MessageDetailResponse
+      type: object
+    MessageListResponse:
+      properties:
+        count:
+          description: Total matching messages.
+          examples:
+          - 1
+          title: Count
+          type: integer
+        next:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Next page URL.
+          examples:
+          - null
+          title: Next
+        previous:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Previous page URL.
+          examples:
+          - null
+          title: Previous
+        results:
+          description: Oldest first.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/MessageDetailResponse'
+          title: Results
+          type: array
+      required:
+      - count
+      - next
+      - previous
+      - results
+      title: MessageListResponse
+      type: object
+    ModelInfo:
+      description: One entry of the plain list returned by ``GET ai-completion/…/models/``.
+      properties:
+        provider:
+          title: Provider
+          type: string
+        model_id:
+          title: Model Id
+          type: string
+        display_name:
+          title: Display Name
+          type: string
+        supports_structured_output:
+          title: Supports Structured Output
+          type: boolean
+        max_input_tokens:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Input Tokens
+        input_price_per_1k:
+          anyOf:
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Input Price Per 1K
+        output_price_per_1k:
+          anyOf:
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Output Price Per 1K
+      required:
+      - provider
+      - model_id
+      - display_name
+      - supports_structured_output
+      - max_input_tokens
+      - input_price_per_1k
+      - output_price_per_1k
+      title: ModelInfo
+      type: object
+    ModelListResponse:
+      properties:
+        results:
+          description: Toolbox catalogue entries allowed for the channel, field names unchanged.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/ModelInfo'
+          title: Results
+          type: array
+      required:
+      - results
+      title: ModelListResponse
+      type: object
+    OutboxListResponse:
+      properties:
+        count:
+          description: Total matching messages.
+          examples:
+          - 1
+          title: Count
+          type: integer
+        next:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Next page URL.
+          examples:
+          - null
+          title: Next
+        previous:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Previous page URL.
+          examples:
+          - null
+          title: Previous
+        results:
+          description: Oldest first.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/OutboxMessageResponse'
+          title: Results
+          type: array
+      required:
+      - count
+      - next
+      - previous
+      - results
+      title: OutboxListResponse
+      type: object
+    OutboxMessageResponse:
+      properties:
+        id:
+          description: Message id.
+          examples:
+          - 11
+          title: Id
+          type: integer
+        status:
+          description: Message status.
+          examples:
+          - review_required
+          title: Status
+          type: string
+        direction:
+          description: out or in.
+          examples:
+          - out
+          title: Direction
+          type: string
+        subject:
+          description: Subject.
+          examples:
+          - Quick question
+          title: Subject
+          type: string
+        body_text:
+          description: Plain-text body (no footer).
+          examples:
+          - Hello, ...
+          title: Body Text
+          type: string
+        render_context:
+          additionalProperties: true
+          description: The caller's context, for the reviewer.
+          examples:
+          - {}
+          title: Render Context
+          type: object
+        rendered_prompt:
+          description: Prompt sent to the toolbox (AI drafts).
+          examples:
+          - ''
+          title: Rendered Prompt
+          type: string
+        model:
+          description: Model that wrote the draft.
+          examples:
+          - fake-chat
+          title: Model
+          type: string
+        usage:
+          additionalProperties: true
+          description: input_tokens, output_tokens, cost.
+          examples:
+          - {}
+          title: Usage
+          type: object
+        attempts:
+          description: Toolbox calls made for this version.
+          examples:
+          - 1
+          title: Attempts
+          type: integer
+        version:
+          description: Version in the rewrite chain.
+          examples:
+          - 1
+          title: Version
+          type: integer
+        parent_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Previous version.
+          examples:
+          - null
+          title: Parent Id
+        automated_rewrites:
+          description: Automated rewrites in the chain.
+          examples:
+          - 0
+          title: Automated Rewrites
+          type: integer
+        edited_by_human:
+          description: Written by a reviewer.
+          examples:
+          - false
+          title: Edited By Human
+          type: boolean
+        requires_review:
+          description: The caller asked for review.
+          examples:
+          - true
+          title: Requires Review
+          type: boolean
+        reviewed_by_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Reviewer user id.
+          examples:
+          - null
+          title: Reviewed By Id
+        reviewed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: When reviewed.
+          examples:
+          - null
+          title: Reviewed At
+        reject_reason:
+          description: Why rejected.
+          examples:
+          - ''
+          title: Reject Reason
+          type: string
+        review_notes:
+          description: Notes that produced this version.
+          examples:
+          - ''
+          title: Review Notes
+          type: string
+        legal_footer:
+          description: Footer carried verbatim.
+          examples:
+          - ''
+          title: Legal Footer
+          type: string
+        scheduled_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Send slot; empty = due at once.
+          examples:
+          - null
+          title: Scheduled At
+        sent_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Delivered (sent or would_send) on the channel clock.
+          examples:
+          - null
+          title: Sent At
+        message_id:
+          description: Our Message-ID header once sent.
+          examples:
+          - ''
+          title: Message Id
+          type: string
+        send_attempts:
+          description: SMTP deliveries tried.
+          examples:
+          - 0
+          title: Send Attempts
+          type: integer
+        replied_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: A header-matched reply answered it.
+          examples:
+          - null
+          title: Replied At
+        failure_code:
+          description: no_template, render, budget, schema, model, upstream or smtp.
+          examples:
+          - ''
+          title: Failure Code
+          type: string
+        failure_detail:
+          description: Error class and codes — never the prompt.
+          examples:
+          - ''
+          title: Failure Detail
+          type: string
+        created_at:
+          description: Created.
+          examples:
+          - '2026-09-13T12:00:00Z'
+          format: date-time
+          title: Created At
+          type: string
+        thread:
+          $ref: '#/components/schemas/ThreadResponse'
+          description: Conversation the message belongs to.
+        template:
+          anyOf:
+          - $ref: '#/components/schemas/TemplateRefResponse'
+          - type: 'null'
+          description: Template version used; null when none.
+        next_slot:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Earliest send slot of a waiting message.
+          examples:
+          - null
+          title: Next Slot
+      required:
+      - id
+      - status
+      - direction
+      - subject
+      - body_text
+      - render_context
+      - rendered_prompt
+      - model
+      - usage
+      - attempts
+      - version
+      - parent_id
+      - automated_rewrites
+      - edited_by_human
+      - requires_review
+      - reviewed_by_id
+      - reviewed_at
+      - reject_reason
+      - review_notes
+      - legal_footer
+      - scheduled_at
+      - sent_at
+      - message_id
+      - send_attempts
+      - replied_at
+      - failure_code
+      - failure_detail
+      - created_at
+      - thread
+      - template
+      - next_slot
+      title: OutboxMessageResponse
+      type: object
+    PatchedChannelConfigRequest:
+      additionalProperties: false
+      properties:
+        mode:
+          anyOf:
+          - $ref: '#/components/schemas/ChannelMode'
+          - type: 'null'
+          default: null
+          description: dry_run, sandbox or live.
+          examples:
+          - sandbox
+        sandbox_mailbox:
+          anyOf:
+          - maxLength: 254
+            pattern: ^([^@\s]+@[^@\s]+\.[^@\s]+)?$
+            type: string
+          - type: 'null'
+          default: null
+          description: Sandbox recipient; empty clears.
+          examples:
+          - sandbox@mail.test
+          title: Sandbox Mailbox
+        live_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: Allows live mode.
+          examples:
+          - false
+          title: Live Enabled
+      title: ChannelConfigRequest
+      type: object
+    PolicyRequest:
+      additionalProperties: false
+      properties:
+        business_days_only:
+          default: true
+          description: Skip weekends and channel-country holidays.
+          title: Business Days Only
+          type: boolean
+        daily_cap:
+          description: Deliveries per channel day.
+          examples:
+          - 10
+          maximum: 10000
+          minimum: 0
+          title: Daily Cap
+          type: integer
+        spread:
+          default: true
+          description: Spread the cap over the window runs.
+          examples:
+          - true
+          title: Spread
+          type: boolean
+        windows:
+          description: Hour windows; replaced as a whole.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/WindowRequest'
+          title: Windows
+          type: array
+      required:
+      - daily_cap
+      - windows
+      title: PolicyRequest
+      type: object
+    PolicyResponse:
+      properties:
+        business_days_only:
+          description: Weekends and holidays skipped.
+          examples:
+          - true
+          title: Business Days Only
+          type: boolean
+        daily_cap:
+          description: Deliveries per channel day.
+          examples:
+          - 10
+          title: Daily Cap
+          type: integer
+        spread:
+          description: Cap spread over the window runs.
+          examples:
+          - true
+          title: Spread
+          type: boolean
+        windows:
+          description: Hour windows.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/WindowResponse'
+          title: Windows
+          type: array
+        timezone:
+          description: Channel timezone.
+          examples:
+          - Europe/Warsaw
+          title: Timezone
+          type: string
+        country:
+          description: Holiday country.
+          examples:
+          - PL
+          title: Country
+          type: string
+        sent_today:
+          description: Deliveries counted today on the channel clock.
+          examples:
+          - 0
+          title: Sent Today
+          type: integer
+        next_slot:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Next open moment from the channel clock.
+          examples:
+          - null
+          title: Next Slot
+      required:
+      - business_days_only
+      - daily_cap
+      - spread
+      - windows
+      - timezone
+      - country
+      - sent_today
+      - next_slot
+      title: PolicyResponse
+      type: object
+    ReplyListResponse:
+      properties:
+        count:
+          description: Total matching replies.
+          examples:
+          - 1
+          title: Count
+          type: integer
+        next:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Next page URL.
+          examples:
+          - null
+          title: Next
+        previous:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Previous page URL.
+          examples:
+          - null
+          title: Previous
+        results:
+          description: Newest first.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/ReplyResponse'
+          title: Results
+          type: array
+      required:
+      - count
+      - next
+      - previous
+      - results
+      title: ReplyListResponse
+      type: object
+    ReplyResponse:
+      properties:
+        id:
+          description: Reply id.
+          examples:
+          - 5
+          title: Id
+          type: integer
+        thread_id:
+          description: Thread.
+          examples:
+          - 3
+          title: Thread Id
+          type: integer
+        message_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Outbound message answered (header match).
+          examples:
+          - 11
+          title: Message Id
+        from_email:
+          description: Sender.
+          examples:
+          - owner@shop.test
+          title: From Email
+          type: string
+        subject:
+          description: Subject.
+          examples:
+          - 'Re: Your shop audit'
+          title: Subject
+          type: string
+        body_text:
+          description: Plain-text body.
+          examples:
+          - Hello, ...
+          title: Body Text
+          type: string
+        kind:
+          description: reply, auto, suspected_optout, bounce_hard or bounce_soft.
+          examples:
+          - reply
+          title: Kind
+          type: string
+        matched_by:
+          description: header, sender or dsn.
+          examples:
+          - header
+          title: Matched By
+          type: string
+        inbound_message_id:
+          description: Message-ID of the inbound mail.
+          examples:
+          - <a@shop.test>
+          title: Inbound Message Id
+          type: string
+        received_at:
+          description: Ingested.
+          examples:
+          - '2026-09-14T10:15:00Z'
+          format: date-time
+          title: Received At
+          type: string
+        optout_confirmed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Opt-out confirmed by a human.
+          examples:
+          - null
+          title: Optout Confirmed At
+      required:
+      - id
+      - thread_id
+      - message_id
+      - from_email
+      - subject
+      - body_text
+      - kind
+      - matched_by
+      - inbound_message_id
+      - received_at
+      - optout_confirmed_at
+      title: ReplyResponse
+      type: object
+    RewriteRequest:
+      additionalProperties: false
+      properties:
+        notes:
+          description: Reviewer notes appended to the user prompt.
+          examples:
+          - Shorter.
+          maxLength: 4000
+          minLength: 1
+          title: Notes
+          type: string
+      required:
+      - notes
+      title: RewriteRequest
+      type: object
+    SequenceListResponse:
+      properties:
+        results:
+          description: Sequences of the channel by key.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/SequenceResponse'
+          title: Results
+          type: array
+      required:
+      - results
+      title: SequenceListResponse
+      type: object
+    SequenceRequest:
+      additionalProperties: false
+      properties:
+        key:
+          description: Slug.
+          examples:
+          - followup
+          maxLength: 64
+          minLength: 1
+          pattern: ^[-a-zA-Z0-9_]+$
+          title: Key
+          type: string
+        is_active:
+          default: true
+          description: Schedules follow-ups.
+          examples:
+          - true
+          title: Is Active
+          type: boolean
+        steps:
+          description: Steps with unique numbers.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/SequenceStepRequest'
+          minItems: 1
+          title: Steps
+          type: array
+      required:
+      - key
+      - steps
+      title: SequenceRequest
+      type: object
+    SequenceResponse:
+      properties:
+        id:
+          description: Sequence id.
+          examples:
+          - 1
+          title: Id
+          type: integer
+        key:
+          description: Slug.
+          examples:
+          - followup
+          title: Key
+          type: string
+        is_active:
+          description: Schedules follow-ups.
+          examples:
+          - true
+          title: Is Active
+          type: boolean
+        steps:
+          description: Steps by number.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/SequenceStepResponse'
+          title: Steps
+          type: array
+      required:
+      - id
+      - key
+      - is_active
+      - steps
+      title: SequenceResponse
+      type: object
+    SequenceStateResponse:
+      properties:
+        thread_id:
+          description: Thread id.
+          examples:
+          - 3
+          title: Thread Id
+          type: integer
+        sequence_id:
+          description: Sequence id.
+          examples:
+          - 1
+          title: Sequence Id
+          type: integer
+        step:
+          description: Follow-ups scheduled so far.
+          examples:
+          - 0
+          title: Step
+          type: integer
+        next_due_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Next follow-up due.
+          examples:
+          - null
+          title: Next Due At
+        stopped_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Stopped or paused; empty while running.
+          examples:
+          - null
+          title: Stopped At
+        stop_reason:
+          description: replied, optout, bounce, paused, finished, …; empty while running.
+          examples:
+          - ''
+          title: Stop Reason
+          type: string
+      required:
+      - thread_id
+      - sequence_id
+      - step
+      - next_due_at
+      - stopped_at
+      - stop_reason
+      title: SequenceStateResponse
+      type: object
+    SequenceStepListResponse:
+      properties:
+        results:
+          description: Steps by number.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/SequenceStepResponse'
+          title: Results
+          type: array
+      required:
+      - results
+      title: SequenceStepListResponse
+      type: object
+    SequenceStepRequest:
+      additionalProperties: false
+      properties:
+        number:
+          description: Step number, from 1.
+          examples:
+          - 1
+          maximum: 100
+          minimum: 1
+          title: Number
+          type: integer
+        days_after_previous:
+          description: Days after the previous delivery.
+          examples:
+          - 3
+          maximum: 365
+          minimum: 0
+          title: Days After Previous
+          type: integer
+        template_key:
+          description: Static template key.
+          examples:
+          - followup
+          maxLength: 128
+          minLength: 1
+          title: Template Key
+          type: string
+      required:
+      - number
+      - days_after_previous
+      - template_key
+      title: SequenceStepRequest
+      type: object
+    SequenceStepResponse:
+      properties:
+        id:
+          description: Step id.
+          examples:
+          - 1
+          title: Id
+          type: integer
+        number:
+          description: Step number.
+          examples:
+          - 1
+          title: Number
+          type: integer
+        days_after_previous:
+          description: Days after the previous delivery.
+          examples:
+          - 3
+          title: Days After Previous
+          type: integer
+        template_key:
+          description: Static template key.
+          examples:
+          - followup
+          title: Template Key
+          type: string
+      required:
+      - id
+      - number
+      - days_after_previous
+      - template_key
+      title: SequenceStepResponse
+      type: object
+    SkipRequest:
+      additionalProperties: false
+      properties:
+        reason:
+          default: ''
+          description: Why the message is rejected.
+          examples:
+          - Not a fit
+          maxLength: 255
+          title: Reason
+          type: string
+      title: SkipRequest
+      type: object
+    SuppressionKind:
+      enum:
+      - email
+      - domain
+      - email_token
+      title: SuppressionKind
+      type: string
+    SuppressionListResponse:
+      properties:
+        results:
+          description: Suppressions of the channel.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/SuppressionResponse'
+          title: Results
+          type: array
+      required:
+      - results
+      title: SuppressionListResponse
+      type: object
+    SuppressionRequest:
+      additionalProperties: false
+      properties:
+        kind:
+          $ref: '#/components/schemas/SuppressionKind'
+          description: email or domain.
+          examples:
+          - domain
+        value:
+          description: Email, or a domain / host.
+          examples:
+          - shop.test
+          maxLength: 254
+          minLength: 1
+          title: Value
+          type: string
+        reason:
+          default: ''
+          description: Why.
+          examples:
+          - Asked not to be contacted
+          maxLength: 255
+          title: Reason
+          type: string
+      required:
+      - kind
+      - value
+      title: SuppressionRequest
+      type: object
+    SuppressionResponse:
+      properties:
+        id:
+          description: Suppression id.
+          examples:
+          - 1
+          title: Id
+          type: integer
+        kind:
+          description: email, domain or email_token (global).
+          examples:
+          - domain
+          title: Kind
+          type: string
+        value:
+          description: Lower-cased email or registrable domain.
+          examples:
+          - shop.test
+          title: Value
+          type: string
+        reason:
+          description: Why.
+          examples:
+          - ''
+          title: Reason
+          type: string
+        created_at:
+          description: Created.
+          examples:
+          - '2026-09-13T12:00:00Z'
+          format: date-time
+          title: Created At
+          type: string
+      required:
+      - id
+      - kind
+      - value
+      - reason
+      - created_at
+      title: SuppressionResponse
+      type: object
+    TemplateKind:
+      enum:
+      - static
+      - ai_prompt
+      title: TemplateKind
+      type: string
+    TemplateListResponse:
+      properties:
+        results:
+          description: Templates of the channel by key.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/TemplateResponse'
+          title: Results
+          type: array
+      required:
+      - results
+      title: TemplateListResponse
+      type: object
+    TemplateRefResponse:
+      properties:
+        template_id:
+          description: Template id.
+          examples:
+          - 1
+          title: Template Id
+          type: integer
+        key:
+          description: Template key.
+          examples:
+          - lead.cold.shop
+          title: Key
+          type: string
+        kind:
+          description: static or ai_prompt.
+          examples:
+          - ai_prompt
+          title: Kind
+          type: string
+        version_id:
+          description: Template version id the message was rendered with.
+          examples:
+          - 4
+          title: Version Id
+          type: integer
+        version_number:
+          description: Version number.
+          examples:
+          - 2
+          title: Version Number
+          type: integer
+      required:
+      - template_id
+      - key
+      - kind
+      - version_id
+      - version_number
+      title: TemplateRefResponse
+      type: object
+    TemplateRequest:
+      additionalProperties: false
+      description: Create or replace a template; a content change creates a new version.
+      properties:
+        key:
+          description: Dotted template key.
+          examples:
+          - lead.cold.shop
+          maxLength: 128
+          minLength: 1
+          title: Key
+          type: string
+        kind:
+          $ref: '#/components/schemas/TemplateKind'
+          description: static or ai_prompt.
+          examples:
+          - ai_prompt
+        language:
+          description: ISO 639-1 language code.
+          examples:
+          - pl
+          maxLength: 2
+          minLength: 2
+          title: Language
+          type: string
+        subject:
+          default: ''
+          description: Subject (static) or a label.
+          examples:
+          - Hello
+          maxLength: 255
+          title: Subject
+          type: string
+        body:
+          description: Static body, or system prompt + '=== USER ===' line + user prompt.
+          examples:
+          - Hi {first_name}
+          minLength: 1
+          title: Body
+          type: string
+        json_schema:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          default: null
+          description: Output schema (ai_prompt).
+          examples:
+          - null
+          title: Json Schema
+        model:
+          default: ''
+          description: Toolbox model id (ai_prompt).
+          examples:
+          - fake-chat
+          maxLength: 128
+          title: Model
+          type: string
+        requires_legal_footer:
+          default: true
+          description: Refuse calls without a footer.
+          examples:
+          - true
+          title: Requires Legal Footer
+          type: boolean
+        auto_approve:
+          default: false
+          description: 'Static only: approve without review.'
+          examples:
+          - false
+          title: Auto Approve
+          type: boolean
+        is_active:
+          default: true
+          description: Inactive templates never resolve.
+          examples:
+          - true
+          title: Is Active
+          type: boolean
+      required:
+      - key
+      - kind
+      - language
+      - body
+      title: TemplateRequest
+      type: object
+    TemplateResponse:
+      properties:
+        id:
+          description: Template id.
+          examples:
+          - 1
+          title: Id
+          type: integer
+        key:
+          description: Template key.
+          examples:
+          - lead.cold.shop
+          title: Key
+          type: string
+        kind:
+          description: static or ai_prompt.
+          examples:
+          - ai_prompt
+          title: Kind
+          type: string
+        language:
+          description: ISO 639-1 code.
+          examples:
+          - pl
+          title: Language
+          type: string
+        subject:
+          description: Subject.
+          examples:
+          - Hello
+          title: Subject
+          type: string
+        body:
+          description: Body or prompt.
+          examples:
+          - Hi {first_name}
+          title: Body
+          type: string
+        json_schema:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          description: Output schema.
+          examples:
+          - null
+          title: Json Schema
+        model:
+          description: Toolbox model id.
+          examples:
+          - fake-chat
+          title: Model
+          type: string
+        requires_legal_footer:
+          description: Calls need a footer.
+          examples:
+          - true
+          title: Requires Legal Footer
+          type: boolean
+        auto_approve:
+          description: Static only.
+          examples:
+          - false
+          title: Auto Approve
+          type: boolean
+        is_active:
+          description: Resolvable.
+          examples:
+          - true
+          title: Is Active
+          type: boolean
+        current_version_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Current version id.
+          examples:
+          - 4
+          title: Current Version Id
+        current_version_number:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Current version number.
+          examples:
+          - 2
+          title: Current Version Number
+      required:
+      - id
+      - key
+      - kind
+      - language
+      - subject
+      - body
+      - json_schema
+      - model
+      - requires_legal_footer
+      - auto_approve
+      - is_active
+      - current_version_id
+      - current_version_number
+      title: TemplateResponse
+      type: object
+    TemplateVersionListResponse:
+      properties:
+        results:
+          description: Newest first.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/TemplateVersionResponse'
+          title: Results
+          type: array
+      required:
+      - results
+      title: TemplateVersionListResponse
+      type: object
+    TemplateVersionResponse:
+      properties:
+        id:
+          description: Version id.
+          examples:
+          - 4
+          title: Id
+          type: integer
+        number:
+          description: Version number.
+          examples:
+          - 2
+          title: Number
+          type: integer
+        subject:
+          description: Subject.
+          examples:
+          - Hello
+          title: Subject
+          type: string
+        body:
+          description: Body or prompt.
+          examples:
+          - Hi {first_name}
+          title: Body
+          type: string
+        json_schema:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          description: Output schema.
+          examples:
+          - null
+          title: Json Schema
+        model:
+          description: Toolbox model id.
+          examples:
+          - fake-chat
+          title: Model
+          type: string
+        created_by_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Author user id.
+          examples:
+          - null
+          title: Created By Id
+        created_at:
+          description: Created.
+          examples:
+          - '2026-09-13T12:00:00Z'
+          format: date-time
+          title: Created At
+          type: string
+      required:
+      - id
+      - number
+      - subject
+      - body
+      - json_schema
+      - model
+      - created_by_id
+      - created_at
+      title: TemplateVersionResponse
+      type: object
+    TestGenerateRequest:
+      additionalProperties: false
+      properties:
+        context:
+          additionalProperties: true
+          description: Placeholder values, recipient names included.
+          examples:
+          - first_name: Jan
+          title: Context
+          type: object
+      title: TestGenerateRequest
+      type: object
+    TextListResponse:
+      properties:
+        results:
+          description: Texts of the sequence.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/TextResponse'
+          title: Results
+          type: array
+      required:
+      - results
+      title: TextListResponse
+      type: object
+    TextRequest:
+      additionalProperties: false
+      properties:
+        body:
+          description: Follow-up text.
+          examples:
+          - Just checking in.
+          maxLength: 4000
+          minLength: 1
+          title: Body
+          type: string
+        is_active:
+          default: true
+          description: Can be picked.
+          examples:
+          - true
+          title: Is Active
+          type: boolean
+      required:
+      - body
+      title: TextRequest
+      type: object
+    TextResponse:
+      properties:
+        id:
+          description: Text id.
+          examples:
+          - 1
+          title: Id
+          type: integer
+        body:
+          description: Follow-up text.
+          examples:
+          - Just checking in.
+          title: Body
+          type: string
+        is_active:
+          description: Can be picked.
+          examples:
+          - true
+          title: Is Active
+          type: boolean
+      required:
+      - id
+      - body
+      - is_active
+      title: TextResponse
+      type: object
+    ThreadDetailResponse:
+      properties:
+        id:
+          description: Thread id.
+          examples:
+          - 3
+          title: Id
+          type: integer
+        subject_ref:
+          description: Opaque reference of the caller.
+          examples:
+          - leads.Company:42
+          title: Subject Ref
+          type: string
+        recipient_email:
+          description: Recipient email.
+          examples:
+          - jan@shop.test
+          title: Recipient Email
+          type: string
+        recipient_name:
+          description: Recipient name.
+          examples:
+          - Jan Kowalski
+          title: Recipient Name
+          type: string
+        status:
+          description: open, replied or closed.
+          examples:
+          - replied
+          title: Status
+          type: string
+        last_message_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Last outbound or inbound mail.
+          examples:
+          - null
+          title: Last Message At
+        sequence:
+          anyOf:
+          - $ref: '#/components/schemas/SequenceStateResponse'
+          - type: 'null'
+          description: Follow-up sequence of the thread.
+          examples:
+          - null
+        timeline:
+          description: Messages and replies, oldest first.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/TimelineEntryResponse'
+          title: Timeline
+          type: array
+      required:
+      - id
+      - subject_ref
+      - recipient_email
+      - recipient_name
+      - status
+      - last_message_at
+      - sequence
+      - timeline
+      title: ThreadDetailResponse
+      type: object
+    ThreadListResponse:
+      properties:
+        count:
+          description: Total matching threads.
+          examples:
+          - 1
+          title: Count
+          type: integer
+        next:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Next page URL.
+          examples:
+          - null
+          title: Next
+        previous:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Previous page URL.
+          examples:
+          - null
+          title: Previous
+        results:
+          description: Newest first.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/ThreadSummaryResponse'
+          title: Results
+          type: array
+      required:
+      - count
+      - next
+      - previous
+      - results
+      title: ThreadListResponse
+      type: object
+    ThreadResponse:
+      properties:
+        id:
+          description: Thread id.
+          examples:
+          - 3
+          title: Id
+          type: integer
+        subject_ref:
+          description: Opaque reference of the caller.
+          examples:
+          - leads.Company:42
+          title: Subject Ref
+          type: string
+        recipient_email:
+          description: Recipient email.
+          examples:
+          - jan@shop.test
+          title: Recipient Email
+          type: string
+        recipient_name:
+          description: Recipient name.
+          examples:
+          - Jan Kowalski
+          title: Recipient Name
+          type: string
+        recipient_language:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: ISO 639-1 code.
+          examples:
+          - pl
+          title: Recipient Language
+        status:
+          description: open, replied or closed.
+          examples:
+          - open
+          title: Status
+          type: string
+      required:
+      - id
+      - subject_ref
+      - recipient_email
+      - recipient_name
+      - recipient_language
+      - status
+      title: ThreadResponse
+      type: object
+    ThreadSummaryResponse:
+      properties:
+        id:
+          description: Thread id.
+          examples:
+          - 3
+          title: Id
+          type: integer
+        subject_ref:
+          description: Opaque reference of the caller.
+          examples:
+          - leads.Company:42
+          title: Subject Ref
+          type: string
+        recipient_email:
+          description: Recipient email.
+          examples:
+          - jan@shop.test
+          title: Recipient Email
+          type: string
+        recipient_name:
+          description: Recipient name.
+          examples:
+          - Jan Kowalski
+          title: Recipient Name
+          type: string
+        status:
+          description: open, replied or closed.
+          examples:
+          - replied
+          title: Status
+          type: string
+        last_message_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Last outbound or inbound mail.
+          examples:
+          - null
+          title: Last Message At
+      required:
+      - id
+      - subject_ref
+      - recipient_email
+      - recipient_name
+      - status
+      - last_message_at
+      title: ThreadSummaryResponse
+      type: object
+    TimelineEntryResponse:
+      properties:
+        kind:
+          description: message or reply.
+          examples:
+          - reply
+          title: Kind
+          type: string
+        at:
+          description: Sent, received or created.
+          examples:
+          - '2026-09-14T10:15:00Z'
+          format: date-time
+          title: At
+          type: string
+        direction:
+          description: out or in.
+          examples:
+          - in
+          title: Direction
+          type: string
+        status:
+          description: Message status; empty for a reply.
+          examples:
+          - ''
+          title: Status
+          type: string
+        subject:
+          description: Subject.
+          examples:
+          - 'Re: Your shop audit'
+          title: Subject
+          type: string
+        body_text:
+          description: Plain-text body, quoted history included.
+          examples:
+          - Hello, ...
+          title: Body Text
+          type: string
+        from_email:
+          description: Sender of a reply; empty for our messages.
+          examples:
+          - owner@shop.test
+          title: From Email
+          type: string
+        reply_kind:
+          description: reply, auto, suspected_optout, bounce_hard or bounce_soft; empty for a message.
+          examples:
+          - reply
+          title: Reply Kind
+          type: string
+      required:
+      - kind
+      - at
+      - direction
+      - status
+      - subject
+      - body_text
+      - from_email
+      - reply_kind
+      title: TimelineEntryResponse
+      type: object
+    WindowRequest:
+      additionalProperties: false
+      properties:
+        order:
+          default: 0
+          description: Display order.
+          examples:
+          - 0
+          minimum: 0
+          title: Order
+          type: integer
+        start_time:
+          description: Window start (inclusive), channel timezone.
+          examples:
+          - 08:00
+          format: time
+          title: Start Time
+          type: string
+        end_time:
+          description: Window end (exclusive), channel timezone.
+          examples:
+          - '17:00'
+          format: time
+          title: End Time
+          type: string
+      required:
+      - start_time
+      - end_time
+      title: WindowRequest
+      type: object
+    WindowResponse:
+      properties:
+        order:
+          description: Display order.
+          examples:
+          - 0
+          title: Order
+          type: integer
+        start_time:
+          description: Start (inclusive).
+          examples:
+          - 08:00:00
+          format: time
+          title: Start Time
+          type: string
+        end_time:
+          description: End (exclusive).
+          examples:
+          - '17:00:00'
+          format: time
+          title: End Time
+          type: string
+      required:
+      - order
+      - start_time
+      - end_time
+      title: WindowResponse
+      type: object
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
