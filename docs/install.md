@@ -54,7 +54,10 @@ app.conf.beat_schedule |= {
     "communicator-send-due": {"task": "django_communicator.send_due", "schedule": crontab(minute="*/5")},
     "communicator-follow-ups": {"task": "django_communicator.schedule_follow_ups", "schedule": crontab(minute=0)},
     "communicator-poll-inbox": {"task": "django_communicator.poll_inbox", "schedule": crontab(minute="*/5")},
-    "communicator-retry-drafts": {"task": "django_communicator.retry_failed_drafts", "schedule": crontab(minute="*/10")},
+    "communicator-retry-drafts": {
+        "task": "django_communicator.retry_failed_drafts",
+        "schedule": crontab(minute="*/10"),
+    },
 }
 ```
 
