@@ -9,6 +9,7 @@ Prompts and keys are never logged and never put into `failure_detail`.
 """
 
 import logging
+import re
 from dataclasses import dataclass
 
 from django.apps import apps
@@ -31,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 USER_PROMPT_SEPARATOR = "=== USER ==="
 _HIGH_SEVERITY_CODES = frozenset({FailureCode.BUDGET.value, FailureCode.MODEL.value})
+# Matches `failure_detail()` output: `ToolboxConnectionError - HTTP 0`, `ToolboxServerError - HTTP 502`, ...
+_TRANSIENT_DETAIL = re.compile(r"\bToolbox(Connection|Timeout)Error\b|\bHTTP 5\d\d\b")
 
 
 class DraftOutputError(Exception):
@@ -104,6 +107,15 @@ def failure_detail(error: Exception) -> str:
     return f"{type(error).__name__} {error.code or '-'} HTTP {error.status_code}" + (
         f" fields={fields}" if fields else ""
     )
+
+
+def is_transient(detail: str) -> bool:
+    """The last line of a `failure_detail`: toolbox unreachable, timed out or answered 5xx — worth a later retry.
+
+    Budget, model, schema, auth and contract errors are permanent; only an `upstream` failure can be transient.
+    """
+    last = detail.rsplit("\n", 1)[-1]
+    return bool(_TRANSIENT_DETAIL.search(last))
 
 
 def notify_failure(*, channel_idx: str, subject_ref: str, code: str, template_key: str) -> None:

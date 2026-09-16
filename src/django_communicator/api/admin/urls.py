@@ -80,4 +80,6 @@ if is_development():
         path("test/reset-counters/", dev.DevResetCountersView.as_view(), name="admin-communicator-test-reset-counters"),
         path("test/start-sequence/", dev.DevStartSequenceView.as_view(), name="admin-communicator-test-start-sequence"),
         path("test/poll-now/", dev.DevPollNowView.as_view(), name="admin-communicator-test-poll-now"),
+        path("test/retry-drafts/", dev.DevRetryDraftsView.as_view(), name="admin-communicator-test-retry-drafts"),
+        path("test/toolbox-outage/", dev.DevToolboxOutageView.as_view(), name="admin-communicator-test-toolbox-outage"),
     ]

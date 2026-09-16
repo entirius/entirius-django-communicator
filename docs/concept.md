@@ -63,7 +63,9 @@ draft ─┬─> review_required ─┬─> approved ─┬─> scheduled ─> s
        └─> approved | failed | rejected | superseded
 ```
 
-`failed`, `suppressed`, `would_send`, `rejected`, `superseded` and `skipped` are terminal.
+`failed`, `suppressed`, `would_send`, `rejected`, `superseded` and `skipped` are terminal — with one exit: a
+first-version AI draft that failed transiently (toolbox unreachable, timeout, 5xx) goes back to `review_required`
+when the beat `retry_failed_drafts` succeeds (`message_service.recover_draft`, outside the transition table).
 `failure_code` says why (`no_template`, `render`, `budget`, `schema`, `model`, `upstream`, `smtp`,
 `bounce`, `send_outcome_unknown`); `failure_detail` holds the error class, codes and field names —
 never the prompt.

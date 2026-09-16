@@ -375,6 +375,15 @@ class MailboxResponse(BaseModel):
         return cls.model_validate({**fields, "has_password": bool(config.imap_password)})
 
 
+class RetryDraftsResponse(BaseModel):
+    recovered: int = Field(description="Drafts moved from failed to review_required.", examples=[1])
+    failed: int = Field(description="Drafts whose retry failed again.", examples=[0])
+
+
+class ToolboxOutageResponse(BaseModel):
+    down: bool = Field(description="Whether the simulated toolbox outage is on.", examples=[True])
+
+
 class PollNowResponse(BaseModel):
     ingested: int = Field(description="Mail that produced or matched a reply.", examples=[1])
     skipped: int = Field(description="Mail dropped (unmatched, own, expunged).", examples=[0])

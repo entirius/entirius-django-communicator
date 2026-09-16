@@ -89,6 +89,33 @@ def release_claim(message: Message, status: str) -> None:
     message.status = status
 
 
+def claim_draft_retry(message: Message) -> bool:
+    """Count one retry of a failed draft before the toolbox is called: compare-and-set on status and count,
+    committed on its own — no lock is held during the call. False when another run claimed it first."""
+    retries = message.draft_retries + 1
+    with transaction.atomic():
+        claimed = Message.objects.filter(
+            pk=message.pk, status=MessageStatus.FAILED, draft_retries=message.draft_retries
+        ).update(draft_retries=retries, modified_at=timezone.now())
+    if claimed:
+        message.draft_retries = retries
+    return bool(claimed)
+
+
+def recover_draft(message: Message, **fields) -> bool:
+    """The only way out of `failed`: a draft whose claimed retry succeeded becomes `review_required` (never
+    approved — a human still reviews it). Compare-and-set on the claimed count; False when the row moved on."""
+    changes = {**fields, "status": MessageStatus.REVIEW_REQUIRED, "failure_code": "", "modified_at": timezone.now()}
+    with transaction.atomic():
+        updated = Message.objects.filter(
+            pk=message.pk, status=MessageStatus.FAILED, draft_retries=message.draft_retries
+        ).update(**changes)
+    if updated:
+        for name, value in changes.items():
+            setattr(message, name, value)
+    return bool(updated)
+
+
 @transaction.atomic
 def claim_automated_rewrite(message: Message, *, limit: int) -> bool:
     """Count one automated rewrite on the locked row before the toolbox is called; False once `limit` is reached.
