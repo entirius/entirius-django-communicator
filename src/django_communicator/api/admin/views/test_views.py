@@ -1,7 +1,8 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
-"""Development-only endpoints for BDD: communicate(), channel clock, beat run, sequence start, IMAP poll, counters.
+"""Development-only endpoints for BDD: communicate(), channel clock, beat run, sequence start, IMAP poll, counters,
+draft retry run and the toolbox outage switch.
 
 404 outside `ENVIRONMENT == "development"`.
 """
@@ -12,6 +13,7 @@ from typing import TypeVar
 from celery_once import AlreadyQueued
 from django.db import transaction
 from django.utils.decorators import method_decorator
+from django_utils.toolbox import outage
 from drf_spectacular.utils import extend_schema
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.request import Request
@@ -24,18 +26,27 @@ from django_communicator.schemas.requests import (
     DevCommunicateRequest,
     DevResetCountersRequest,
     DevStartSequenceRequest,
+    DevToolboxOutageRequest,
 )
 from django_communicator.schemas.responses import (
     ClockResponse,
     CountersResetResponse,
     MessageDetailResponse,
     PollNowResponse,
+    RetryDraftsResponse,
     SendDueResponse,
     SequenceStateResponse,
+    ToolboxOutageResponse,
 )
-from django_communicator.services import clock_service, counter_service, poll_service, sequence_service
+from django_communicator.services import (
+    clock_service,
+    counter_service,
+    draft_retry_service,
+    poll_service,
+    sequence_service,
+)
 from django_communicator.services.communicate_service import LegalFooterRequiredError, communicate
-from django_communicator.tasks import poll_inbox, schedule_follow_ups, send_due
+from django_communicator.tasks import poll_inbox, retry_failed_drafts, schedule_follow_ups, send_due
 
 _TAGS = ["Communicator (development)"]
 T = TypeVar("T")
@@ -152,3 +163,37 @@ class DevPollNowView(DevelopmentView):
         channel = self.channel(channel_idx)
         counts = _run_locked(poll_inbox, lambda: poll_service.poll_all(channel))
         return Response(PollNowResponse(**counts).model_dump(mode="json"))
+
+
+@method_decorator(transaction.non_atomic_requests, name="dispatch")  # no toolbox call inside a transaction
+class DevRetryDraftsView(DevelopmentView):
+    @extend_schema(
+        tags=_TAGS,
+        summary="Run retry_failed_drafts now (development only)",
+        description="Runs the beat task body in-process over every channel under its celery-once lock — 409 while a "
+        "beat run holds it. Nothing is retried while the toolbox status is not `configured`.",
+        request=None,
+        responses={200: RetryDraftsResponse, **ERROR_RESPONSES, 409: None},
+    )
+    def post(self, request: Request, channel_idx: str) -> Response:
+        self.channel(channel_idx)
+        counts = _run_locked(retry_failed_drafts, draft_retry_service.retry_failed_drafts)
+        return Response(RetryDraftsResponse(**counts).model_dump(mode="json"))
+
+
+class DevToolboxOutageView(DevelopmentView):
+    @extend_schema(
+        tags=_TAGS,
+        summary="Simulate an AI toolbox outage (development only)",
+        description="Turns the `django_utils.toolbox.outage` switch on or off for every process sharing the cache. "
+        "404 where the switch is not allowed (no DEBUG and no AI_TOOLBOX_TEST_SWITCH, or production).",
+        request=DevToolboxOutageRequest,
+        responses={200: ToolboxOutageResponse, **ERROR_RESPONSES},
+    )
+    def post(self, request: Request, channel_idx: str) -> Response:
+        body = parse(DevToolboxOutageRequest, request.data)
+        self.channel(channel_idx)
+        if not outage.allowed():
+            raise NotFound()
+        outage.set_down(body.down)
+        return Response(ToolboxOutageResponse(down=outage.is_down()).model_dump(mode="json"))

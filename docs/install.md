@@ -36,6 +36,7 @@ The only settings table. Defaults live in `django_communicator/settings.py` and 
 | `COMMUNICATOR_SENDING_STALE_MINUTES` | `30` | a `sending` claim older than this ends `failed/send_outcome_unknown` |
 | `COMMUNICATOR_SANDBOX_SUBJECT_PREFIX` | `"[SANDBOX] "` | subject prefix in sandbox mode |
 | `COMMUNICATOR_AUTOMATED_REWRITE_LIMIT` | `3` | automated rewrites per message |
+| `COMMUNICATOR_DRAFT_RETRY_LIMIT` | `3` | automatic retries of a draft that failed transiently |
 | `COMMUNICATOR_INBOUND_BATCH` | `50` | mails per mailbox per poll |
 | `COMMUNICATOR_INBOUND_MAX_BYTES` | `10 MB` | larger mails are quarantined unfetched |
 | `COMMUNICATOR_INBOUND_BODY_MAX_CHARS` | `100000` | stored reply body cut |
@@ -53,6 +54,10 @@ app.conf.beat_schedule |= {
     "communicator-send-due": {"task": "django_communicator.send_due", "schedule": crontab(minute="*/5")},
     "communicator-follow-ups": {"task": "django_communicator.schedule_follow_ups", "schedule": crontab(minute=0)},
     "communicator-poll-inbox": {"task": "django_communicator.poll_inbox", "schedule": crontab(minute="*/5")},
+    "communicator-retry-drafts": {
+        "task": "django_communicator.retry_failed_drafts",
+        "schedule": crontab(minute="*/10"),
+    },
 }
 ```
 

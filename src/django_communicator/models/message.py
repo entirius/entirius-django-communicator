@@ -30,6 +30,9 @@ class Message(BaseModel):
     version = models.PositiveSmallIntegerField(default=1)
     parent = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="children")
     automated_rewrites = models.PositiveSmallIntegerField(default=0)
+    draft_retries = models.PositiveSmallIntegerField(
+        default=0, help_text="Automatic retries of a draft that failed transiently (toolbox down, timeout, 5xx)."
+    )
     edited_by_human = models.BooleanField(default=False)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"

@@ -1,7 +1,7 @@
 
 [project]
 name = "entirius-django-communicator"
-version = "0.1.0"
+version = "0.2.0"
 description = "Channel-agnostic communication for the Volkanos platform: templates, review, sequences, send policy and inbound replies"
 authors = [{ name = "Entirius" }]
 maintainers = [
@@ -20,7 +20,7 @@ dependencies = [
     "drf-spectacular>=0.27",
     "pydantic>=2.0",
     "httpx>=0.27",
-    "entirius-django-utils>=2.1.0",
+    "entirius-django-utils>=2.2.0",
     "entirius-django-regional>=2.0.1",
     "entirius-py-idx-normalizator>=2.0.0",
     "entirius-django-email>=4.0.1",

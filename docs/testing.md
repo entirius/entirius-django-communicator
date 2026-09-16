@@ -12,6 +12,7 @@ edge-case ID (`test_C14_…`).
 | File | Covers | IDs |
 |---|---|---|
 | `test_communicate.py` | suppression, template fallback, footer, render, static vs AI, toolbox failure codes and notifications | C-01…C-06, C-10…C-12, C-33 |
+| `test_draft_retry.py` | beat retry of transiently failed drafts: transient vs permanent, attempts cap, unreachable toolbox no-op, claim, skips, no call inside a transaction, dev retry and outage endpoints | FIX-16 items 2, 3 |
 | `test_review.py` | accept, rewrite (limit, failures count), edit, skip, template versions | C-07…C-09, C-29 |
 | `test_sending.py` | modes, live gate, send-once claim, stale `sending`, overlapping runs under the cap, SMTP 4xx/5xx and sender refusal, mail structure, send now, soft-bounce retry, dev endpoints, the single `deliver(` caller | C-13…C-16, C-18, C-19, C-31, C-32 |
 | `test_policy.py` | windows, holidays, next slot, cap per channel day and spread quota, `CHANNEL_CONFIG_INVALID`, sandbox without mailbox, clock override only in development | C-16, C-17, C-30 |

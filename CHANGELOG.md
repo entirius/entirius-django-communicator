@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0 — 2026-09-16
+
+- **Draft recovery after a toolbox outage.** New beat task `django_communicator.retry_failed_drafts` (host
+  schedule every 10 min, queue `communicator_default`): once `status()` reports the toolbox reachable, a
+  first-version AI draft that failed transiently (`ToolboxConnectionError`, timeout, HTTP 5xx) is generated again
+  from its stored prompt, at most `COMMUNICATOR_DRAFT_RETRY_LIMIT` (3) times; success → `review_required`, never
+  sent without review. Budget, model and schema failures stay failed. Migration `0009`: `Message.draft_retries`.
+  A transiently failed draft now keeps `rendered_prompt`; every retry appends a line to `failure_detail`.
+- Development endpoints `test/retry-drafts/` and `test/toolbox-outage/` (the `django_utils.toolbox.outage`
+  switch — needs `entirius-django-utils` with the outage switch).
+- Draft retries ask the subject owner first: new synchronous signal `draft_retry_requested(sender=Message,
+  message=...)`; a returned reason ends the retries without spending one (`failure_detail` line
+  `retry: blocked_by_subject <reason>`). `test/toolbox-outage/` rejects unknown keys with 400.
+
 ## 0.1.0 — 2026-09-15
 
 Initial release. Channel-agnostic communication for Volkanos: a caller asks for a message by template key
