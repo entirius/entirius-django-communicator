@@ -58,6 +58,7 @@ urlpatterns = [
         name="admin-communicator-sequence-text",
     ),
     path("threads/", thread.ThreadListView.as_view(), name="admin-communicator-threads"),
+    path("conversations/", thread.ConversationListView.as_view(), name="admin-communicator-conversations"),
     path("threads/<int:pk>/", thread.ThreadDetailView.as_view(), name="admin-communicator-thread"),
     path(
         "threads/<int:pk>/resume-sequence/",

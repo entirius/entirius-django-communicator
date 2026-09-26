@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Admin API v2 — threads: the inbox list (state filter, counts), one thread with its timeline, resume a sequence."""
+"""Admin API v2 — threads: the inbox lists (threads, conversations; state filter, counts), one thread with its timeline, resume a sequence."""
 
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.exceptions import NotFound
@@ -11,8 +11,11 @@ from rest_framework.response import Response
 
 from django_communicator.api.admin.views._base import ERROR_RESPONSES, AdminPagination, AdminView, Conflict, parse
 from django_communicator.models import Channel, SendPolicy, Thread
-from django_communicator.schemas.requests import ThreadListQuery
+from django_communicator.schemas.requests import ConversationListQuery, ThreadListQuery
 from django_communicator.schemas.responses import (
+    ConversationCountsResponse,
+    ConversationListResponse,
+    ConversationRowResponse,
     SequenceStateResponse,
     ThreadCountsResponse,
     ThreadDetailResponse,
@@ -49,6 +52,31 @@ class ThreadListView(AdminView):
         response = paginator.get_paginated_response([ThreadRowResponse.of(row).model_dump(mode="json") for row in rows])
         counts = inbox_service.count_states(channel, subject_ref=query.subject_ref)
         response.data["counts"] = ThreadCountsResponse(**counts).model_dump()
+        return response
+
+
+class ConversationListView(AdminView):
+    @extend_schema(
+        tags=_TAGS,
+        operation_id="communicator_conversations_list",
+        summary="Conversations of the channel (one row per subject reference), latest activity first",
+        parameters=[
+            OpenApiParameter("state", str, enum=list(inbox_service.THREAD_STATES), description="Inbox filter."),
+            OpenApiParameter("page", int),
+            OpenApiParameter("page_size", int),
+        ],
+        responses={200: ConversationListResponse, **ERROR_RESPONSES},
+    )
+    def get(self, request: Request, channel_idx: str) -> Response:
+        query = parse(ConversationListQuery, request.query_params.dict())
+        channel = self.channel(channel_idx)
+        paginator = AdminPagination()
+        page = paginator.paginate_queryset(inbox_service.list_conversations(channel, state=query.state), request, self)
+        rows = inbox_service.conversation_rows(page, _policy_or_none(channel))
+        results = [ConversationRowResponse.of(row).model_dump(mode="json") for row in rows]
+        response = paginator.get_paginated_response(results)
+        counts = inbox_service.count_conversations(channel)
+        response.data["counts"] = ConversationCountsResponse(**counts).model_dump()
         return response
 
 

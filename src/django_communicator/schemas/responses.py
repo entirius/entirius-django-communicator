@@ -351,6 +351,38 @@ class ThreadListResponse(BaseModel):
     counts: ThreadCountsResponse = Field(description="Threads per state, ignoring the `state` filter.")
 
 
+class ConversationDraftResponse(ThreadDraftResponse):
+    recipient_email: str = Field(description="Recipient of the draft's own thread.", examples=["jan@shop.test"])
+
+
+class ConversationRowResponse(ThreadRowResponse):
+    """A conversation (one `subject_ref`): its newest thread, the state taken from every thread."""
+
+    draft: ConversationDraftResponse | None = Field(
+        description="The newest draft waiting for review in any thread of the conversation.", examples=[None]
+    )
+    waiting: ThreadWaitingResponse | None = Field(
+        description="The first mail waiting to be sent in any thread of the conversation.", examples=[None]
+    )
+    thread_count: int = Field(description="Threads of the conversation.", examples=[2])
+    replied: bool = Field(description="A thread of the conversation is in status replied.", examples=[True])
+
+
+class ConversationCountsResponse(BaseModel):
+    all: int = Field(description="Conversations of the channel.", examples=[12])
+    draft: int = Field(description="Conversations with a draft waiting for review in any thread.", examples=[2])
+    waiting: int = Field(description="Conversations with a mail waiting to be sent in any thread.", examples=[1])
+    replied: int = Field(description="Conversations with a thread in status replied.", examples=[8])
+
+
+class ConversationListResponse(BaseModel):
+    count: int = Field(description="Total matching conversations.", examples=[1])
+    next: str | None = Field(description="Next page URL.", examples=[None])
+    previous: str | None = Field(description="Previous page URL.", examples=[None])
+    results: list[ConversationRowResponse] = Field(description="Latest conversation activity first.", examples=[[]])
+    counts: ConversationCountsResponse = Field(description="Conversations per state, ignoring the `state` filter.")
+
+
 class TimelineEntryResponse(BaseModel):
     kind: str = Field(description="message or reply.", examples=["reply"])
     message_id: int | None = Field(description="Message id; null for a reply.", examples=[None])

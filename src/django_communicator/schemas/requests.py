@@ -231,6 +231,14 @@ class ThreadListQuery(BaseModel):
     )
 
 
+class ConversationListQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    state: Literal["draft", "waiting", "replied"] | None = Field(
+        default=None, description="A conversation is in a state when any of its threads is (see ThreadListQuery)."
+    )
+
+
 class ReplyListQuery(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

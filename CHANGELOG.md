@@ -13,6 +13,10 @@
 - **Pool texts can be edited and removed.** `PATCH sequences/<id>/texts/<text_id>/` (`body`, `is_active`) and
   `DELETE` on the same path: a text no thread used is deleted (204), a used one deactivated (200 with the row), so
   the thread history stays.
+- **Inbox list of conversations.** `GET conversations/` (`state`, `page`, `page_size`): one row per `subject_ref`,
+  the newest thread's row plus `thread_count`, `replied` and the draft's own `recipient_email`; the state, `draft`,
+  `waiting` and `last_text` come from any thread of the conversation, ordering by its latest activity, `counts` per
+  state count conversations. Three queries for a page's rows. `threads/` is unchanged.
 - **Inbox list over `threads/`.** `state` filter (`draft`, `waiting`, `replied`), `sort=activity` (latest mail, draft
   or reply first; the default stays newest created, which a caller's "newest thread" relies on), `counts` per state
   in every page, and per row `activity_at`, `subject`, `last_text`, the newest `draft` and the first `waiting` mail

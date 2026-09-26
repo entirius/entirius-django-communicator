@@ -78,6 +78,52 @@ paths:
           description: No response body
         '409':
           description: No response body
+  /api/communicator/v2/admin/{channel_idx}/conversations/:
+    get:
+      operationId: communicator_conversations_list
+      summary: Conversations of the channel (one row per subject reference), latest activity first
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: page
+        schema:
+          type: integer
+      - in: query
+        name: page_size
+        schema:
+          type: integer
+      - in: query
+        name: state
+        schema:
+          type: string
+          enum:
+          - draft
+          - replied
+          - waiting
+        description: Inbox filter.
+      tags:
+      - Communicator inbox
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
   /api/communicator/v2/admin/{channel_idx}/footers/:
     get:
       operationId: communicator_footers_list
@@ -1770,6 +1816,209 @@ components:
       - live
       title: ChannelMode
       type: string
+    ConversationCountsResponse:
+      properties:
+        all:
+          description: Conversations of the channel.
+          examples:
+          - 12
+          title: All
+          type: integer
+        draft:
+          description: Conversations with a draft waiting for review in any thread.
+          examples:
+          - 2
+          title: Draft
+          type: integer
+        waiting:
+          description: Conversations with a mail waiting to be sent in any thread.
+          examples:
+          - 1
+          title: Waiting
+          type: integer
+        replied:
+          description: Conversations with a thread in status replied.
+          examples:
+          - 8
+          title: Replied
+          type: integer
+      required:
+      - all
+      - draft
+      - waiting
+      - replied
+      title: ConversationCountsResponse
+      type: object
+    ConversationDraftResponse:
+      properties:
+        id:
+          description: Message id of the draft waiting for review.
+          examples:
+          - 11
+          title: Id
+          type: integer
+        subject:
+          description: Draft subject.
+          examples:
+          - Quick question
+          title: Subject
+          type: string
+        recipient_email:
+          description: Recipient of the draft's own thread.
+          examples:
+          - jan@shop.test
+          title: Recipient Email
+          type: string
+      required:
+      - id
+      - subject
+      - recipient_email
+      title: ConversationDraftResponse
+      type: object
+    ConversationListResponse:
+      properties:
+        count:
+          description: Total matching conversations.
+          examples:
+          - 1
+          title: Count
+          type: integer
+        next:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Next page URL.
+          examples:
+          - null
+          title: Next
+        previous:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Previous page URL.
+          examples:
+          - null
+          title: Previous
+        results:
+          description: Latest conversation activity first.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/ConversationRowResponse'
+          title: Results
+          type: array
+        counts:
+          $ref: '#/components/schemas/ConversationCountsResponse'
+          description: Conversations per state, ignoring the `state` filter.
+      required:
+      - count
+      - next
+      - previous
+      - results
+      - counts
+      title: ConversationListResponse
+      type: object
+    ConversationRowResponse:
+      description: 'A conversation (one `subject_ref`): its newest thread, the state taken from every thread.'
+      properties:
+        id:
+          description: Thread id.
+          examples:
+          - 3
+          title: Id
+          type: integer
+        subject_ref:
+          description: Opaque reference of the caller.
+          examples:
+          - leads.Company:42
+          title: Subject Ref
+          type: string
+        recipient_email:
+          description: Recipient email.
+          examples:
+          - jan@shop.test
+          title: Recipient Email
+          type: string
+        recipient_name:
+          description: Recipient name.
+          examples:
+          - Jan Kowalski
+          title: Recipient Name
+          type: string
+        status:
+          description: open, replied or closed.
+          examples:
+          - replied
+          title: Status
+          type: string
+        last_message_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Last outbound or inbound mail.
+          examples:
+          - null
+          title: Last Message At
+        activity_at:
+          description: Latest mail, draft or reply (`sort=activity`), else last mail.
+          format: date-time
+          title: Activity At
+          type: string
+        subject:
+          description: Subject of the first outbound mail, else of the first reply.
+          examples:
+          - Hi
+          title: Subject
+          type: string
+        last_text:
+          description: Body of the latest mail, draft or reply (first 300 characters).
+          examples:
+          - ''
+          title: Last Text
+          type: string
+        draft:
+          anyOf:
+          - $ref: '#/components/schemas/ConversationDraftResponse'
+          - type: 'null'
+          description: The newest draft waiting for review in any thread of the conversation.
+          examples:
+          - null
+        waiting:
+          anyOf:
+          - $ref: '#/components/schemas/ThreadWaitingResponse'
+          - type: 'null'
+          description: The first mail waiting to be sent in any thread of the conversation.
+          examples:
+          - null
+        thread_count:
+          description: Threads of the conversation.
+          examples:
+          - 2
+          title: Thread Count
+          type: integer
+        replied:
+          description: A thread of the conversation is in status replied.
+          examples:
+          - true
+          title: Replied
+          type: boolean
+      required:
+      - id
+      - subject_ref
+      - recipient_email
+      - recipient_name
+      - status
+      - last_message_at
+      - activity_at
+      - subject
+      - last_text
+      - draft
+      - waiting
+      - thread_count
+      - replied
+      title: ConversationRowResponse
+      type: object
     DraftPreviewResponse:
       properties:
         subject:

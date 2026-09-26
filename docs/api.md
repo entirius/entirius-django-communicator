@@ -37,13 +37,14 @@ generated document is `docs/openapi.yaml`. Views are thin: parse, call a service
 | `GET/POST sequences/` · `GET sequences/<id>/steps/` · `GET/POST sequences/<id>/texts/` | sequences, steps, text pool |
 | `PATCH sequences/<id>/texts/<text_id>/` (`{body?, is_active?}`) · `DELETE` same path | edit or restore a pool text (future follow-ups only — sent mail keeps its body); DELETE of a text no thread used → 204, deleted; of a used one → 200 with the row, `is_active=false` (the thread history stays, no thread gets the same text twice) |
 | `GET threads/?subject_ref=&state=&sort=` · `GET threads/<id>/` | the inbox list: newest created first, or `sort=activity` (latest mail, draft or reply first); `state` = `draft` (a draft waits for review) · `waiting` (a mail waits for the send beat) · `replied`; each row adds `activity_at`, `subject`, `last_text` (300 chars), `draft {id, subject}`, `waiting {id, status, scheduled_at, next_slot}`; the page carries `counts {all, draft, waiting, replied}` (ignoring `state`) — one thread with `sequence` state and `timeline` (messages + replies; `message_id` on message entries, null on replies) |
+| `GET conversations/?state=` | the Inbox list: one row per `subject_ref` (a conversation) = a `threads/` row of its newest thread (newest created) plus `thread_count` and `replied` (any thread in status replied); `state` holds when any thread is in it; `draft`, `waiting` and `last_text` come from any thread (the draft to open may sit in an older one, so `draft` adds `recipient_email` of its own thread), `subject` is the newest thread's; latest activity of any thread first; `counts` count conversations (ignoring `state`) |
 | `POST threads/<id>/resume-sequence/` | paused sequence runs again, thread `open` |
 | `GET replies/?kind=&thread=` | replies, newest first |
 | `POST replies/<id>/confirm-optout/` · `dismiss-optout/` | decide a `suspected_optout` |
 | `GET footers/` · `GET/PUT/DELETE footers/<language>/` (`{html}`) | HTML mail footer per ISO 639-1 language; PUT sanitises to an allowlist and needs `{{ legal }}` exactly once, as text — not in an attribute (else 400 on `html`); unknown language → 404; GET 404 when none |
 | `GET/PUT mailbox/` | IMAP config; `imap_password` is write-only (`has_password` on read), omitted on PUT = kept; GET 404 when none |
 
-List endpoints `review/`, `messages/`, `threads/` and `replies/` are paginated (`page`, `page_size`
+List endpoints `review/`, `messages/`, `threads/`, `conversations/` and `replies/` are paginated (`page`, `page_size`
 ≤ 100, default 20) with `count`, `next`, `previous`, `results`.
 
 ## Errors

@@ -21,6 +21,7 @@ edge-case ID (`test_C14_…`).
 | `test_footer.py` | HTML footer API, `{{ legal }}` rule, sanitising, language cascade, text part, sent `footer_html` snapshot, GDPR export / erase | — |
 | `test_inbound.py` | poll cursor, quarantine, UIDVALIDITY, thread matching, autoresponders, opt-out, DSN, idempotency — on `tests/fixtures/mail/*.eml` (copies of the emporium fixtures) | C-20…C-26 |
 | `test_gdpr.py` | `contact_anonymised` receiver, export / erase, global token suppression, token parity with django_leads (skipped without it) | L-16, L-17 |
+| `test_inbox_list.py`, `test_inbox_conversations.py` | the inbox lists: `threads/` (state filter, counts, activity order, row fields) and `conversations/` (one row per `subject_ref`, state from any thread, counts, order, paging), query-count bounds | — |
 | `test_admin_api.py` | review / template / suppression endpoints, 401/403/404/409, `test/communicate/` | — |
 | `test_admin.py` | Django admin pages render, admin save versions, read-only messages | — |
 | `test_openapi.py` | the module schema validates | — |
