@@ -61,6 +61,10 @@ class MessageResponse(BaseModel):
     reject_reason: str = Field(description="Why rejected.", examples=[""])
     review_notes: str = Field(description="Notes that produced this version.", examples=[""])
     legal_footer: str = Field(description="Footer carried verbatim.", examples=[""])
+    footer_html: str = Field(
+        description="HTML footer as sent, legal text included; empty until sent or when the channel has none.",
+        examples=[""],
+    )
     scheduled_at: datetime | None = Field(description="Send slot; empty = due at once.", examples=[None])
     sent_at: datetime | None = Field(
         description="Delivered (sent or would_send) on the channel clock.", examples=[None]
@@ -117,6 +121,7 @@ class TemplateResponse(BaseModel):
     key: str = Field(description="Template key.", examples=["lead.cold.shop"])
     kind: str = Field(description="static or ai_prompt.", examples=["ai_prompt"])
     language: str = Field(description="ISO 639-1 code.", examples=["pl"])
+    audience: str = Field(description="Audience code; blank = every audience.", examples=[""])
     subject: str = Field(description="Subject.", examples=["Hello"])
     body: str = Field(description="Body or prompt.", examples=["Hi {first_name}"])
     json_schema: dict[str, Any] | None = Field(description="Output schema.", examples=[None])
@@ -306,11 +311,44 @@ class ThreadSummaryResponse(BaseModel):
     last_message_at: datetime | None = Field(description="Last outbound or inbound mail.", examples=[None])
 
 
+class ThreadDraftResponse(BaseModel):
+    id: int = Field(description="Message id of the draft waiting for review.", examples=[11])
+    subject: str = Field(description="Draft subject.", examples=["Quick question"])
+
+
+class ThreadWaitingResponse(BaseModel):
+    id: int = Field(description="Message id of the mail waiting for the send beat.", examples=[12])
+    status: str = Field(description="approved or scheduled.", examples=["scheduled"])
+    scheduled_at: datetime | None = Field(description="Not before this moment.", examples=[None])
+    next_slot: datetime | None = Field(description="Earliest send slot the policy allows.", examples=[None])
+
+
+class ThreadRowResponse(ThreadSummaryResponse):
+    activity_at: datetime = Field(description="Latest mail, draft or reply (`sort=activity`), else last mail.")
+    subject: str = Field(description="Subject of the first outbound mail, else of the first reply.", examples=["Hi"])
+    last_text: str = Field(description="Body of the latest mail, draft or reply (first 300 characters).", examples=[""])
+    draft: ThreadDraftResponse | None = Field(description="The newest draft waiting for review.", examples=[None])
+    waiting: ThreadWaitingResponse | None = Field(description="The first mail waiting to be sent.", examples=[None])
+
+    @classmethod
+    def of(cls, row: dict) -> "ThreadRowResponse":
+        summary = ThreadSummaryResponse.model_validate(row["thread"]).model_dump()
+        return cls(**summary, **{key: value for key, value in row.items() if key != "thread"})
+
+
+class ThreadCountsResponse(BaseModel):
+    all: int = Field(description="Threads of the channel (of the subject reference, when given).", examples=[14])
+    draft: int = Field(description="Threads with a draft waiting for review.", examples=[2])
+    waiting: int = Field(description="Threads with a mail waiting to be sent.", examples=[1])
+    replied: int = Field(description="Threads in status replied.", examples=[9])
+
+
 class ThreadListResponse(BaseModel):
     count: int = Field(description="Total matching threads.", examples=[1])
     next: str | None = Field(description="Next page URL.", examples=[None])
     previous: str | None = Field(description="Previous page URL.", examples=[None])
-    results: list[ThreadSummaryResponse] = Field(description="Newest first.", examples=[[]])
+    results: list[ThreadRowResponse] = Field(description="Newest first (`sort`).", examples=[[]])
+    counts: ThreadCountsResponse = Field(description="Threads per state, ignoring the `state` filter.")
 
 
 class TimelineEntryResponse(BaseModel):
@@ -373,6 +411,20 @@ class MailboxResponse(BaseModel):
     def of(cls, config) -> "MailboxResponse":
         fields = {name: getattr(config, name) for name in cls.model_fields if name != "has_password"}
         return cls.model_validate({**fields, "has_password": bool(config.imap_password)})
+
+
+class FooterResponse(BaseModel):
+    language: str = Field(description="ISO 639-1 code.", examples=["pl"])
+    html: str = Field(description="Sanitised footer HTML with `{{ legal }}`.", examples=["<div>{{ legal }}</div>"])
+    modified_at: datetime = Field(description="Last saved.", examples=["2026-09-26T12:00:00Z"])
+
+    @classmethod
+    def of(cls, footer) -> "FooterResponse":
+        return cls(language=footer.language.iso2.lower(), html=footer.html, modified_at=footer.modified_at)
+
+
+class FooterListResponse(BaseModel):
+    results: list[FooterResponse] = Field(description="Footers of the channel by language.", examples=[[]])
 
 
 class RetryDraftsResponse(BaseModel):

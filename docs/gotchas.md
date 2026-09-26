@@ -6,6 +6,15 @@ description: The one list of rules that bite — read before touching statuses, 
 Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel config) live in
 `install.md`. Each item: the rule, then where it is enforced.
 
+## Templates
+
+- **The audience cascade is specific-first, never "best match".** `resolve` tries (language, audience),
+  (language, blank), (default language, audience), (default language, blank) and stops at the first active
+  template. A variant in another language never beats a blank-audience template in the recipient's language.
+  An audience variant without a blank sibling makes every other audience fail `no_template`.
+- **Omitted `audience` on `PUT templates/<id>/` keeps the stored one** — an older editor that does not know the
+  field cannot turn a variant into the default (and collide with it on the unique key).
+
 ## Statuses and review
 
 - **Only `message_service` writes `Message.status`.** Views, tasks and other services go through
@@ -51,8 +60,22 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   advance is a compare-and-set on `step`, so overlapping runs create one follow-up.
 - **Every terminal outcome of a follow-up goes through `sequence_service.on_follow_up_finished`** —
   delivered, failed, suppressed, rejected, skipped. A new terminal path that skips it strands the sequence.
+- **Follow-ups resolve without an audience.** A step's template is looked up with a blank audience (the thread
+  keeps none), so an audience-only template key never serves a sequence step — keep a blank-audience variant.
+- **A used pool text is deactivated, never deleted** (`sending_config_service.remove_text`). `ThreadPoolUsage`
+  cascades from the text; losing it lets the pool give a thread the same follow-up twice. The row lock in
+  `remove_text` blocks a concurrent usage insert between the check and the delete.
 - **Step templates are resolved with `requires_review=False`** — only an `auto_approve` static template
   sends without review; anything else lands in the review queue.
+
+## Footer
+
+- **`{{ legal }}` goes in a block of its own** (`<div>`, `<td>`), never inside a `<p>`: it is replaced by
+  `<p>` paragraphs, and a paragraph inside a paragraph breaks in mail clients.
+- **The footer is resolved at send, not at `communicate()`** — an edit reaches every mail not yet sent; the
+  sent row keeps `footer_html`. A soft-bounce retry re-resolves (nothing is stored until `sent`).
+- **Save goes through `footer_service.save_footer`** — the sanitiser and the placeholder rule live there. There is
+  no Django admin page for `MailFooter` on purpose: a raw admin save would skip both.
 
 ## Inbound
 

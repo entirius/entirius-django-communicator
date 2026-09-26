@@ -20,7 +20,7 @@ from django_communicator.utils.emails import anonymised_address, email_hash, nor
 
 THREAD_FIELDS = ("id", "channel__idx", "subject_ref", "recipient_email", "recipient_name", "status", "created_at")
 MESSAGE_FIELDS = ("id", "thread_id", "direction", "subject", "body_text", "body_html", "legal_footer",
-                  "rendered_prompt", "render_context", "status", "sent_at")  # fmt: skip
+                  "footer_html", "rendered_prompt", "render_context", "status", "sent_at")  # fmt: skip
 REPLY_FIELDS = ("id", "thread_id", "from_email", "subject", "body_text", "kind", "received_at")
 
 

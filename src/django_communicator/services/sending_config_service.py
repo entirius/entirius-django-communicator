@@ -4,10 +4,22 @@
 
 """Configuration writes of the sending layer: send policy with windows, sequences with steps, text pools."""
 
+from typing import Any
+
 from django.db import IntegrityError, transaction
 from django.db.models import QuerySet
 
-from django_communicator.models import Channel, SendPolicy, SendWindow, Sequence, SequenceStep, TextPool
+from django_communicator.models import (
+    Channel,
+    SendPolicy,
+    SendWindow,
+    Sequence,
+    SequenceStep,
+    TextPool,
+    ThreadPoolUsage,
+)
+
+_EDITABLE_TEXT_FIELDS = frozenset({"body", "is_active"})
 
 
 class DuplicateSequenceError(Exception):
@@ -49,3 +61,41 @@ def list_texts(sequence: Sequence) -> QuerySet[TextPool]:
 
 def create_text(sequence: Sequence, *, body: str, is_active: bool) -> TextPool:
     return TextPool.objects.create(sequence=sequence, body=body, is_active=is_active)
+
+
+def get_text(sequence: Sequence, pk: int) -> TextPool:
+    """Raises `TextPool.DoesNotExist` when it is not in this sequence."""
+    return TextPool.objects.get(sequence=sequence, pk=pk)
+
+
+@transaction.atomic
+def update_text(text: TextPool, updates: dict[str, Any]) -> TextPool:
+    """Only `body` and `is_active`; sent messages keep their rendered body, so an edit changes future follow-ups.
+
+    Raises `TextPool.DoesNotExist` when the text was deleted since it was read."""
+    invalid = set(updates) - _EDITABLE_TEXT_FIELDS
+    if invalid:
+        raise ValueError(f"Fields not editable via update_text: {sorted(invalid)}")
+    locked = TextPool.objects.select_for_update().get(pk=text.pk)
+    for field, value in updates.items():
+        setattr(locked, field, value)
+    locked.save(update_fields=[*updates, "modified_at"])
+    return locked
+
+
+@transaction.atomic
+def remove_text(text: TextPool) -> bool:
+    """Delete a text no thread has used (True); deactivate a used one, keeping the thread history (False).
+
+    The row lock serialises concurrent removals and edits only: the `ThreadPoolUsage` FK is deferred, so a
+    follow-up can still insert a usage of this text meanwhile. That insert then fails at its commit and the
+    follow-up scheduler retries the thread on the next tick (`sequence_service._schedule_logged`).
+    """
+    locked = TextPool.objects.select_for_update().get(pk=text.pk)
+    if not ThreadPoolUsage.objects.filter(text=locked).exists():
+        locked.delete()
+        return True
+    locked.is_active = False
+    locked.save(update_fields=["is_active", "modified_at"])
+    text.is_active = False
+    return False

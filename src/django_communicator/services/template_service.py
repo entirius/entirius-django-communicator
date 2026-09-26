@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Template resolution (recipient language → channel default → none) and content versioning on save."""
+"""Template resolution (language × audience cascade, most specific first) and content versioning on save."""
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -12,7 +12,7 @@ from django_regional.models import Language
 from django_communicator.models import Channel, MessageTemplate, MessageTemplateVersion
 
 CONTENT_FIELDS = ("subject", "body", "json_schema", "model")
-UPDATABLE_FIELDS = ("key", "kind", *CONTENT_FIELDS, "requires_legal_footer", "auto_approve", "is_active")
+UPDATABLE_FIELDS = ("key", "kind", "audience", *CONTENT_FIELDS, "requires_legal_footer", "auto_approve", "is_active")
 
 
 class NoTemplateError(Exception):
@@ -23,21 +23,35 @@ def find_language(code: str) -> Language | None:
     return Language.objects.filter(iso2__iexact=code.strip()).first() if code else None
 
 
-def resolve(channel: Channel, key: str, language_code: str) -> MessageTemplate:
-    """Active template in the recipient's language, else the channel default; never guessed."""
+def resolve(channel: Channel, key: str, language_code: str, audience: str = "") -> MessageTemplate:
+    """Most specific active template first, never guessed: (language, audience) → (language, any audience) →
+    (channel default language, audience) → (channel default language, any audience). The audience is the caller's
+    opaque code; blank asks for the any-audience template only."""
     templates = MessageTemplate.objects.select_related("current_version").filter(
         channel=channel, key=key, is_active=True, current_version__isnull=False
     )
     language = find_language(language_code)
-    for language_id in (language.pk if language else None, channel.default_language_id):
-        template = templates.filter(language_id=language_id).first() if language_id else None
+    for language_id, wanted in _cascade(language.pk if language else None, channel.default_language_id, audience):
+        template = templates.filter(language_id=language_id, audience=wanted).first()
         if template:
             return template
-    raise NoTemplateError(f"no active template {key!r} for language {language_code!r} or the channel default")
+    raise NoTemplateError(
+        f"no active template {key!r} for language {language_code!r}, audience {audience!r} or their defaults"
+    )
+
+
+def _cascade(language_id: int | None, default_id: int | None, audience: str) -> list[tuple[int, str]]:
+    audiences = [audience, ""] if audience else [""]
+    languages = dict.fromkeys(pk for pk in (language_id, default_id) if pk)
+    return [(pk, wanted) for pk in languages for wanted in audiences]
 
 
 def list_templates(channel: Channel) -> QuerySet[MessageTemplate]:
-    return MessageTemplate.objects.select_related("language", "current_version").filter(channel=channel).order_by("key")
+    return (
+        MessageTemplate.objects.select_related("language", "current_version")
+        .filter(channel=channel)
+        .order_by("key", "audience")
+    )
 
 
 def get_template(channel: Channel, pk: int) -> MessageTemplate:

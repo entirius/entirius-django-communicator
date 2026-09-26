@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+- **HTML mail footer per channel and language.** `MailFooter` (migration `0011`, also `Message.footer_html`):
+  the layout around the legal text, with `{{ legal }}` exactly once as text — inside an attribute (`href`, `alt`)
+  it is refused with 400 on `html`, since the recipient would never see the legal text; sanitised on save with
+  `nh3` (new dependency, already in the Volkanos lock via django-utils-translator), style values with `url(` or
+  `expression(` dropped. Admin API `GET footers/`, `GET/PUT/DELETE footers/<language>/`. `mail_builder` resolves
+  the footer of the body's language (the template version the message was rendered from; the thread language when
+  it has none), else the channel default language's, else none (legal text alone, as before); the text part is the footer as plain text. The sent
+  message stores the rendered footer in `footer_html` (exported and erased by `gdpr.py`); `MessageResponse` shows it.
+- **Pool texts can be edited and removed.** `PATCH sequences/<id>/texts/<text_id>/` (`body`, `is_active`) and
+  `DELETE` on the same path: a text no thread used is deleted (204), a used one deactivated (200 with the row), so
+  the thread history stays.
+- **Inbox list over `threads/`.** `state` filter (`draft`, `waiting`, `replied`), `sort=activity` (latest mail, draft
+  or reply first; the default stays newest created, which a caller's "newest thread" relies on), `counts` per state
+  in every page, and per row `activity_at`, `subject`, `last_text`, the newest `draft` and the first `waiting` mail
+  with its `next_slot` — two queries for a page's rows instead of one detail call per thread.
+- **Templates target an audience.** `MessageTemplate.audience` (upper-case code, blank = every audience; migration
+  `0010`), unique `(channel, key, language, audience)`. `template_service.resolve` and `communicate(audience=…)`
+  walk (language, audience) → (language, blank) → (default language, audience) → (default language, blank). The
+  caller owns the meaning — leads passes the lead type. Template admin API reads and writes `audience`; a PUT
+  without it keeps the stored value. `test/communicate/` takes `audience`.
+- **SMTP health check.** System check `communicator.smtp` (tag `entirius_config`): a channel outside `dry_run`
+  without its `EMAIL_SMTP_CONFIGURATION_CHANNELS` entry — the same test `mail_builder.build` makes, visible before
+  the first send (django-munin `health/`, or `manage.py check --database default --tag communicator.smtp`). Reads
+  the DB only when `databases` is passed, so boot stays quiet. The runtime `smtp_missing` alert stays as the
+  safety net.
+
 ## 0.2.0 — 2026-09-16
 
 - **Draft recovery after a toolbox outage.** New beat task `django_communicator.retry_failed_drafts` (host

@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Admin API v2 — threads: list by subject reference, one thread with its timeline, resume a paused sequence."""
+"""Admin API v2 — threads: the inbox list (state filter, counts), one thread with its timeline, resume a sequence."""
 
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.exceptions import NotFound
@@ -10,15 +10,17 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from django_communicator.api.admin.views._base import ERROR_RESPONSES, AdminPagination, AdminView, Conflict, parse
-from django_communicator.models import Thread
+from django_communicator.models import Channel, SendPolicy, Thread
 from django_communicator.schemas.requests import ThreadListQuery
 from django_communicator.schemas.responses import (
     SequenceStateResponse,
+    ThreadCountsResponse,
     ThreadDetailResponse,
     ThreadListResponse,
+    ThreadRowResponse,
     ThreadSummaryResponse,
 )
-from django_communicator.services import inbox_service, optout_service
+from django_communicator.services import inbox_service, optout_service, policy_service
 
 _TAGS = ["Communicator inbox"]
 
@@ -30,6 +32,8 @@ class ThreadListView(AdminView):
         summary="Threads of the channel, newest first",
         parameters=[
             OpenApiParameter("subject_ref", str, description="Only threads about this reference."),
+            OpenApiParameter("state", str, enum=list(inbox_service.THREAD_STATES), description="Inbox filter."),
+            OpenApiParameter("sort", str, enum=list(inbox_service.THREAD_SORTS), description="Default created."),
             OpenApiParameter("page", int),
             OpenApiParameter("page_size", int),
         ],
@@ -37,11 +41,23 @@ class ThreadListView(AdminView):
     )
     def get(self, request: Request, channel_idx: str) -> Response:
         query = parse(ThreadListQuery, request.query_params.dict())
-        threads = inbox_service.list_threads(self.channel(channel_idx), subject_ref=query.subject_ref)
+        channel = self.channel(channel_idx)
+        threads = inbox_service.list_threads(channel, subject_ref=query.subject_ref, state=query.state, sort=query.sort)
         paginator = AdminPagination()
         page = paginator.paginate_queryset(threads, request, view=self)
-        results = [ThreadSummaryResponse.model_validate(thread).model_dump(mode="json") for thread in page]
-        return paginator.get_paginated_response(results)
+        rows = inbox_service.thread_rows(page, _policy_or_none(channel))
+        response = paginator.get_paginated_response([ThreadRowResponse.of(row).model_dump(mode="json") for row in rows])
+        counts = inbox_service.count_states(channel, subject_ref=query.subject_ref)
+        response.data["counts"] = ThreadCountsResponse(**counts).model_dump()
+        return response
+
+
+def _policy_or_none(channel: Channel) -> SendPolicy | None:
+    """A bad stored country/timezone must not hide the inbox: the rows then carry no `next_slot`."""
+    try:
+        return policy_service.load_policy(channel)
+    except policy_service.ChannelConfigError:
+        return None
 
 
 class ThreadDetailView(AdminView):

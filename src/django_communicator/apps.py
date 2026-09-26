@@ -12,6 +12,7 @@ class DjangoCommunicatorConfig(AppConfig):
     is_volkanos = True
 
     def ready(self) -> None:
+        from django_communicator import checks  # noqa: F401 — registers the configuration health checks
         from django_communicator import settings as communicator_settings
         from django_communicator.tasks.send_due import assert_once_backend_configured
 

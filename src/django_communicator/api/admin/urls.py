@@ -5,6 +5,7 @@
 
 from django.urls import path
 
+from django_communicator.api.admin.views import footer_views as footer
 from django_communicator.api.admin.views import mailbox_views as mailbox
 from django_communicator.api.admin.views import reply_views as reply
 from django_communicator.api.admin.views import review_views as review
@@ -51,6 +52,11 @@ urlpatterns = [
         "sequences/<int:pk>/steps/", sequence.SequenceStepListView.as_view(), name="admin-communicator-sequence-steps"
     ),
     path("sequences/<int:pk>/texts/", sequence.TextListView.as_view(), name="admin-communicator-sequence-texts"),
+    path(
+        "sequences/<int:pk>/texts/<int:text_pk>/",
+        sequence.TextDetailView.as_view(),
+        name="admin-communicator-sequence-text",
+    ),
     path("threads/", thread.ThreadListView.as_view(), name="admin-communicator-threads"),
     path("threads/<int:pk>/", thread.ThreadDetailView.as_view(), name="admin-communicator-thread"),
     path(
@@ -70,6 +76,8 @@ urlpatterns = [
         name="admin-communicator-reply-dismiss-optout",
     ),
     path("mailbox/", mailbox.MailboxView.as_view(), name="admin-communicator-mailbox"),
+    path("footers/", footer.FooterListView.as_view(), name="admin-communicator-footers"),
+    path("footers/<str:language>/", footer.FooterDetailView.as_view(), name="admin-communicator-footer"),
 ]
 
 if is_development():
