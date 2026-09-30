@@ -1,7 +1,7 @@
 
 [project]
 name = "entirius-django-communicator"
-version = "0.2.0"
+version = "0.3.0"
 description = "Channel-agnostic communication for the Volkanos platform: templates, review, sequences, send policy and inbound replies"
 authors = [{ name = "Entirius" }]
 maintainers = [

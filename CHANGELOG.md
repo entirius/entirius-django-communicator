@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-09-30
 
 - **HTML mail footer per channel and language.** `MailFooter` (migration `0011`, also `Message.footer_html`):
   the layout around the legal text, with `{{ legal }}` exactly once as text — inside an attribute (`href`, `alt`)
