@@ -18,7 +18,7 @@ Read this once before `migrate`. Day-2 work, alerts and the live checklist: `ope
 | celery-once backend on the Celery app (`app.conf.ONCE`) | `send_due`, `poll_inbox`, `schedule_follow_ups` run at most once at a time (C-18) | `AppConfig.ready()` raises `ImproperlyConfigured` without it — in every process that loads the app, web included |
 | Workers consuming `communicator_default`, `communicator_send`, `communicator_inbound` | every task routes to one of them | `celery inspect active_queues` |
 | An AI toolbox (`AI_TOOLBOX_*`, django_utils) | `ai_prompt` templates, rewrites, `models/`, `test-generate/` | `GET models/` lists the catalogue |
-| `EMAIL_SMTP_CONFIGURATION_CHANNELS[<channel idx>]` (django_email) | the SMTP connection and `DEFAULT_FROM_EMAIL` of a sending channel | missing → messages stay, `high` alert once a day |
+| `EMAIL_SMTP_CONFIGURATION_CHANNELS[<channel idx>]` (django_email) | the SMTP connection and `DEFAULT_FROM_EMAIL` of a sending channel | `manage.py check --database default --tag communicator.smtp`; missing → messages stay, `high` alert once a day |
 | A stable `SECRET_KEY` | the IMAP password is encrypted with a key derived from it | rotating it empties stored passwords |
 
 ## Settings

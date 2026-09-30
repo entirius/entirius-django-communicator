@@ -36,13 +36,14 @@ src/django_communicator/
 ├── apps.py  enums.py (statuses + MESSAGE_STATUS_TRANSITIONS)  settings.py  urls.py  gdpr.py  admin.py
 ├── models/     channel  message_template  message_template_version  thread  message  suppression
 │               send_policy  send_window  sequence  sequence_step  text_pool  thread_pool_usage
-│               thread_sequence_state  mailbox_config  reply  inbound_quarantine
+│               thread_sequence_state  mailbox_config  mail_footer  reply  inbound_quarantine
 ├── schemas/    requests.py  responses.py (Pydantic)
-├── api/admin/  urls.py  views/ (review, template, suppression, sending, sequence, thread, reply, mailbox, test)
+├── api/admin/  urls.py  views/ (review, template, suppression, sending, sequence, thread, reply, mailbox, footer,
+│               test)
 ├── services/   communicate_service (communicate)  drafting_service  render_service  template_service
 │               message_service (the only status writer)  review_service  preview_service
 │               send_service (send_due run)  delivery_service (deliver)  policy_service  counter_service
-│               clock_service  channel_service (live_allowed)  mail_builder  alert_service
+│               clock_service  channel_service (live_allowed)  mail_builder  footer_service  alert_service
 │               sequence_service  sending_config_service  suppression_service
 │               poll_service  inbound_service (ingest)  mail_parser  dsn_service  optout_service  inbox_service
 │               anonymisation_service  draft_retry_service (transient failure retry)

@@ -7,6 +7,7 @@ groups:
       - Channel
       - MessageTemplate
       - MessageTemplateVersion
+      - MailFooter
   - name: messages
     title: "Threads, Messages & Suppressions"
     models:

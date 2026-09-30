@@ -11,18 +11,22 @@ from django_communicator.enums import TemplateKind
 
 # A SlugField would reject the dotted keys ("lead.cold.shop").
 validate_template_key = RegexValidator(r"^[a-z0-9_-]+(\.[a-z0-9_-]+)*$", "Lower-case dotted key, e.g. lead.cold.shop.")
+# The caller's audience code (leads passes the lead type), opaque here; blank = every audience.
+validate_audience = RegexValidator(r"^[A-Z0-9_]*$", "Upper-case code, e.g. RETAILER; blank for every audience.")
 
 
 class MessageTemplate(BaseModel):
     """A message by key and language. Content changes are versioned by `services.template_service`.
 
     `body` is the static body, or for `ai_prompt` the system prompt, a line `=== USER ===` and the user prompt.
+    `audience` narrows the template to one audience of the caller; blank serves every audience (`resolve` cascade).
     """
 
     channel = models.ForeignKey("django_communicator.Channel", on_delete=models.CASCADE, related_name="templates")
     key = models.CharField(max_length=128, validators=[validate_template_key], help_text="e.g. lead.cold.shop")
     kind = models.CharField(max_length=16, choices=TemplateKind.choices)
     language = models.ForeignKey("django_regional.Language", on_delete=models.PROTECT, related_name="+")
+    audience = models.CharField(max_length=64, blank=True, default="", validators=[validate_audience])
     subject = models.CharField(max_length=255, blank=True, default="")
     body = models.TextField()
     json_schema = models.JSONField(null=True, blank=True)
@@ -36,11 +40,14 @@ class MessageTemplate(BaseModel):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["channel", "key", "language"], name="communicator_template_unique_key")
+            models.UniqueConstraint(
+                fields=["channel", "key", "language", "audience"], name="communicator_template_unique_key_audience"
+            )
         ]
 
     def __str__(self) -> str:
-        return f"{self.key} [{self.kind}]"
+        audience = f" @{self.audience}" if self.audience else ""
+        return f"{self.key}{audience} [{self.kind}]"
 
     def clean(self) -> None:
         if self.kind == TemplateKind.STATIC and (self.json_schema or self.model):

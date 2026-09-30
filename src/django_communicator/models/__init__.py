@@ -4,6 +4,7 @@
 
 from django_communicator.models.channel import Channel
 from django_communicator.models.inbound_quarantine import InboundQuarantine
+from django_communicator.models.mail_footer import MailFooter
 from django_communicator.models.mailbox_config import MailboxConfig
 from django_communicator.models.message import Message
 from django_communicator.models.message_template import MessageTemplate
@@ -22,6 +23,7 @@ from django_communicator.models.thread_sequence_state import ThreadSequenceState
 __all__ = [
     "Channel",
     "InboundQuarantine",
+    "MailFooter",
     "MailboxConfig",
     "Message",
     "MessageTemplate",

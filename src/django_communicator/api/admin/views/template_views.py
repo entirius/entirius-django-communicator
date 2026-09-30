@@ -37,6 +37,8 @@ class DraftOutputInvalid(APIException):
 def _save(template: MessageTemplate, body: TemplateRequest, user) -> dict:
     """Save through the versioning service; model validation errors become the v2 400 shape."""
     fields = body.model_dump(exclude={"language"})
+    if "audience" not in body.model_fields_set:  # an older client's PUT never clears a variant's audience
+        fields.pop("audience")
     try:
         template_service.update_template(template, language_code=body.language, user=user, **fields)
     except DjangoValidationError as error:

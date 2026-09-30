@@ -55,7 +55,13 @@ def anonymise_recipients(thread_ids: list[int], token: str, hashed: str) -> dict
 def erase_contents(thread_ids: list[int], email: str) -> dict[str, int]:
     """GDPR erasure on top of the anonymisation: subjects, bodies, footers, prompts and render contexts scrubbed."""
     messages = outbound_messages(thread_ids).update(
-        subject=ERASED, body_text=ERASED, body_html=ERASED, legal_footer="", rendered_prompt="", render_context={}
+        subject=ERASED,
+        body_text=ERASED,
+        body_html=ERASED,
+        legal_footer="",
+        footer_html="",
+        rendered_prompt="",
+        render_context={},
     )
     replies = replies_of_email(email).update(
         from_email=anonymised_address(email), subject=ERASED, body_text=ERASED, raw_headers={}
