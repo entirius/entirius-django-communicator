@@ -45,6 +45,9 @@ class Message(BaseModel):
     reject_reason = models.CharField(max_length=255, blank=True, default="")
     review_notes = models.TextField(blank=True, default="")
     legal_footer = models.TextField(blank=True, default="")
+    footer_html = models.TextField(
+        blank=True, default="", help_text="The HTML footer as sent, legal text included; empty = none or not sent."
+    )
     scheduled_at = models.DateTimeField(null=True, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
     send_attempted_at = models.DateTimeField(null=True, blank=True, help_text="Wall clock of the `sending` claim.")

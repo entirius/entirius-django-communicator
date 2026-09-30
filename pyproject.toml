@@ -29,6 +29,7 @@ dependencies = [
     "redis>=5.0",
     "holidays>=0.50",
     "cryptography>=42",
+    "nh3>=0.3",
 ]
 
 [project.optional-dependencies]

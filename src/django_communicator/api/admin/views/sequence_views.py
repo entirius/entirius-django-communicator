@@ -9,8 +9,8 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from django_communicator.api.admin.views._base import ERROR_RESPONSES, AdminView, Conflict, parse
-from django_communicator.models import Sequence
-from django_communicator.schemas.requests import SequenceRequest, TextRequest
+from django_communicator.models import Sequence, TextPool
+from django_communicator.schemas.requests import SequenceRequest, TextRequest, TextUpdateRequest
 from django_communicator.schemas.responses import (
     SequenceListResponse,
     SequenceResponse,
@@ -92,3 +92,41 @@ class TextListView(SequenceView):
         body = parse(TextRequest, request.data)
         row = sending_config_service.create_text(self.sequence(channel_idx, pk), **body.model_dump())
         return Response(TextResponse.model_validate(row).model_dump(mode="json"), status=201)
+
+
+class TextDetailView(SequenceView):
+    def text(self, channel_idx: str, pk: int, text_pk: int) -> TextPool:
+        try:
+            return sending_config_service.get_text(self.sequence(channel_idx, pk), text_pk)
+        except TextPool.DoesNotExist:
+            raise NotFound("Text not found.") from None
+
+    @extend_schema(
+        tags=_TAGS,
+        summary="Edit or restore a text",
+        description="Changes future follow-ups only — sent messages keep their rendered body.",
+        request=TextUpdateRequest,
+        responses={200: TextResponse, **ERROR_RESPONSES},
+    )
+    def patch(self, request: Request, channel_idx: str, pk: int, text_pk: int) -> Response:
+        body = parse(TextUpdateRequest, request.data)
+        text = self.text(channel_idx, pk, text_pk)
+        try:
+            row = sending_config_service.update_text(text, body.model_dump(exclude_none=True))
+        except TextPool.DoesNotExist:
+            raise NotFound("Text not found.") from None
+        return Response(TextResponse.model_validate(row).model_dump(mode="json"))
+
+    @extend_schema(
+        tags=_TAGS,
+        summary="Remove a text",
+        description="204: never used by a thread, deleted. 200 with the row (`is_active=false`): already used, "
+        "deactivated so the thread history stays and no thread gets the same text twice.",
+        request=None,
+        responses={200: TextResponse, 204: None, **ERROR_RESPONSES},
+    )
+    def delete(self, request: Request, channel_idx: str, pk: int, text_pk: int) -> Response:
+        text = self.text(channel_idx, pk, text_pk)
+        if sending_config_service.remove_text(text):
+            return Response(status=204)
+        return Response(TextResponse.model_validate(text).model_dump(mode="json"))

@@ -9,6 +9,7 @@ from unittest import mock
 
 import pytest
 from django.core import mail
+from django.db import connection
 
 from django_communicator.enums import SequenceStopReason, ThreadStatus
 from django_communicator.models import (
@@ -179,3 +180,24 @@ def test_concurrent_schedule_creates_one_follow_up(policy, sandbox, body_templat
 
     assert first is not None and second is None
     assert Message.objects.filter(thread=state.thread, sequence_step__isnull=False).count() == 1
+
+
+def test_follow_up_whose_text_was_deleted_meanwhile_retries_next_tick(policy, sandbox, body_template, sequence):
+    state = _sent_cold(sequence)
+    clock_service.set_override(policy.channel, THURSDAY_10)
+    pick = sequence_service.pick_text
+
+    def pick_then_deleted(state, rng):
+        text = pick(state, rng)
+        TextPool.objects.filter(pk=text.pk).delete()  # a concurrent text removal after the pick
+        return text
+
+    with connection.cursor() as cursor:  # the test transaction never commits: check the deferred FK at insert
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    with mock.patch.object(sequence_service, "pick_text", pick_then_deleted):
+        assert sequence_service.run_follow_ups(random.Random(0)) == 0
+
+    state.refresh_from_db()
+    assert (state.step, state.next_due_at) == (0, THURSDAY_10)
+    assert not Message.objects.filter(thread=state.thread, sequence_step__isnull=False).exists()
+    assert sequence_service.run_follow_ups(random.Random(0)) == 1

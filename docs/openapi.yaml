@@ -78,6 +78,193 @@ paths:
           description: No response body
         '409':
           description: No response body
+  /api/communicator/v2/admin/{channel_idx}/conversations/:
+    get:
+      operationId: communicator_conversations_list
+      summary: Conversations of the channel (one row per subject reference), latest activity first
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: page
+        schema:
+          type: integer
+      - in: query
+        name: page_size
+        schema:
+          type: integer
+      - in: query
+        name: state
+        schema:
+          type: string
+          enum:
+          - draft
+          - replied
+          - waiting
+        description: Inbox filter.
+      tags:
+      - Communicator inbox
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/footers/:
+    get:
+      operationId: communicator_footers_list
+      summary: Mail footers of the channel
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator footers
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FooterListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/footers/{language}/:
+    get:
+      operationId: api_communicator_v2_admin_footers_retrieve
+      summary: Mail footer in one language
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: language
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator footers
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FooterResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    put:
+      operationId: api_communicator_v2_admin_footers_update
+      description: The HTML is sanitised to an allowlist (a, img, p, br, strong, em, span, div, table family; basic text,
+        colour and size styles) and must keep `{{ legal }}` exactly once, else 400 on `html`. Sent messages keep the footer
+        they went out with (`footer_html`).
+      summary: Create or replace the mail footer
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: language
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator footers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FooterRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FooterRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FooterRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FooterResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    delete:
+      operationId: api_communicator_v2_admin_footers_destroy
+      description: Mail in this language falls back to the channel default language's footer, else the legal text alone.
+      summary: Remove the mail footer
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: language
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator footers
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
   /api/communicator/v2/admin/{channel_idx}/mailbox/:
     get:
       operationId: api_communicator_v2_admin_mailbox_retrieve
@@ -995,6 +1182,99 @@ paths:
           description: No response body
         '404':
           description: No response body
+  /api/communicator/v2/admin/{channel_idx}/sequences/{id}/texts/{text_pk}/:
+    patch:
+      operationId: api_communicator_v2_admin_sequences_texts_partial_update
+      description: Changes future follow-ups only — sent messages keep their rendered body.
+      summary: Edit or restore a text
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: text_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator sequences
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTextUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTextUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTextUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    delete:
+      operationId: api_communicator_v2_admin_sequences_texts_destroy
+      description: '204: never used by a thread, deleted. 200 with the row (`is_active=false`): already used, deactivated
+        so the thread history stays and no thread gets the same text twice.'
+      summary: Remove a text
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: text_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator sequences
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextResponse'
+          description: ''
+        '204':
+          description: No response body
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
   /api/communicator/v2/admin/{channel_idx}/suppressions/:
     get:
       operationId: communicator_suppressions_list
@@ -1361,6 +1641,23 @@ paths:
         schema:
           type: integer
       - in: query
+        name: sort
+        schema:
+          type: string
+          enum:
+          - activity
+          - created
+        description: Default created.
+      - in: query
+        name: state
+        schema:
+          type: string
+          enum:
+          - draft
+          - replied
+          - waiting
+        description: Inbox filter.
+      - in: query
         name: subject_ref
         schema:
           type: string
@@ -1519,6 +1816,209 @@ components:
       - live
       title: ChannelMode
       type: string
+    ConversationCountsResponse:
+      properties:
+        all:
+          description: Conversations of the channel.
+          examples:
+          - 12
+          title: All
+          type: integer
+        draft:
+          description: Conversations with a draft waiting for review in any thread.
+          examples:
+          - 2
+          title: Draft
+          type: integer
+        waiting:
+          description: Conversations with a mail waiting to be sent in any thread.
+          examples:
+          - 1
+          title: Waiting
+          type: integer
+        replied:
+          description: Conversations with a thread in status replied.
+          examples:
+          - 8
+          title: Replied
+          type: integer
+      required:
+      - all
+      - draft
+      - waiting
+      - replied
+      title: ConversationCountsResponse
+      type: object
+    ConversationDraftResponse:
+      properties:
+        id:
+          description: Message id of the draft waiting for review.
+          examples:
+          - 11
+          title: Id
+          type: integer
+        subject:
+          description: Draft subject.
+          examples:
+          - Quick question
+          title: Subject
+          type: string
+        recipient_email:
+          description: Recipient of the draft's own thread.
+          examples:
+          - jan@shop.test
+          title: Recipient Email
+          type: string
+      required:
+      - id
+      - subject
+      - recipient_email
+      title: ConversationDraftResponse
+      type: object
+    ConversationListResponse:
+      properties:
+        count:
+          description: Total matching conversations.
+          examples:
+          - 1
+          title: Count
+          type: integer
+        next:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Next page URL.
+          examples:
+          - null
+          title: Next
+        previous:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Previous page URL.
+          examples:
+          - null
+          title: Previous
+        results:
+          description: Latest conversation activity first.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/ConversationRowResponse'
+          title: Results
+          type: array
+        counts:
+          $ref: '#/components/schemas/ConversationCountsResponse'
+          description: Conversations per state, ignoring the `state` filter.
+      required:
+      - count
+      - next
+      - previous
+      - results
+      - counts
+      title: ConversationListResponse
+      type: object
+    ConversationRowResponse:
+      description: 'A conversation (one `subject_ref`): its newest thread, the state taken from every thread.'
+      properties:
+        id:
+          description: Thread id.
+          examples:
+          - 3
+          title: Id
+          type: integer
+        subject_ref:
+          description: Opaque reference of the caller.
+          examples:
+          - leads.Company:42
+          title: Subject Ref
+          type: string
+        recipient_email:
+          description: Recipient email.
+          examples:
+          - jan@shop.test
+          title: Recipient Email
+          type: string
+        recipient_name:
+          description: Recipient name.
+          examples:
+          - Jan Kowalski
+          title: Recipient Name
+          type: string
+        status:
+          description: open, replied or closed.
+          examples:
+          - replied
+          title: Status
+          type: string
+        last_message_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Last outbound or inbound mail.
+          examples:
+          - null
+          title: Last Message At
+        activity_at:
+          description: Latest mail, draft or reply (`sort=activity`), else last mail.
+          format: date-time
+          title: Activity At
+          type: string
+        subject:
+          description: Subject of the first outbound mail, else of the first reply.
+          examples:
+          - Hi
+          title: Subject
+          type: string
+        last_text:
+          description: Body of the latest mail, draft or reply (first 300 characters).
+          examples:
+          - ''
+          title: Last Text
+          type: string
+        draft:
+          anyOf:
+          - $ref: '#/components/schemas/ConversationDraftResponse'
+          - type: 'null'
+          description: The newest draft waiting for review in any thread of the conversation.
+          examples:
+          - null
+        waiting:
+          anyOf:
+          - $ref: '#/components/schemas/ThreadWaitingResponse'
+          - type: 'null'
+          description: The first mail waiting to be sent in any thread of the conversation.
+          examples:
+          - null
+        thread_count:
+          description: Threads of the conversation.
+          examples:
+          - 2
+          title: Thread Count
+          type: integer
+        replied:
+          description: A thread of the conversation is in status replied.
+          examples:
+          - true
+          title: Replied
+          type: boolean
+      required:
+      - id
+      - subject_ref
+      - recipient_email
+      - recipient_name
+      - status
+      - last_message_at
+      - activity_at
+      - subject
+      - last_text
+      - draft
+      - waiting
+      - thread_count
+      - replied
+      title: ConversationRowResponse
+      type: object
     DraftPreviewResponse:
       properties:
         subject:
@@ -1582,6 +2082,62 @@ components:
       - subject
       - body_text
       title: EditRequest
+      type: object
+    FooterListResponse:
+      properties:
+        results:
+          description: Footers of the channel by language.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/FooterResponse'
+          title: Results
+          type: array
+      required:
+      - results
+      title: FooterListResponse
+      type: object
+    FooterRequest:
+      additionalProperties: false
+      properties:
+        html:
+          description: Footer HTML with `{{ legal }}` exactly once; sanitised to an allowlist on save.
+          examples:
+          - <p><strong>Jan Kowalski</strong><br>Example sp. z o.o.</p><div>{{ legal }}</div>
+          maxLength: 20000
+          minLength: 1
+          title: Html
+          type: string
+      required:
+      - html
+      title: FooterRequest
+      type: object
+    FooterResponse:
+      properties:
+        language:
+          description: ISO 639-1 code.
+          examples:
+          - pl
+          title: Language
+          type: string
+        html:
+          description: Sanitised footer HTML with `{{ legal }}`.
+          examples:
+          - <div>{{ legal }}</div>
+          title: Html
+          type: string
+        modified_at:
+          description: Last saved.
+          examples:
+          - '2026-09-26T12:00:00Z'
+          format: date-time
+          title: Modified At
+          type: string
+      required:
+      - language
+      - html
+      - modified_at
+      title: FooterResponse
       type: object
     MailboxRequest:
       additionalProperties: false
@@ -1849,6 +2405,12 @@ components:
           - ''
           title: Legal Footer
           type: string
+        footer_html:
+          description: HTML footer as sent, legal text included; empty until sent or when the channel has none.
+          examples:
+          - ''
+          title: Footer Html
+          type: string
         scheduled_at:
           anyOf:
           - format: date-time
@@ -1936,6 +2498,7 @@ components:
       - reject_reason
       - review_notes
       - legal_footer
+      - footer_html
       - scheduled_at
       - sent_at
       - message_id
@@ -2213,6 +2776,12 @@ components:
           - ''
           title: Legal Footer
           type: string
+        footer_html:
+          description: HTML footer as sent, legal text included; empty until sent or when the channel has none.
+          examples:
+          - ''
+          title: Footer Html
+          type: string
         scheduled_at:
           anyOf:
           - format: date-time
@@ -2309,6 +2878,7 @@ components:
       - reject_reason
       - review_notes
       - legal_footer
+      - footer_html
       - scheduled_at
       - sent_at
       - message_id
@@ -2345,6 +2915,31 @@ components:
           - sandbox@mail.test
           title: Sandbox Mailbox
       title: ChannelConfigRequest
+      type: object
+    PatchedTextUpdateRequest:
+      additionalProperties: false
+      properties:
+        body:
+          anyOf:
+          - maxLength: 4000
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          description: New follow-up text.
+          examples:
+          - Any news?
+          title: Body
+        is_active:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: Can be picked; true restores.
+          examples:
+          - true
+          title: Is Active
+      title: TextUpdateRequest
       type: object
     PolicyRequest:
       additionalProperties: false
@@ -2994,6 +3589,15 @@ components:
           minLength: 2
           title: Language
           type: string
+        audience:
+          default: ''
+          description: 'Caller''s audience code (leads: lead type); blank = every audience. Omitted on PUT = unchanged.'
+          examples:
+          - RETAILER
+          maxLength: 64
+          pattern: ^[A-Z0-9_]*$
+          title: Audience
+          type: string
         subject:
           default: ''
           description: Subject (static) or a label.
@@ -3081,6 +3685,12 @@ components:
           - pl
           title: Language
           type: string
+        audience:
+          description: Audience code; blank = every audience.
+          examples:
+          - ''
+          title: Audience
+          type: string
         subject:
           description: Subject.
           examples:
@@ -3147,6 +3757,7 @@ components:
       - key
       - kind
       - language
+      - audience
       - subject
       - body
       - json_schema
@@ -3313,6 +3924,39 @@ components:
       - is_active
       title: TextResponse
       type: object
+    ThreadCountsResponse:
+      properties:
+        all:
+          description: Threads of the channel (of the subject reference, when given).
+          examples:
+          - 14
+          title: All
+          type: integer
+        draft:
+          description: Threads with a draft waiting for review.
+          examples:
+          - 2
+          title: Draft
+          type: integer
+        waiting:
+          description: Threads with a mail waiting to be sent.
+          examples:
+          - 1
+          title: Waiting
+          type: integer
+        replied:
+          description: Threads in status replied.
+          examples:
+          - 9
+          title: Replied
+          type: integer
+      required:
+      - all
+      - draft
+      - waiting
+      - replied
+      title: ThreadCountsResponse
+      type: object
     ThreadDetailResponse:
       properties:
         id:
@@ -3380,6 +4024,25 @@ components:
       - timeline
       title: ThreadDetailResponse
       type: object
+    ThreadDraftResponse:
+      properties:
+        id:
+          description: Message id of the draft waiting for review.
+          examples:
+          - 11
+          title: Id
+          type: integer
+        subject:
+          description: Draft subject.
+          examples:
+          - Quick question
+          title: Subject
+          type: string
+      required:
+      - id
+      - subject
+      title: ThreadDraftResponse
+      type: object
     ThreadListResponse:
       properties:
         count:
@@ -3405,18 +4068,22 @@ components:
           - null
           title: Previous
         results:
-          description: Newest first.
+          description: Newest first (`sort`).
           examples:
           - []
           items:
-            $ref: '#/components/schemas/ThreadSummaryResponse'
+            $ref: '#/components/schemas/ThreadRowResponse'
           title: Results
           type: array
+        counts:
+          $ref: '#/components/schemas/ThreadCountsResponse'
+          description: Threads per state, ignoring the `state` filter.
       required:
       - count
       - next
       - previous
       - results
+      - counts
       title: ThreadListResponse
       type: object
     ThreadResponse:
@@ -3468,7 +4135,7 @@ components:
       - status
       title: ThreadResponse
       type: object
-    ThreadSummaryResponse:
+    ThreadRowResponse:
       properties:
         id:
           description: Thread id.
@@ -3509,6 +4176,37 @@ components:
           examples:
           - null
           title: Last Message At
+        activity_at:
+          description: Latest mail, draft or reply (`sort=activity`), else last mail.
+          format: date-time
+          title: Activity At
+          type: string
+        subject:
+          description: Subject of the first outbound mail, else of the first reply.
+          examples:
+          - Hi
+          title: Subject
+          type: string
+        last_text:
+          description: Body of the latest mail, draft or reply (first 300 characters).
+          examples:
+          - ''
+          title: Last Text
+          type: string
+        draft:
+          anyOf:
+          - $ref: '#/components/schemas/ThreadDraftResponse'
+          - type: 'null'
+          description: The newest draft waiting for review.
+          examples:
+          - null
+        waiting:
+          anyOf:
+          - $ref: '#/components/schemas/ThreadWaitingResponse'
+          - type: 'null'
+          description: The first mail waiting to be sent.
+          examples:
+          - null
       required:
       - id
       - subject_ref
@@ -3516,7 +4214,51 @@ components:
       - recipient_name
       - status
       - last_message_at
-      title: ThreadSummaryResponse
+      - activity_at
+      - subject
+      - last_text
+      - draft
+      - waiting
+      title: ThreadRowResponse
+      type: object
+    ThreadWaitingResponse:
+      properties:
+        id:
+          description: Message id of the mail waiting for the send beat.
+          examples:
+          - 12
+          title: Id
+          type: integer
+        status:
+          description: approved or scheduled.
+          examples:
+          - scheduled
+          title: Status
+          type: string
+        scheduled_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Not before this moment.
+          examples:
+          - null
+          title: Scheduled At
+        next_slot:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Earliest send slot the policy allows.
+          examples:
+          - null
+          title: Next Slot
+      required:
+      - id
+      - status
+      - scheduled_at
+      - next_slot
+      title: ThreadWaitingResponse
       type: object
     TimelineEntryResponse:
       properties:

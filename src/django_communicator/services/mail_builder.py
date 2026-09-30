@@ -17,7 +17,8 @@ from django_email.domain import EmailDomain
 
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import ChannelMode, MessageStatus
-from django_communicator.models import Channel, Message
+from django_communicator.models import Channel, Message, MessageTemplateVersion
+from django_communicator.services import footer_service
 
 FOOTER_SEPARATOR = "\n\n-- \n"
 
@@ -27,6 +28,7 @@ class SmtpNotConfiguredError(Exception):
 
 
 def build(message: Message) -> EmailMultiAlternatives:
+    """Also fills `message.footer_html` (unsaved) — the delivery stores it with the sent status."""
     channel = message.thread.channel
     connection = EmailDomain(channel_idx=channel.idx).get_channel_smtp_connection_if_exists()
     if connection is None:
@@ -37,6 +39,7 @@ def build(message: Message) -> EmailMultiAlternatives:
     headers["Message-ID"] = message.message_id or (  # a soft-bounce retry keeps the Message-ID it was sent with
         f"<communicator-{message.pk}-{secrets.token_hex(4)}@{parseaddr(sender)[1].rpartition('@')[2]}>"
     )
+    message.footer_html = message.footer_html or footer_html(message)
     mail = EmailMultiAlternatives(subject, _text(message), sender, to, headers=headers, connection=connection)
     mail.attach_alternative(_html(message), "text/html")
     return mail
@@ -68,14 +71,35 @@ def _threading_headers(message: Message) -> dict[str, str]:
     return {"In-Reply-To": ids[-1], "References": " ".join(ids)} if ids else {}
 
 
+def footer_html(message: Message) -> str:
+    """The channel footer for the body language (cascade to the channel default) around the legal text; empty
+    when neither has a footer — the legal text then goes out alone, as before footers existed."""
+    footer = footer_service.resolve(message.thread.channel, _body_language(message))
+    return footer_service.render(footer, message.legal_footer) if footer else ""
+
+
+def _body_language(message: Message) -> str:
+    """The language of the template version the body was rendered from — the template cascade may have fallen
+    back from the recipient language; the recipient language when the message has no version."""
+    if message.template_version_id:
+        versions = MessageTemplateVersion.objects.filter(pk=message.template_version_id)
+        if language := versions.values_list("template__language__iso2", flat=True).first():
+            return language
+    thread = message.thread
+    return thread.recipient_language.iso2 if thread.recipient_language else ""
+
+
 def _text(message: Message) -> str:
-    footer = message.legal_footer.strip()
+    if message.footer_html:
+        footer = footer_service.to_text(message.footer_html)
+    else:
+        footer = message.legal_footer.strip()
     return message.body_text + (FOOTER_SEPARATOR + footer if footer else "")
 
 
 def _html(message: Message) -> str:
-    body = message.body_html or "".join(
-        f"<p>{escape(part).replace(chr(10), '<br>')}</p>" for part in message.body_text.split("\n\n") if part.strip()
-    )
+    body = message.body_html or footer_service.paragraphs(message.body_text)
+    if message.footer_html:
+        return body + message.footer_html
     footer = message.legal_footer.strip()
     return body + (f"<p>{escape(footer)}</p>" if footer else "")

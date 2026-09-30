@@ -17,8 +17,11 @@ edge-case ID (`test_C14_…`).
 | `test_sending.py` | modes, live gate, send-once claim, stale `sending`, overlapping runs under the cap, SMTP 4xx/5xx and sender refusal, mail structure, send now, soft-bounce retry, dev endpoints, the single `deliver(` caller | C-13…C-16, C-18, C-19, C-31, C-32 |
 | `test_policy.py` | windows, holidays, next slot, cap per channel day and spread quota, `CHANNEL_CONFIG_INVALID`, sandbox without mailbox, clock override only in development | C-16, C-17, C-30 |
 | `test_sequences.py` | follow-ups, pool exhaustion, step compare-and-set, References | C-27, C-28 |
+| `test_text_pool.py` | pool text PATCH / DELETE (delete vs deactivate), 404 across sequence and channel, inactive texts never picked | — |
+| `test_footer.py` | HTML footer API, `{{ legal }}` rule, sanitising, language cascade, text part, sent `footer_html` snapshot, GDPR export / erase | — |
 | `test_inbound.py` | poll cursor, quarantine, UIDVALIDITY, thread matching, autoresponders, opt-out, DSN, idempotency — on `tests/fixtures/mail/*.eml` (copies of the emporium fixtures) | C-20…C-26 |
 | `test_gdpr.py` | `contact_anonymised` receiver, export / erase, global token suppression, token parity with django_leads (skipped without it) | L-16, L-17 |
+| `test_inbox_list.py`, `test_inbox_conversations.py` | the inbox lists: `threads/` (state filter, counts, activity order, row fields) and `conversations/` (one row per `subject_ref`, state from any thread, counts, order, paging), query-count bounds | — |
 | `test_admin_api.py` | review / template / suppression endpoints, 401/403/404/409, `test/communicate/` | — |
 | `test_admin.py` | Django admin pages render, admin save versions, read-only messages | — |
 | `test_openapi.py` | the module schema validates | — |

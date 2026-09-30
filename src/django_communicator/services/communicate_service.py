@@ -49,8 +49,11 @@ def communicate(
     subject_ref: str,
     requires_review: bool = True,
     thread: Thread | None = None,
+    audience: str = "",
 ) -> Message:
-    """Suppression → template → legal footer → render → static body or AI draft. Raises `Channel.DoesNotExist`."""
+    """Suppression → template → legal footer → render → static body or AI draft. Raises `Channel.DoesNotExist`.
+
+    `audience` is the caller's opaque code (leads: the lead type); it picks the template variant, blank = default."""
     channel = channel_service.get_channel(channel_idx)
     if thread is not None:
         _check_thread(thread, channel, recipient, subject_ref)
@@ -58,7 +61,7 @@ def communicate(
     if suppression_service.is_suppressed(channel, recipient.email):
         return _create(channel, recipient, subject_ref, thread, status=MessageStatus.SUPPRESSED, **base)
     try:
-        template = template_service.resolve(channel, template_key, recipient.language)
+        template = template_service.resolve(channel, template_key, recipient.language, audience)
     except template_service.NoTemplateError:
         detail = f"no template {template_key}"
         return _fail(channel, recipient, subject_ref, thread, FailureCode.NO_TEMPLATE, detail, base)

@@ -61,6 +61,7 @@ def deliver(message: Message, *, now: datetime) -> str:
     except Exception:
         message_service.release_claim(claimed, current.status)
         raise
+    claimed.footer_html = current.footer_html  # filled by the build, stored with the sent status
     return outcome or _send(claimed, mail, now)
 
 
@@ -107,7 +108,12 @@ def _send(message: Message, mail: EmailMultiAlternatives, now: datetime) -> str:
     except (smtplib.SMTPException, OSError) as error:
         return _smtp_error(message, error, now)
     attempts = message.send_attempts + 1
-    fields = {"sent_at": now, "message_id": mail.extra_headers["Message-ID"], "send_attempts": attempts}
+    fields = {
+        "sent_at": now,
+        "message_id": mail.extra_headers["Message-ID"],
+        "send_attempts": attempts,
+        "footer_html": message.footer_html,
+    }
     _finish(message, MessageStatus.SENT, fields)
     transaction.on_commit(lambda: message_sent.send(sender=Message, message=message))
     return MessageStatus.SENT

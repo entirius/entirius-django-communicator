@@ -23,12 +23,15 @@ suppressions, the send policy, sequences and the IMAP mailbox. Its sending field
 
 ## Templates and versions
 
-`MessageTemplate(channel, key, language)` is `static` (subject + body with `{placeholders}`) or
+`MessageTemplate(channel, key, language, audience)` is `static` (subject + body with `{placeholders}`) or
 `ai_prompt` (body = system prompt, a line `=== USER ===`, user prompt; plus a toolbox `model` and an
 optional `json_schema`). Every content change — subject, body, json_schema, model — goes through
 `template_service.save_template` and creates the next immutable `MessageTemplateVersion`
 (C-29). A message points at the version it was rendered with, so editing a template never changes an
 existing draft.
+
+`audience` narrows a template to one audience of the caller — an opaque upper-case code communicator never
+interprets (leads passes the lead type). Blank serves every audience. Unique `(channel, key, language, audience)`.
 
 `requires_legal_footer` (default on) makes `communicate()` refuse a call without a footer.
 `auto_approve` exists on static templates only.
@@ -36,12 +39,14 @@ existing draft.
 ## communicate()
 
 `services/communicate_service.communicate(*, channel_idx, template_key, recipient, context,
-subject_ref, requires_review=True, thread=None) -> Message` — the one entry point for other modules.
+subject_ref, requires_review=True, thread=None, audience="") -> Message` — the one entry point for other modules.
 Fixed order:
 
 1. **Suppression** — global `email_token`, channel email, channel registrable domain → `suppressed`,
    no toolbox call (C-06).
-2. **Template** — recipient language, else channel default language; none → `failed/no_template` (C-05).
+2. **Template** — `template_service.resolve`, most specific active template first: (recipient language,
+   audience) → (recipient language, blank) → (channel default language, audience) → (channel default, blank);
+   none → `failed/no_template` (C-05). A blank audience asks for the blank-audience template only.
 3. **Legal footer** — required and blank → `LegalFooterRequiredError`, nothing created (C-03).
 4. **Render** — a missing placeholder → `failed/render` naming the variables (C-04).
 5. **Static** → `approved` when `auto_approve and not requires_review`, else `review_required` (C-02).
@@ -115,6 +120,16 @@ never re-sent — it becomes `failed/send_outcome_unknown` for a human. At most 
 <communicator-<id>-<hex8>@<from domain>>`, `In-Reply-To`/`References` from the thread's earlier sent
 messages, SMTP connection from `EMAIL_SMTP_CONFIGURATION_CHANNELS[<channel idx>]` (django_email).
 
+**Footer.** One HTML footer per (channel, language) — `MailFooter`, `footers/<language>/` — is the layout around
+the legal text: signature, logo, company data, links. It carries `{{ legal }}` exactly once, as text (never inside an attribute); the caller's
+`legal_footer` (leads: the agreements clause set of the legal basis) replaces it as escaped paragraphs. Saved HTML
+is sanitised to an allowlist (a, img, p, br, strong, em, span, div, table family; text, colour, size and spacing
+styles without `url(`/`expression(` values; http/https/mailto/tel links). At send, `mail_builder` picks the
+footer of the body's language (its template version's; the thread language without one), else the
+channel default language's, else none — the legal text then goes out alone, as before footers existed. The text
+part is the footer converted: blocks become lines, links `text <url>`, images dropped. The sent message stores the
+rendered footer in `footer_html`, so a later footer edit never rewrites sent mail.
+
 **SMTP errors** (C-19): 5xx → `failed/smtp`; the recipient is suppressed only in `live` and only when
 RCPT was refused (550/551/553/554). Sender or data refusals suppress nobody and raise a `high` alert.
 4xx / transport errors → `scheduled` for the next run, `failed/smtp` at `COMMUNICATOR_SMTP_MAX_ATTEMPTS`.
@@ -125,7 +140,9 @@ RCPT was refused (550/551/553/554). Sender or data refusals suppress nobody and 
 texts. `ThreadSequenceState` tracks a thread's step and next due date. Beat `schedule_follow_ups`
 creates the next follow-up through `communicate(requires_review=False)` with the previous context and
 `body` = a random pool text not yet used in the thread; once the pool is exhausted, any text with a
-warning (C-27). Follow-ups ride the same send path, policy and cap (C-28).
+warning (C-27). Inactive texts are never picked. A text no thread used can be deleted; removing a used one
+only deactivates it — deleting would cascade away the usage and a thread could get the same text twice.
+Follow-ups ride the same send path, policy and cap (C-28).
 
 The next due date counts from the delivery. Terminal outcomes go through
 `sequence_service.on_follow_up_finished`: delivered → next due date or `finished`
@@ -168,7 +185,7 @@ suppressed.
 With django_leads installed, `contact_anonymised(email_hash, anonymised_email, subject_ref)` suppresses
 the token globally and rewrites that subject's thread recipients and the subject's own reply senders.
 `gdpr.py` exports and erases a subject's threads, messages, replies and suppressions; erase scrubs
-subjects, bodies, footers, prompts and render contexts. A colleague's reply in the same thread is not
+subjects, bodies, footers (`legal_footer`, `footer_html`), prompts and render contexts. A colleague's reply in the same thread is not
 the subject's data.
 
 ## Signals

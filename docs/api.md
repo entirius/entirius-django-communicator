@@ -26,7 +26,7 @@ generated document is `docs/openapi.yaml`. Views are thin: parse, call a service
 | `POST review/<id>/skip/` · `skip-company/` (`{reason}`) | 200 `rejected`; `skip-company` also emits `company_skipped` |
 | `POST review/<id>/rewrite/` (`{notes}`) | 201 new AI version (or a `failed` version on a toolbox error) |
 | `POST review/<id>/edit/` (`{subject, body_text}`) | 201 new human version |
-| `GET/POST templates/` · `GET/PUT templates/<id>/` · `GET templates/<id>/versions/` | editor; a content change creates a version |
+| `GET/POST templates/` · `GET/PUT templates/<id>/` · `GET templates/<id>/versions/` | editor; a content change creates a version; `audience` (upper-case code, blank = every audience) — a PUT without `audience` keeps the stored one, `""` clears it; the list is ordered by key, then audience |
 | `POST templates/<id>/test-generate/` (`{context}`) | draft preview, nothing saved |
 | `GET models/` | toolbox catalogue of the configured toolbox channel |
 | `GET suppressions/?value=` · `POST suppressions/` · `DELETE suppressions/<id>/` | channel `email` / `domain` rows; the list includes global `email_token` rows, which are not deletable here |
@@ -35,13 +35,16 @@ generated document is `docs/openapi.yaml`. Views are thin: parse, call a service
 | `GET messages/?status=` | outbox (default `approved`) with `next_slot` per message |
 | `POST messages/<id>/send-now/` | `scheduled_at` = channel now; mode, policy and cap still apply (C-31) |
 | `GET/POST sequences/` · `GET sequences/<id>/steps/` · `GET/POST sequences/<id>/texts/` | sequences, steps, text pool |
-| `GET threads/?subject_ref=` · `GET threads/<id>/` | threads, newest first; one thread with `sequence` state and `timeline` (messages + replies; `message_id` on message entries, null on replies) |
+| `PATCH sequences/<id>/texts/<text_id>/` (`{body?, is_active?}`) · `DELETE` same path | edit or restore a pool text (future follow-ups only — sent mail keeps its body); DELETE of a text no thread used → 204, deleted; of a used one → 200 with the row, `is_active=false` (the thread history stays, no thread gets the same text twice) |
+| `GET threads/?subject_ref=&state=&sort=` · `GET threads/<id>/` | the inbox list: newest created first, or `sort=activity` (latest mail, draft or reply first); `state` = `draft` (a draft waits for review) · `waiting` (a mail waits for the send beat) · `replied`; each row adds `activity_at`, `subject`, `last_text` (300 chars), `draft {id, subject}`, `waiting {id, status, scheduled_at, next_slot}`; the page carries `counts {all, draft, waiting, replied}` (ignoring `state`) — one thread with `sequence` state and `timeline` (messages + replies; `message_id` on message entries, null on replies) |
+| `GET conversations/?state=` | the Inbox list: one row per `subject_ref` (a conversation) = a `threads/` row of its newest thread (newest created) plus `thread_count` and `replied` (any thread in status replied); `state` holds when any thread is in it; `draft`, `waiting` and `last_text` come from any thread (the draft to open may sit in an older one, so `draft` adds `recipient_email` of its own thread), `subject` is the newest thread's; latest activity of any thread first; `counts` count conversations (ignoring `state`) |
 | `POST threads/<id>/resume-sequence/` | paused sequence runs again, thread `open` |
 | `GET replies/?kind=&thread=` | replies, newest first |
 | `POST replies/<id>/confirm-optout/` · `dismiss-optout/` | decide a `suspected_optout` |
+| `GET footers/` · `GET/PUT/DELETE footers/<language>/` (`{html}`) | HTML mail footer per ISO 639-1 language; PUT sanitises to an allowlist and needs `{{ legal }}` exactly once, as text — not in an attribute (else 400 on `html`); unknown language → 404; GET 404 when none |
 | `GET/PUT mailbox/` | IMAP config; `imap_password` is write-only (`has_password` on read), omitted on PUT = kept; GET 404 when none |
 
-List endpoints `review/`, `messages/`, `threads/` and `replies/` are paginated (`page`, `page_size`
+List endpoints `review/`, `messages/`, `threads/`, `conversations/` and `replies/` are paginated (`page`, `page_size`
 ≤ 100, default 20) with `count`, `next`, `previous`, `results`.
 
 ## Errors
@@ -50,7 +53,7 @@ List endpoints `review/`, `messages/`, `threads/` and `replies/` are paginated (
 |---|---|
 | 400 | `PATCH channel/` with `mode=live` or `live_enabled` (field named in `details`); Pydantic validation (v2 error shape via `raise_pydantic_as_drf`); template model validation; unrenderable `test-generate` context; invalid suppression value |
 | 401 / 403 | no or invalid JWT / not staff |
-| 404 | unknown channel or object; empty review queue; no policy (`GET policy/`); no mailbox (`GET mailbox/`) |
+| 404 | unknown channel or object; empty review queue; no policy (`GET policy/`); no mailbox (`GET mailbox/`); no footer or unknown language (`footers/<language>/`) |
 | 409 | a conflict; `error` names its kind — see the table below |
 | 402 / 403 / 502 / 503 / 504 | `test-generate/` and `models/` only: toolbox budget, `MODEL_NOT_ALLOWED`, provider error or invalid draft output, toolbox not configured, timeout (`django_utils.toolbox.views.handle_toolbox_error`) |
 

@@ -4,12 +4,14 @@
 """Request schemas of the communicator admin API v2."""
 
 from datetime import date, datetime, time
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from django_communicator.enums import ChannelMode, MessageStatus, ReplyKind, SuppressionKind, TemplateKind
 from django_communicator.services.communicate_service import RecipientData
+
+AUDIENCE_PATTERN = r"^[A-Z0-9_]*$"
 
 
 class ReviewListQuery(BaseModel):
@@ -49,6 +51,13 @@ class TemplateRequest(BaseModel):
     key: str = Field(min_length=1, max_length=128, description="Dotted template key.", examples=["lead.cold.shop"])
     kind: TemplateKind = Field(description="static or ai_prompt.", examples=["ai_prompt"])
     language: str = Field(min_length=2, max_length=2, description="ISO 639-1 language code.", examples=["pl"])
+    audience: str = Field(
+        default="",
+        max_length=64,
+        pattern=AUDIENCE_PATTERN,
+        description="Caller's audience code (leads: lead type); blank = every audience. Omitted on PUT = unchanged.",
+        examples=["RETAILER"],
+    )
     subject: str = Field(default="", max_length=255, description="Subject (static) or a label.", examples=["Hello"])
     body: str = Field(
         min_length=1,
@@ -88,6 +97,9 @@ class DevCommunicateRequest(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict, description="Placeholder values.", examples=[{}])
     subject_ref: str = Field(min_length=1, max_length=200, description="Opaque reference.", examples=["bdd:c-01"])
     requires_review: bool = Field(default=True, description="False lets auto_approve templates pass.", examples=[True])
+    audience: str = Field(
+        default="", max_length=64, pattern=AUDIENCE_PATTERN, description="Audience code.", examples=["RETAILER"]
+    )
 
 
 class WindowRequest(BaseModel):
@@ -150,6 +162,15 @@ class TextRequest(BaseModel):
     is_active: bool = Field(default=True, description="Can be picked.", examples=[True])
 
 
+class TextUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    body: str | None = Field(
+        default=None, min_length=1, max_length=4000, description="New follow-up text.", examples=["Any news?"]
+    )
+    is_active: bool | None = Field(default=None, description="Can be picked; true restores.", examples=[True])
+
+
 class ChannelConfigRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -201,6 +222,21 @@ class ThreadListQuery(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     subject_ref: str | None = Field(default=None, max_length=200, description="Only threads about this reference.")
+    state: Literal["draft", "waiting", "replied"] | None = Field(
+        default=None,
+        description="draft: a draft waits for review · waiting: a mail waits for the send beat · replied: a reply.",
+    )
+    sort: Literal["created", "activity"] = Field(
+        default="created", description="created: newest thread first · activity: latest mail, draft or reply first."
+    )
+
+
+class ConversationListQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    state: Literal["draft", "waiting", "replied"] | None = Field(
+        default=None, description="A conversation is in a state when any of its threads is (see ThreadListQuery)."
+    )
 
 
 class ReplyListQuery(BaseModel):
@@ -222,3 +258,14 @@ class MailboxRequest(BaseModel):
     )
     folder: str = Field(default="INBOX", min_length=1, max_length=64, description="Folder polled.", examples=["INBOX"])
     is_active: bool = Field(default=True, description="Polled by the beat.", examples=[True])
+
+
+class FooterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    html: str = Field(
+        min_length=1,
+        max_length=20000,
+        description="Footer HTML with `{{ legal }}` exactly once; sanitised to an allowlist on save.",
+        examples=["<p><strong>Jan Kowalski</strong><br>Example sp. z o.o.</p><div>{{ legal }}</div>"],
+    )

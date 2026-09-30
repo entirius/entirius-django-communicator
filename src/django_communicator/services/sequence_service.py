@@ -13,7 +13,7 @@ import logging
 import random
 from datetime import datetime, timedelta
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -139,6 +139,9 @@ def _schedule_logged(state: ThreadSequenceState, rng: random.Random) -> Message 
         return schedule_follow_up(state, rng)
     except (LegalFooterRequiredError, ThreadMismatchError):
         logger.warning("communicator follow-up of thread %s not created", state.thread_id, exc_info=True)
+        return None
+    except IntegrityError:  # the picked text was deleted meanwhile (deferred FK): all rolled back, next tick retries
+        logger.warning("communicator follow-up of thread %s rolled back, retried next tick", state.thread_id)
         return None
 
 
