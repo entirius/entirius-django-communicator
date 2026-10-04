@@ -25,6 +25,8 @@ _TAGS = ["Communicator sequences"]
 
 
 class SequenceView(AdminView):
+    access_area = "communicator.content"
+
     def sequence(self, channel_idx: str, pk: int) -> Sequence:
         try:
             return sending_config_service.get_sequence(self.channel(channel_idx), pk)
@@ -33,6 +35,8 @@ class SequenceView(AdminView):
 
 
 class SequenceListView(AdminView):
+    access_area = "communicator.content"
+
     @extend_schema(
         tags=_TAGS,
         operation_id="communicator_sequences_list",

@@ -10,6 +10,20 @@ class DjangoCommunicatorConfig(AppConfig):
     name = "django_communicator"
     label = "django_communicator"
     is_volkanos = True
+    # Copied 1:1 from entirius-django-access cf538d2 catalogue defaults;
+    # the access defaults stay until this module's release.
+    access_areas = [
+        {"key": "communicator.review", "label": "Draft review queue"},
+        {"key": "communicator.content", "label": "Templates, sequences and footers", "sensitive": ("ai_cost",)},
+        {
+            "key": "communicator.conversations",
+            "label": "Outbox, threads, replies and suppressions",
+            "sensitive": ("pii",),
+        },
+        {"key": "communicator.settings", "label": "Channel, send policy and mailbox", "sensitive": ("secret",)},
+    ]
+    # Every admin view carries its access_area; no route needs a path rule.
+    access_route_rules = []
 
     def ready(self) -> None:
         from django_communicator import checks  # noqa: F401 — registers the configuration health checks

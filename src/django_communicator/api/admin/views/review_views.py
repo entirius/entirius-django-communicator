@@ -24,6 +24,8 @@ def _payload(message: Message) -> dict:
 
 
 class ReviewListView(AdminView):
+    access_area = "communicator.review"
+
     @extend_schema(
         tags=_TAGS,
         operation_id="communicator_review_list",
@@ -50,6 +52,8 @@ class ReviewListView(AdminView):
 
 
 class ReviewNextView(AdminView):
+    access_area = "communicator.review"
+
     @extend_schema(
         tags=_TAGS,
         summary="Oldest message waiting for review",
@@ -64,6 +68,8 @@ class ReviewNextView(AdminView):
 
 
 class _MessageActionView(AdminView):
+    access_area = "communicator.review"
+
     def message(self, channel_idx: str, pk: int) -> Message:
         try:
             return review_service.get_message(self.channel(channel_idx), pk)

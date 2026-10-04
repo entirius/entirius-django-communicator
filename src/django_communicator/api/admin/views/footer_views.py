@@ -21,6 +21,8 @@ _TAGS = ["Communicator footers"]
 
 
 class FooterListView(AdminView):
+    access_area = "communicator.content"
+
     @extend_schema(
         tags=_TAGS,
         operation_id="communicator_footers_list",
@@ -33,6 +35,8 @@ class FooterListView(AdminView):
 
 
 class FooterDetailView(AdminView):
+    access_area = "communicator.content"
+
     @staticmethod
     def language(code: str) -> Language:
         language = find_language(code)

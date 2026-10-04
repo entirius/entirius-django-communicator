@@ -25,6 +25,8 @@ App label `django_communicator`, table prefix `django_communicator_`.
 - Layered: API → services → models. No logic in models beyond `clean()` validation; views parse, call a
   service, serialise.
 - Never rename the package, the app label or the table prefix; never edit a released migration.
+- Access: areas live on the AppConfig (`access_areas`, `access_route_rules`), every admin view carries
+  `access_area`; a new admin route without one fails `tests/test_access_ownership.py`.
 - Git flow: `develop` + `master`, PRs, semver tag on `master`. Do not commit by default — the operator decides.
 - **NEVER add `Co-Authored-By: Claude …` or any Claude/Anthropic attribution** to commits or PR descriptions —
   no co-author trailer, no "Generated with Claude Code" line.

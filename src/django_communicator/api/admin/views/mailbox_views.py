@@ -18,6 +18,8 @@ _TAGS = ["Communicator inbox"]
 
 
 class MailboxView(AdminView):
+    access_area = "communicator.settings"
+
     @extend_schema(
         tags=_TAGS, summary="IMAP mailbox of the channel", responses={200: MailboxResponse, **ERROR_RESPONSES}
     )

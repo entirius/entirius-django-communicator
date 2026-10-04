@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- Access: the module declares its own access areas on its AppConfig and its admin views (copied from the
+  entirius-django-access defaults; behaviour unchanged).
+
 ## 0.3.0 — 2026-09-30
 
 - **HTML mail footer per channel and language.** `MailFooter` (migration `0011`, also `Message.footer_html`):
