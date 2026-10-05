@@ -13,7 +13,7 @@ class DjangoCommunicatorConfig(AppConfig):
     # Copied 1:1 from entirius-django-access cf538d2 catalogue defaults;
     # the access defaults stay until this module's release.
     access_areas = [
-        {"key": "communicator.review", "label": "Draft review queue"},
+        {"key": "communicator.review", "label": "Draft review queue", "sensitive": ("pii",)},
         {"key": "communicator.content", "label": "Templates, sequences and footers", "sensitive": ("ai_cost",)},
         {
             "key": "communicator.conversations",

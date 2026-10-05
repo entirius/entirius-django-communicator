@@ -115,8 +115,6 @@ class TemplateVersionsView(_TemplateObjectView):
 
 
 class TemplateTestGenerateView(_TemplateObjectView):
-    access_levels = {"POST": "read"}
-
     @extend_schema(
         tags=_TAGS,
         summary="Draft with a sample context without saving",
