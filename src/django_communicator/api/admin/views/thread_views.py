@@ -29,6 +29,8 @@ _TAGS = ["Communicator inbox"]
 
 
 class ThreadListView(AdminView):
+    access_area = "communicator.conversations"
+
     @extend_schema(
         tags=_TAGS,
         operation_id="communicator_threads_list",
@@ -56,6 +58,8 @@ class ThreadListView(AdminView):
 
 
 class ConversationListView(AdminView):
+    access_area = "communicator.conversations"
+
     @extend_schema(
         tags=_TAGS,
         operation_id="communicator_conversations_list",
@@ -89,6 +93,8 @@ def _policy_or_none(channel: Channel) -> SendPolicy | None:
 
 
 class ThreadDetailView(AdminView):
+    access_area = "communicator.conversations"
+
     @extend_schema(
         tags=_TAGS,
         summary="One thread with its messages and replies",
@@ -107,6 +113,8 @@ class ThreadDetailView(AdminView):
 
 
 class ResumeSequenceView(AdminView):
+    access_area = "communicator.conversations"
+
     @extend_schema(
         tags=_TAGS,
         summary="Resume the paused sequence of a thread",

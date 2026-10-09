@@ -22,6 +22,8 @@ _TAGS = ["Communicator inbox"]
 
 
 class ReplyListView(AdminView):
+    access_area = "communicator.conversations"
+
     @extend_schema(
         tags=_TAGS,
         operation_id="communicator_replies_list",
@@ -58,6 +60,8 @@ def _decide(view: AdminView, channel_idx: str, pk: int, action: Callable[[Reply]
 
 
 class ConfirmOptoutView(AdminView):
+    access_area = "communicator.conversations"
+
     @extend_schema(
         tags=_TAGS,
         summary="Confirm a suspected opt-out",
@@ -70,6 +74,8 @@ class ConfirmOptoutView(AdminView):
 
 
 class DismissOptoutView(AdminView):
+    access_area = "communicator.conversations"
+
     @extend_schema(
         tags=_TAGS,
         summary="Dismiss a suspected opt-out",

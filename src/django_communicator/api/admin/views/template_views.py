@@ -48,6 +48,8 @@ def _save(template: MessageTemplate, body: TemplateRequest, user) -> dict:
 
 
 class TemplateListView(AdminView):
+    access_area = "communicator.content"
+
     @extend_schema(
         tags=_TAGS,
         operation_id="communicator_templates_list",
@@ -73,6 +75,8 @@ class TemplateListView(AdminView):
 
 
 class _TemplateObjectView(AdminView):
+    access_area = "communicator.content"
+
     def template(self, channel_idx: str, pk: int) -> MessageTemplate:
         try:
             return template_service.get_template(self.channel(channel_idx), pk)
@@ -134,6 +138,8 @@ class TemplateTestGenerateView(_TemplateObjectView):
 
 
 class ModelListView(AdminView):
+    access_area = "communicator.content"
+
     @extend_schema(
         tags=_TAGS,
         summary="Toolbox models available for templates",

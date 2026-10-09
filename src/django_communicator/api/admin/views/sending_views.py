@@ -50,6 +50,8 @@ def _policy_response(policy) -> dict:
 
 
 class ChannelConfigView(AdminView):
+    access_area = "communicator.settings"
+
     @extend_schema(
         tags=_TAGS, summary="Channel sending mode", responses={200: ChannelConfigResponse, **ERROR_RESPONSES}
     )
@@ -77,6 +79,8 @@ class ChannelConfigView(AdminView):
 
 
 class PolicyView(AdminView):
+    access_area = "communicator.settings"
+
     @extend_schema(
         tags=_TAGS, summary="Send policy of the channel", responses={200: PolicyResponse, **ERROR_RESPONSES, 409: None}
     )
@@ -100,6 +104,8 @@ class PolicyView(AdminView):
 
 
 class OutboxListView(AdminView):
+    access_area = "communicator.conversations"
+
     @extend_schema(
         tags=_TAGS,
         summary="Outbound messages by status with their next slot",
@@ -129,6 +135,8 @@ def _outbox(message: Message, policy) -> dict:
 
 
 class SendNowView(AdminView):
+    access_area = "communicator.conversations"
+
     @extend_schema(
         tags=_TAGS,
         summary="Send now",

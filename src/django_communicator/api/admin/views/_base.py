@@ -78,6 +78,8 @@ def is_development() -> bool:
 class DevelopmentView(AdminView):
     """Answers 404 outside `ENVIRONMENT == "development"`, even when a host mounts the URL."""
 
+    access_area = "platform.devtools"
+
     def initial(self, request: Request, *args, **kwargs) -> None:
         if not is_development():
             raise NotFound()

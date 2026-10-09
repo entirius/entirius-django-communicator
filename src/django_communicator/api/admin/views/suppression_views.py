@@ -18,6 +18,8 @@ _TAGS = ["Communicator suppressions"]
 
 
 class SuppressionListView(AdminView):
+    access_area = "communicator.conversations"
+
     @extend_schema(
         tags=_TAGS,
         operation_id="communicator_suppressions_list",
@@ -52,6 +54,8 @@ class SuppressionListView(AdminView):
 
 
 class SuppressionDetailView(AdminView):
+    access_area = "communicator.conversations"
+
     @extend_schema(tags=_TAGS, summary="Remove a suppression", responses={204: None, **ERROR_RESPONSES})
     def delete(self, request: Request, channel_idx: str, pk: int) -> Response:
         try:
