@@ -24,7 +24,7 @@ generated document is `docs/openapi.yaml`. Views are thin: parse, call a service
 | `GET review/<id>/` | one message of the channel, any status (`MessageDetailResponse`); 404 for another channel's message |
 | `POST review/<id>/accept/` | 200 `approved` |
 | `POST review/<id>/skip/` · `skip-company/` (`{reason}`) | 200 `rejected`; `skip-company` also emits `company_skipped` |
-| `POST review/<id>/rewrite/` (`{notes}`) | 201 new AI version (or a `failed` version on a toolbox error) |
+| `POST review/<id>/rewrite/` (`{notes}`) | 201 new AI version (or a `failed` version on a toolbox error); 503 `AI_TOOLBOX_DISABLED` and no version while the toolbox is switched off |
 | `POST review/<id>/edit/` (`{subject, body_text}`) | 201 new human version |
 | `GET/POST templates/` · `GET/PUT templates/<id>/` · `GET templates/<id>/versions/` | editor; a content change creates a version; `audience` (upper-case code, blank = every audience) — a PUT without `audience` keeps the stored one, `""` clears it; the list is ordered by key, then audience |
 | `POST templates/<id>/test-generate/` (`{context}`) | draft preview, nothing saved |
@@ -56,6 +56,7 @@ List endpoints `review/`, `messages/`, `threads/`, `conversations/` and `replies
 | 404 | unknown channel or object; empty review queue; no policy (`GET policy/`); no mailbox (`GET mailbox/`); no footer or unknown language (`footers/<language>/`) |
 | 409 | a conflict; `error` names its kind — see the table below |
 | 402 / 403 / 502 / 503 / 504 | `test-generate/` and `models/` only: toolbox budget, `MODEL_NOT_ALLOWED`, provider error or invalid draft output, toolbox not configured, timeout (`django_utils.toolbox.views.handle_toolbox_error`) |
+| 503 `AI_TOOLBOX_DISABLED` | `review/<id>/rewrite/`, `test/communicate/` (AI template), `test-generate/` and `models/` while `AI_TOOLBOX_ENABLED` is `False`; body `{error, message}`, nothing is written |
 
 Every 409 uses the v2 error shape; `error` tells the kinds apart, `message` explains:
 

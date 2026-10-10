@@ -3,6 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Admin API v2 — review queue: list, next, accept, rewrite, edit, skip, skip company."""
 
+from django_utils.toolbox import ToolboxDisabledError, handle_toolbox_error
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.exceptions import NotFound
 from rest_framework.request import Request
@@ -82,6 +83,8 @@ class _MessageActionView(AdminView):
             return Response(_payload(action(*args, **kwargs)), status=status)
         except InvalidTransitionError as error:
             raise Conflict(str(error), code="already_reviewed") from None
+        except ToolboxDisabledError as error:
+            return handle_toolbox_error(error)
         except review_service.ReviewError as error:
             raise Conflict(str(error), code="review_refused") from None
 
@@ -110,9 +113,10 @@ class RewriteView(_MessageActionView):
         tags=_TAGS,
         summary="Rewrite an AI draft with reviewer notes",
         description="Creates the next version through the toolbox; the reviewed one becomes `superseded`. "
-        "A toolbox failure returns a `failed` version and keeps the reviewed message in the queue.",
+        "A toolbox failure returns a `failed` version and keeps the reviewed message in the queue. "
+        "503 `AI_TOOLBOX_DISABLED` while the toolbox is switched off: no version is created.",
         request=RewriteRequest,
-        responses={201: MessageDetailResponse, **_ACTION_ERRORS},
+        responses={201: MessageDetailResponse, **_ACTION_ERRORS, 503: None},
     )
     def post(self, request: Request, channel_idx: str, pk: int) -> Response:
         body = parse(RewriteRequest, request.data)

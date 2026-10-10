@@ -13,7 +13,7 @@ from typing import TypeVar
 from celery_once import AlreadyQueued
 from django.db import transaction
 from django.utils.decorators import method_decorator
-from django_utils.toolbox import outage
+from django_utils.toolbox import ToolboxDisabledError, handle_toolbox_error, outage
 from drf_spectacular.utils import extend_schema
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.request import Request
@@ -69,9 +69,10 @@ class DevCommunicateView(DevelopmentView):
     @extend_schema(
         tags=_TAGS,
         summary="Call communicate() (development only)",
-        description="Returns the created message; a missing legal footer answers 400 and creates nothing.",
+        description="Returns the created message; a missing legal footer answers 400 and creates nothing. "
+        "503 `AI_TOOLBOX_DISABLED` for an AI template while the toolbox is switched off.",
         request=DevCommunicateRequest,
-        responses={201: MessageDetailResponse, **ERROR_RESPONSES},
+        responses={201: MessageDetailResponse, **ERROR_RESPONSES, 503: None},
     )
     def post(self, request: Request, channel_idx: str) -> Response:
         body = parse(DevCommunicateRequest, request.data)
@@ -80,6 +81,8 @@ class DevCommunicateView(DevelopmentView):
             message = communicate(channel_idx=channel.idx, **dict(body))
         except LegalFooterRequiredError as error:
             raise ValidationError({"recipient.legal_footer": [str(error)]}) from None
+        except ToolboxDisabledError as error:
+            return handle_toolbox_error(error)
         return Response(MessageDetailResponse.of(message).model_dump(mode="json"), status=201)
 
 

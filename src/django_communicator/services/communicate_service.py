@@ -6,7 +6,7 @@
 
 from typing import Any
 
-from django_utils.toolbox import ToolboxError
+from django_utils.toolbox import ToolboxDisabledError, ToolboxError, is_enabled
 from pydantic import BaseModel, Field
 
 from django_communicator.enums import FailureCode, MessageStatus, TemplateKind, ThreadStatus
@@ -53,7 +53,8 @@ def communicate(
 ) -> Message:
     """Suppression → template → legal footer → render → static body or AI draft. Raises `Channel.DoesNotExist`.
 
-    `audience` is the caller's opaque code (leads: the lead type); it picks the template variant, blank = default."""
+    `audience` is the caller's opaque code (leads: the lead type); it picks the template variant, blank = default.
+    Raises `ToolboxDisabledError` for an AI template while the toolbox is switched off — nothing is written."""
     channel = channel_service.get_channel(channel_idx)
     if thread is not None:
         _check_thread(thread, channel, recipient, subject_ref)
@@ -67,6 +68,8 @@ def communicate(
         return _fail(channel, recipient, subject_ref, thread, FailureCode.NO_TEMPLATE, detail, base)
     if template.requires_legal_footer and not recipient.legal_footer.strip():
         raise LegalFooterRequiredError(f"template {template_key} requires a legal footer")
+    if template.kind != TemplateKind.STATIC and not is_enabled():
+        raise ToolboxDisabledError()
     base["template_version"] = template.current_version
     values = {**context, "first_name": recipient.first_name, "last_name": recipient.last_name, "email": recipient.email}
     try:
