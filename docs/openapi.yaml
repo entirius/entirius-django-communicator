@@ -17,7 +17,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator sending
+      - Communicator Sending
       security:
       - jwtAuth: []
       responses:
@@ -47,7 +47,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator sending
+      - Communicator Sending
       requestBody:
         content:
           application/json:
@@ -106,7 +106,7 @@ paths:
           - waiting
         description: Inbox filter.
       tags:
-      - Communicator inbox
+      - Communicator Inbox
       security:
       - jwtAuth: []
       responses:
@@ -135,7 +135,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator footers
+      - Communicator Footers
       security:
       - jwtAuth: []
       responses:
@@ -169,7 +169,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator footers
+      - Communicator Footers
       security:
       - jwtAuth: []
       responses:
@@ -205,7 +205,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator footers
+      - Communicator Footers
       requestBody:
         content:
           application/json:
@@ -251,7 +251,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator footers
+      - Communicator Footers
       security:
       - jwtAuth: []
       responses:
@@ -276,7 +276,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator inbox
+      - Communicator Inbox
       security:
       - jwtAuth: []
       responses:
@@ -305,7 +305,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator inbox
+      - Communicator Inbox
       requestBody:
         content:
           application/json:
@@ -372,7 +372,7 @@ paths:
           - would_send
         description: Default approved.
       tags:
-      - Communicator sending
+      - Communicator Sending
       security:
       - jwtAuth: []
       responses:
@@ -409,7 +409,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator sending
+      - Communicator Sending
       security:
       - jwtAuth: []
       responses:
@@ -440,7 +440,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator templates
+      - Communicator Templates
       security:
       - jwtAuth: []
       responses:
@@ -473,7 +473,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator sending
+      - Communicator Sending
       security:
       - jwtAuth: []
       responses:
@@ -503,7 +503,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator sending
+      - Communicator Sending
       requestBody:
         content:
           application/json:
@@ -570,7 +570,7 @@ paths:
           type: integer
         description: Only replies of this thread.
       tags:
-      - Communicator inbox
+      - Communicator Inbox
       security:
       - jwtAuth: []
       responses:
@@ -605,7 +605,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator inbox
+      - Communicator Inbox
       security:
       - jwtAuth: []
       responses:
@@ -643,7 +643,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator inbox
+      - Communicator Inbox
       security:
       - jwtAuth: []
       responses:
@@ -685,7 +685,7 @@ paths:
           type: string
         description: Message status.
       tags:
-      - Communicator review
+      - Communicator Review
       security:
       - jwtAuth: []
       responses:
@@ -720,7 +720,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator review
+      - Communicator Review
       security:
       - jwtAuth: []
       responses:
@@ -754,7 +754,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator review
+      - Communicator Review
       security:
       - jwtAuth: []
       responses:
@@ -791,7 +791,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator review
+      - Communicator Review
       requestBody:
         content:
           application/json:
@@ -841,7 +841,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator review
+      - Communicator Review
       requestBody:
         content:
           application/json:
@@ -889,7 +889,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator review
+      - Communicator Review
       requestBody:
         content:
           application/json:
@@ -937,7 +937,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator review
+      - Communicator Review
       requestBody:
         content:
           application/json:
@@ -980,7 +980,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator review
+      - Communicator Review
       security:
       - jwtAuth: []
       responses:
@@ -1009,7 +1009,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator sequences
+      - Communicator Sequences
       security:
       - jwtAuth: []
       responses:
@@ -1037,7 +1037,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator sequences
+      - Communicator Sequences
       requestBody:
         content:
           application/json:
@@ -1085,7 +1085,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator sequences
+      - Communicator Sequences
       security:
       - jwtAuth: []
       responses:
@@ -1119,7 +1119,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator sequences
+      - Communicator Sequences
       security:
       - jwtAuth: []
       responses:
@@ -1152,7 +1152,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator sequences
+      - Communicator Sequences
       requestBody:
         content:
           application/json:
@@ -1204,7 +1204,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator sequences
+      - Communicator Sequences
       requestBody:
         content:
           application/json:
@@ -1255,7 +1255,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator sequences
+      - Communicator Sequences
       security:
       - jwtAuth: []
       responses:
@@ -1292,7 +1292,7 @@ paths:
           type: string
         description: Only rows with this value (lower-cased).
       tags:
-      - Communicator suppressions
+      - Communicator Suppressions
       security:
       - jwtAuth: []
       responses:
@@ -1321,7 +1321,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator suppressions
+      - Communicator Suppressions
       requestBody:
         content:
           application/json:
@@ -1369,7 +1369,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator suppressions
+      - Communicator Suppressions
       security:
       - jwtAuth: []
       responses:
@@ -1394,7 +1394,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator templates
+      - Communicator Templates
       security:
       - jwtAuth: []
       responses:
@@ -1422,7 +1422,7 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator templates
+      - Communicator Templates
       requestBody:
         content:
           application/json:
@@ -1468,7 +1468,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator templates
+      - Communicator Templates
       security:
       - jwtAuth: []
       responses:
@@ -1503,7 +1503,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator templates
+      - Communicator Templates
       requestBody:
         content:
           application/json:
@@ -1551,7 +1551,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator templates
+      - Communicator Templates
       requestBody:
         content:
           application/json:
@@ -1604,7 +1604,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator templates
+      - Communicator Templates
       security:
       - jwtAuth: []
       responses:
@@ -1663,7 +1663,7 @@ paths:
           type: string
         description: Only threads about this reference.
       tags:
-      - Communicator inbox
+      - Communicator Inbox
       security:
       - jwtAuth: []
       responses:
@@ -1697,7 +1697,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator inbox
+      - Communicator Inbox
       security:
       - jwtAuth: []
       responses:
@@ -1733,7 +1733,7 @@ paths:
           type: integer
         required: true
       tags:
-      - Communicator inbox
+      - Communicator Inbox
       security:
       - jwtAuth: []
       responses:

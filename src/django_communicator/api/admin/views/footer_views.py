@@ -17,7 +17,7 @@ from django_communicator.schemas.responses import FooterListResponse, FooterResp
 from django_communicator.services import footer_service
 from django_communicator.services.template_service import find_language
 
-_TAGS = ["Communicator footers"]
+_TAGS = ["Communicator Footers"]
 
 
 class FooterListView(AdminView):

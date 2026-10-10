@@ -25,7 +25,7 @@ from django_communicator.schemas.responses import (
 )
 from django_communicator.services import inbox_service, optout_service, policy_service
 
-_TAGS = ["Communicator inbox"]
+_TAGS = ["Communicator Inbox"]
 
 
 class ThreadListView(AdminView):

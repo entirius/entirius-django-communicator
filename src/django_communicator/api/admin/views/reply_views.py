@@ -18,7 +18,7 @@ from django_communicator.schemas.requests import ReplyListQuery
 from django_communicator.schemas.responses import ReplyListResponse, ReplyResponse
 from django_communicator.services import inbox_service, optout_service
 
-_TAGS = ["Communicator inbox"]
+_TAGS = ["Communicator Inbox"]
 
 
 class ReplyListView(AdminView):

@@ -13,6 +13,8 @@
   entirius-django-access defaults; behaviour unchanged).
 - Access: `POST templates/<id>/test-generate/` needs `communicator.content:write` (it calls the paid AI toolbox; it
   was a read); the `communicator.review` area is flagged `pii` (same as the access catalogue).
+- OpenAPI: tags in Title Case (`Communicator Footers`, `Inbox`, `Review`, `Sending`, `Sequences`, `Suppressions`,
+  `Templates`), also in `docs/openapi.yaml`. Metadata only; a client that groups by tag name sees the new names.
 
 ## 0.3.0 — 2026-09-30
 

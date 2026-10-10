@@ -16,7 +16,7 @@ from django_communicator.schemas.responses import MessageDetailResponse, Message
 from django_communicator.services import review_service
 from django_communicator.services.message_service import InvalidTransitionError
 
-_TAGS = ["Communicator review"]
+_TAGS = ["Communicator Review"]
 _ACTION_ERRORS = {**ERROR_RESPONSES, 409: None}
 
 

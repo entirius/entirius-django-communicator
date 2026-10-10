@@ -25,7 +25,7 @@ from django_communicator.services import preview_service, template_service
 from django_communicator.services.drafting_service import DraftOutputError
 from django_communicator.services.render_service import RenderError
 
-_TAGS = ["Communicator templates"]
+_TAGS = ["Communicator Templates"]
 
 
 class DraftOutputInvalid(APIException):
