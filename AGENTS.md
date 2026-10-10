@@ -1,23 +1,16 @@
 # AGENTS.md
 
-entirius-django-communicator — channel-agnostic communication for Volkanos: templates with versions, AI drafts
-and review, policy-bound sending (dry_run / sandbox / live), follow-up sequences and inbound IMAP replies.
-App label `django_communicator`, table prefix `django_communicator_`.
-
-## Quick Reference
-
-- Python ≥ 3.11, Django ≥ 4.2, PostgreSQL, Redis, Celery + celery-once, `uv`, ruff, hatchling, MPL-2.0.
-- Read first: `docs/install.md` (host) · `docs/api.md` (caller) · `docs/concept.md` (why) ·
-  `docs/operations.md` (day 2, go/no-go for live) · `docs/gotchas.md` (before editing). This file is the map.
+entirius-django-communicator (Django app `django_communicator`) — channel-agnostic communication module of
+Entirius: templates with versions, AI drafts and review, policy-bound sending (dry_run / sandbox / live),
+follow-up sequences and inbound IMAP replies. Table prefix `django_communicator_`.
 
 ## Commands
 
 | Command | Meaning |
 |---|---|
 | `make install` | `uv sync --all-extras` |
-| `make test` | pytest — Postgres only, see Testing |
+| `make test` | pytest — PostgreSQL only: `DATABASE_URL`, else the default in `tests/settings.py` (`docs/testing.md`) |
 | `make check` / `fix` | ruff lint + format (+ canonical `.gitleaks.toml` guard) |
-| in zeno: `make module-test MODULE=entirius-django-communicator` | the same suite inside the service container |
 
 ## Conventions
 
@@ -31,7 +24,10 @@ App label `django_communicator`, table prefix `django_communicator_`.
 - **NEVER add `Co-Authored-By: Claude …` or any Claude/Anthropic attribution** to commits or PR descriptions —
   no co-author trailer, no "Generated with Claude Code" line.
 
-## Map
+## Architecture
+
+Read first: `docs/install.md` (host) · `docs/api.md` (caller) · `docs/concept.md` (why) ·
+`docs/operations.md` (day 2, go/no-go for live) · `docs/gotchas.md` (before editing).
 
 ```
 src/django_communicator/
@@ -59,9 +55,7 @@ Flow: caller `communicate()` → `Message` (`review_required` | `approved` | `fa
 (accept / rewrite / edit / skip) → beat `send_due` → `delivery_service.deliver` (mode, policy, cap, send-once)
 → SMTP via django_email → IMAP `poll_inbox` → `inbound_service.ingest` → `Reply` + signals + alerts.
 
-## Where things live
-
-| Question | Answer |
+| Topic | Where |
 |---|---|
 | A setting's name, default, meaning | `settings.py`; the table in `docs/install.md` |
 | Allowed status changes | `enums.MESSAGE_STATUS_TRANSITIONS`; diagram in `docs/concept.md` |
@@ -71,34 +65,9 @@ Flow: caller `communicate()` → `Message` (`review_required` | `approved` | `fa
 | Inbound order (duplicate → DSN → thread → auto → opt-out → reply) | `inbound_service.ingest`; `docs/concept.md` § Inbound |
 | Request / response shape, auth, errors | `docs/api.md`; `schemas/`; `docs/openapi.yaml` |
 | Tasks, queues, alerts, what to watch, live checklist | `docs/operations.md` |
-| Which test file covers what | `docs/testing.md` |
+| Which test file covers what; BDD and e2e in the entirius-zeno harness | `docs/testing.md` |
 | What changed and why | `CHANGELOG.md` |
-
-## Testing
-
-- Postgres only (`tests/settings.py`): `DATABASE_URL` wins (zeno container), else
-  `postgresql://postgres:postgres@localhost:5432/test_communicator`. Migrations run in tests.
-- Toolbox mocked with `django_utils.toolbox.testing.mock_toolbox`; counter on fakeredis; mail in
-  `django.core.mail.outbox`; celery-once on a file backend; `imaplib` faked; inbound fixtures in
-  `tests/fixtures/mail/*.eml` (copies of the emporium fixtures — keep them in sync).
-- Test names carry the edge-case ID (`test_C14_…`, `test_L17_…`); an ID absent from the suites is a gap.
-
-## Testing end-to-end
-
-- Covered IDs, unit (this repo): C-01…C-33 — all of the communicator edge cases — plus L-16, L-17
-  (retention / erasure hooks). Per file: `docs/testing.md`.
-- Covered IDs, BDD (Emporium test package, `features/communicator/`): C-01, C-02, C-06, C-07, C-08, C-09, C-29
-  (`communicator_draft.feature`); C-13, C-14, C-16, C-17, C-28 (`communicator_send.feature`); C-20…C-24
-  (`communicator_inbound.feature`, needs `make mail`).
-- One-shot tag: `@communicator-oneshot` (C-17, daily cap) — a re-run needs a fresh `make seed`.
-- Dev-only test endpoints (`ENVIRONMENT == "development"`, else 404): `test/communicate/`, `test/clock/`,
-  `test/send-due/`, `test/start-sequence/`, `test/poll-now/`, `test/reset-counters/`, `test/retry-drafts/`,
-  `test/toolbox-outage/` — `docs/api.md`.
-- zeno: `make toolbox-check && make seed && make mail && make bdd TAGS=@communicator`; the funnel journey:
-  `make e2e-funnel` (Emporium `e2e/cms/test_leads_funnel.py`).
-- Guides: portal `guides/leads-end-to-end-testing.md` (modes A/B/C, funnel steps); Emporium
-  `docs/e2e-leads-funnel.md` (page objects, one-shot tags).
 
 ## Gotchas
 
-`docs/gotchas.md` — the only list. Read it before touching statuses, sending, sequences, inbound or GDPR.
+- `docs/gotchas.md` is the only list. Read it before touching statuses, sending, sequences, inbound or GDPR.
