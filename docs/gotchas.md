@@ -25,6 +25,9 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   failing model cannot loop past `COMMUNICATOR_AUTOMATED_REWRITE_LIMIT`.
 - **Static templates and suppressed recipients never reach the toolbox; `complete()` is never retried** —
   it is paid and non-idempotent.
+- **A switched-off toolbox (`AI_TOOLBOX_ENABLED = False`) is refused before anything is written.** For an AI
+  template `communicate()` and `review_service.rewrite()` raise `ToolboxDisabledError`: no thread, message, version
+  or alert. Every caller of `communicate()` must handle it; the API answers 503 `AI_TOOLBOX_DISABLED`.
 - **`failure_detail` holds error class, toolbox code, HTTP status and field names — never the prompt.** Its
   last line decides whether a draft is retried (`drafting_service.is_transient`) — keep the `failure_detail()`
   format, and append retry lines, never rewrite them.
