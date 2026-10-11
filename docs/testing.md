@@ -6,13 +6,15 @@ description: Which test file covers what, the edge-case IDs per file, and the en
 Postgres only (`tests/settings.py`): `DATABASE_URL`, else
 `postgresql://postgres:postgres@localhost:5432/test_communicator`. The toolbox is mocked with
 `django_utils.toolbox.testing.mock_toolbox` (respx), the daily counter runs on fakeredis, mail lands in
-`django.core.mail.outbox`, celery-once uses a file backend, `imaplib` is faked. Test names carry the
-edge-case ID (`test_C14_…`).
+`django.core.mail.outbox`, celery-once uses a file backend, `imaplib` is faked. Migrations run in tests.
+Inbound fixtures live in `tests/fixtures/mail/*.eml` (copies of the emporium fixtures — keep them in sync).
+Test names carry the edge-case ID (`test_C14_…`); an ID absent from the suites is a gap. This suite covers
+C-01…C-33, all of the communicator edge cases.
 
 | File | Covers | IDs |
 |---|---|---|
 | `test_communicate.py` | suppression, template fallback, footer, render, static vs AI, toolbox failure codes and notifications | C-01…C-06, C-10…C-12, C-33 |
-| `test_draft_retry.py` | beat retry of transiently failed drafts: transient vs permanent, attempts cap, unreachable toolbox no-op, claim, skips, no call inside a transaction, dev retry and outage endpoints | FIX-16 items 2, 3 |
+| `test_draft_retry.py` | beat retry of transiently failed drafts: transient vs permanent, attempts cap, unreachable toolbox no-op, claim, skips, no call inside a transaction, dev retry and outage endpoints | — |
 | `test_toolbox_disabled.py` | toolbox switched off: AI `communicate()` and rewrite refused with nothing written, static and suppressed paths unchanged, 503 `AI_TOOLBOX_DISABLED` on the admin API, retry no-op, due AI follow-up waits; unconfigured paths unchanged | — |
 | `test_review.py` | accept, rewrite (limit, failures count), edit, skip, template versions | C-07…C-09, C-29 |
 | `test_sending.py` | modes, live gate, send-once claim, stale `sending`, overlapping runs under the cap, SMTP 4xx/5xx and sender refusal, mail structure, send now, soft-bounce retry, dev endpoints, the single `deliver(` caller | C-13…C-16, C-18, C-19, C-31, C-32 |
@@ -21,7 +23,7 @@ edge-case ID (`test_C14_…`).
 | `test_text_pool.py` | pool text PATCH / DELETE (delete vs deactivate), 404 across sequence and channel, inactive texts never picked | — |
 | `test_footer.py` | HTML footer API, `{{ legal }}` rule, sanitising, language cascade, text part, sent `footer_html` snapshot, GDPR export / erase | — |
 | `test_inbound.py` | poll cursor, quarantine, UIDVALIDITY, thread matching, autoresponders, opt-out, DSN, idempotency — on `tests/fixtures/mail/*.eml` (copies of the emporium fixtures) | C-20…C-26 |
-| `test_gdpr.py` | `contact_anonymised` receiver, export / erase, global token suppression, token parity with django_leads (skipped without it) | L-16, L-17 |
+| `test_gdpr.py` | `contact_anonymised` receiver, export / erase, global token suppression, token parity with django_leads (skipped without it) | — |
 | `test_inbox_list.py`, `test_inbox_conversations.py` | the inbox lists: `threads/` (state filter, counts, activity order, row fields) and `conversations/` (one row per `subject_ref`, state from any thread, counts, order, paging), query-count bounds | — |
 | `test_admin_api.py` | review / template / suppression endpoints, 401/403/404/409, `test/communicate/` | — |
 | `test_admin.py` | Django admin pages render, admin save versions, read-only messages | — |
@@ -37,6 +39,14 @@ edge-case ID (`test_C14_…`).
 | BDD | `features/communicator/communicator_inbound.feature` (needs the GreenMail sandbox) | C-20…C-24 |
 | e2e (Playwright) | Emporium `e2e/cms/test_leads_funnel.py` — the leads funnel through the CMS | review, send, reply as one journey |
 
-In the zeno harness: `make module-test MODULE=entirius-django-communicator` runs this suite in the
+Dev-only test endpoints (`ENVIRONMENT == "development"`, else 404): `test/communicate/`, `test/clock/`,
+`test/send-due/`, `test/start-sequence/`, `test/poll-now/`, `test/reset-counters/`, `test/retry-drafts/`,
+`test/toolbox-outage/` — `api.md`.
+
+In the entirius-zeno harness: `make module-test MODULE=entirius-django-communicator` runs this suite in the
 service container; `make toolbox-check && make seed && make mail && make bdd TAGS=@communicator` runs the
-BDD layer. `@communicator-oneshot` scenarios need a fresh seed.
+BDD layer (`communicator_inbound.feature` needs `make mail`); `make e2e-funnel` runs the funnel journey.
+`@communicator-oneshot` scenarios (C-17, the daily cap) need a fresh `make seed`.
+
+Guides: the Entirius documentation at https://docs.entirius.com/ and Emporium `docs/e2e-leads-funnel.md`
+(page objects, one-shot tags).
