@@ -31,7 +31,7 @@ from django_communicator.services import (
 )
 from django_communicator.services.message_service import InvalidTransitionError
 
-_TAGS = ["Communicator sending"]
+_TAGS = ["Communicator Sending"]
 
 
 def _policy_response(policy) -> dict:

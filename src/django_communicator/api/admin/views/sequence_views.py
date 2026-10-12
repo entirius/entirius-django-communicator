@@ -21,7 +21,7 @@ from django_communicator.schemas.responses import (
 )
 from django_communicator.services import sending_config_service
 
-_TAGS = ["Communicator sequences"]
+_TAGS = ["Communicator Sequences"]
 
 
 class SequenceView(AdminView):

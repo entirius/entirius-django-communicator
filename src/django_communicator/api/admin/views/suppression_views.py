@@ -14,7 +14,7 @@ from django_communicator.schemas.requests import SuppressionRequest
 from django_communicator.schemas.responses import SuppressionListResponse, SuppressionResponse
 from django_communicator.services import suppression_service
 
-_TAGS = ["Communicator suppressions"]
+_TAGS = ["Communicator Suppressions"]
 
 
 class SuppressionListView(AdminView):

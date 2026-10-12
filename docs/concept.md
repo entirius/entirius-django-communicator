@@ -75,6 +75,13 @@ when the beat `retry_failed_drafts` succeeds (`message_service.recover_draft`, o
 `bounce`, `send_outcome_unknown`); `failure_detail` holds the error class, codes and field names —
 never the prompt.
 
+**Toolbox switched off.** With `AI_TOOLBOX_ENABLED = False` an AI template is refused before anything is written:
+`communicate()` and `review_service.rewrite()` raise `ToolboxDisabledError` — no thread, no message, no version, no
+alert, no rewrite counted. Suppression, the missing-template failure and the legal-footer check run first, and static
+templates work as before. A due AI follow-up keeps its step and due date and is created by the first
+`schedule_follow_ups` run after the switch is turned on. A toolbox that is enabled but not configured still yields a
+`failed` draft with an alert.
+
 ## Review
 
 | Action | Effect |

@@ -6,7 +6,7 @@
 
 from django.db import transaction
 from django.db.models import QuerySet
-from django_utils.toolbox import ToolboxError
+from django_utils.toolbox import ToolboxDisabledError, ToolboxError, is_enabled
 
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import MessageStatus
@@ -88,10 +88,13 @@ def rewrite(message: Message, *, notes: str, automated: bool = False) -> Message
 
     An automated rewrite is counted on the stored message before the toolbox call, so failures count too.
     A toolbox failure yields a `failed` version and leaves the reviewed message in the queue.
+    Raises `ToolboxDisabledError` while the toolbox is switched off — no version is written, nothing is counted.
     """
     message_service.ensure_transition(message, MessageStatus.SUPERSEDED)
     if not (message.rendered_prompt and message.template_version_id):
         raise ReviewError("only AI drafts can be rewritten")
+    if not is_enabled():
+        raise ToolboxDisabledError()
     limit = communicator_settings.COMMUNICATOR_AUTOMATED_REWRITE_LIMIT
     if automated and not message_service.claim_automated_rewrite(message, limit=limit):
         raise RewriteLimitReachedError("automated rewrite limit reached")

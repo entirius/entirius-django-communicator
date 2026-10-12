@@ -2,10 +2,19 @@
 
 ## [Unreleased]
 
+- **Toolbox switched off (`AI_TOOLBOX_ENABLED = False`).** An AI template is refused before anything is written:
+  `communicate()` and `review_service.rewrite()` raise `ToolboxDisabledError` (no thread, message, version, alert or
+  counted rewrite); `POST review/<id>/rewrite/` and `POST test/communicate/` answer 503 `AI_TOOLBOX_DISABLED`, as
+  `test-generate/` and `models/` do. Static templates, suppression and the no-template failure are unchanged. A due
+  AI follow-up keeps its step and due date and is created once the switch is on; `retry_failed_drafts` makes no
+  call. Callers of `communicate()` must handle the new exception. An enabled but unconfigured toolbox behaves as
+  before.
 - Access: the module declares its own access areas on its AppConfig and its admin views (copied from the
   entirius-django-access defaults; behaviour unchanged).
 - Access: `POST templates/<id>/test-generate/` needs `communicator.content:write` (it calls the paid AI toolbox; it
   was a read); the `communicator.review` area is flagged `pii` (same as the access catalogue).
+- OpenAPI: tags in Title Case (`Communicator Footers`, `Inbox`, `Review`, `Sending`, `Sequences`, `Suppressions`,
+  `Templates`), also in `docs/openapi.yaml`. Metadata only; a client that groups by tag name sees the new names.
 
 ## 0.3.0 — 2026-09-30
 
