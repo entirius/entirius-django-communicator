@@ -466,7 +466,7 @@ wheels = [
 
 [[package]]
 name = "entirius-django-communicator"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "celery" },
@@ -521,7 +521,7 @@ requires-dist = [
     { name = "entirius-django-notifications", marker = "extra == 'notifications'", specifier = ">=0.1.0" },
     { name = "entirius-django-notifications", marker = "extra == 'test'", specifier = ">=0.1.0" },
     { name = "entirius-django-regional", specifier = ">=2.0.1" },
-    { name = "entirius-django-utils", specifier = ">=2.2.0" },
+    { name = "entirius-django-utils", specifier = ">=2.3.0" },
     { name = "entirius-py-idx-normalizator", specifier = ">=2.0.0" },
     { name = "factory-boy", marker = "extra == 'test'" },
     { name = "fakeredis", marker = "extra == 'test'", specifier = ">=2.20" },
@@ -600,7 +600,7 @@ wheels = [
 
 [[package]]
 name = "entirius-django-utils"
-version = "2.2.0"
+version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -618,9 +618,9 @@ dependencies = [
     { name = "python-slugify" },
     { name = "webargs" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1d/e3/9329ba03c6a8d2f0d46da2f1ecebaaf9bb716b64bb00359bb830772cc97b/entirius_django_utils-2.2.0.tar.gz", hash = "sha256:77d2b8f2b0f6dab687a62aa1e856fe269e389da6c9460d35cadfbec7e29f3cef", size = 87695, upload-time = "2026-09-16T06:19:49.916Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b0/25/3418958d318b6fa0a428c49a5832c4b21ae76ed2359953718e7f3fffb8d6/entirius_django_utils-2.3.0.tar.gz", hash = "sha256:26d9ca1ef953d79363cf1902096a73cfe40d1eb64c38a168e99c7f5f32d7347e", size = 91188, upload-time = "2026-10-12T08:41:50.256Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b7/a3/b808f760630020c7270dd3ab16c3a15adea25edb2efc8bfe6ae07321801a/entirius_django_utils-2.2.0-py3-none-any.whl", hash = "sha256:728039494fac0940f7fbc7c77f3736dac80e56c24f79ac3c50ebc394beaff6ef", size = 41338, upload-time = "2026-09-16T06:19:48.941Z" },
+    { url = "https://files.pythonhosted.org/packages/42/8b/a24d6378e123100cded79a0334d0f8ea9c25d908e14e9274969575bd7c41/entirius_django_utils-2.3.0-py3-none-any.whl", hash = "sha256:75a00071b7aa04bab02e5cf225ce8d52b3ac61d614542f0b9873c3bfed36288e", size = 42073, upload-time = "2026-10-12T08:41:49.298Z" },
 ]
 
 [[package]]

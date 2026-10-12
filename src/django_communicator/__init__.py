@@ -3,4 +3,4 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Channel-agnostic communication for the Volkanos platform: templates, review, sequences, send policy and inbound replies"""
 
-__version__ = "0.1.0"
+__version__ = "0.4.0"
