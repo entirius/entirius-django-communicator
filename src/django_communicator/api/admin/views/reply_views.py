@@ -18,10 +18,12 @@ from django_communicator.schemas.requests import ReplyListQuery
 from django_communicator.schemas.responses import ReplyListResponse, ReplyResponse
 from django_communicator.services import inbox_service, optout_service
 
-_TAGS = ["Communicator inbox"]
+_TAGS = ["Communicator Inbox"]
 
 
 class ReplyListView(AdminView):
+    access_area = "communicator.conversations"
+
     @extend_schema(
         tags=_TAGS,
         operation_id="communicator_replies_list",
@@ -58,6 +60,8 @@ def _decide(view: AdminView, channel_idx: str, pk: int, action: Callable[[Reply]
 
 
 class ConfirmOptoutView(AdminView):
+    access_area = "communicator.conversations"
+
     @extend_schema(
         tags=_TAGS,
         summary="Confirm a suspected opt-out",
@@ -70,6 +74,8 @@ class ConfirmOptoutView(AdminView):
 
 
 class DismissOptoutView(AdminView):
+    access_area = "communicator.conversations"
+
     @extend_schema(
         tags=_TAGS,
         summary="Dismiss a suspected opt-out",

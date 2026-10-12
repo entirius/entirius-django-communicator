@@ -17,10 +17,12 @@ from django_communicator.schemas.responses import FooterListResponse, FooterResp
 from django_communicator.services import footer_service
 from django_communicator.services.template_service import find_language
 
-_TAGS = ["Communicator footers"]
+_TAGS = ["Communicator Footers"]
 
 
 class FooterListView(AdminView):
+    access_area = "communicator.content"
+
     @extend_schema(
         tags=_TAGS,
         operation_id="communicator_footers_list",
@@ -33,6 +35,8 @@ class FooterListView(AdminView):
 
 
 class FooterDetailView(AdminView):
+    access_area = "communicator.content"
+
     @staticmethod
     def language(code: str) -> Language:
         language = find_language(code)

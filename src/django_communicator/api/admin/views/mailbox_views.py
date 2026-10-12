@@ -14,10 +14,12 @@ from django_communicator.schemas.requests import MailboxRequest
 from django_communicator.schemas.responses import MailboxResponse
 from django_communicator.services import inbox_service
 
-_TAGS = ["Communicator inbox"]
+_TAGS = ["Communicator Inbox"]
 
 
 class MailboxView(AdminView):
+    access_area = "communicator.settings"
+
     @extend_schema(
         tags=_TAGS, summary="IMAP mailbox of the channel", responses={200: MailboxResponse, **ERROR_RESPONSES}
     )

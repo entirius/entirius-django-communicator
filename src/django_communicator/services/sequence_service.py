@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
+from django_utils.toolbox import ToolboxDisabledError
 
 from django_communicator.enums import Direction, MessageStatus, SequenceStopReason, ThreadStatus
 from django_communicator.models import Message, Sequence, TextPool, Thread, ThreadPoolUsage, ThreadSequenceState
@@ -139,6 +140,9 @@ def _schedule_logged(state: ThreadSequenceState, rng: random.Random) -> Message 
         return schedule_follow_up(state, rng)
     except (LegalFooterRequiredError, ThreadMismatchError):
         logger.warning("communicator follow-up of thread %s not created", state.thread_id, exc_info=True)
+        return None
+    except ToolboxDisabledError:  # the atomic block rolled the step advance back: the next tick tries again
+        logger.info("communicator follow-up of thread %s waits: AI toolbox disabled", state.thread_id)
         return None
     except IntegrityError:  # the picked text was deleted meanwhile (deferred FK): all rolled back, next tick retries
         logger.warning("communicator follow-up of thread %s rolled back, retried next tick", state.thread_id)

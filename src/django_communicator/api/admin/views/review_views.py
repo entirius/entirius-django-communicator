@@ -3,6 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Admin API v2 — review queue: list, next, accept, rewrite, edit, skip, skip company."""
 
+from django_utils.toolbox import ToolboxDisabledError, handle_toolbox_error
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.exceptions import NotFound
 from rest_framework.request import Request
@@ -15,7 +16,7 @@ from django_communicator.schemas.responses import MessageDetailResponse, Message
 from django_communicator.services import review_service
 from django_communicator.services.message_service import InvalidTransitionError
 
-_TAGS = ["Communicator review"]
+_TAGS = ["Communicator Review"]
 _ACTION_ERRORS = {**ERROR_RESPONSES, 409: None}
 
 
@@ -24,6 +25,8 @@ def _payload(message: Message) -> dict:
 
 
 class ReviewListView(AdminView):
+    access_area = "communicator.review"
+
     @extend_schema(
         tags=_TAGS,
         operation_id="communicator_review_list",
@@ -50,6 +53,8 @@ class ReviewListView(AdminView):
 
 
 class ReviewNextView(AdminView):
+    access_area = "communicator.review"
+
     @extend_schema(
         tags=_TAGS,
         summary="Oldest message waiting for review",
@@ -64,6 +69,8 @@ class ReviewNextView(AdminView):
 
 
 class _MessageActionView(AdminView):
+    access_area = "communicator.review"
+
     def message(self, channel_idx: str, pk: int) -> Message:
         try:
             return review_service.get_message(self.channel(channel_idx), pk)
@@ -76,6 +83,8 @@ class _MessageActionView(AdminView):
             return Response(_payload(action(*args, **kwargs)), status=status)
         except InvalidTransitionError as error:
             raise Conflict(str(error), code="already_reviewed") from None
+        except ToolboxDisabledError as error:
+            return handle_toolbox_error(error)
         except review_service.ReviewError as error:
             raise Conflict(str(error), code="review_refused") from None
 
@@ -104,9 +113,10 @@ class RewriteView(_MessageActionView):
         tags=_TAGS,
         summary="Rewrite an AI draft with reviewer notes",
         description="Creates the next version through the toolbox; the reviewed one becomes `superseded`. "
-        "A toolbox failure returns a `failed` version and keeps the reviewed message in the queue.",
+        "A toolbox failure returns a `failed` version and keeps the reviewed message in the queue. "
+        "503 `AI_TOOLBOX_DISABLED` while the toolbox is switched off: no version is created.",
         request=RewriteRequest,
-        responses={201: MessageDetailResponse, **_ACTION_ERRORS},
+        responses={201: MessageDetailResponse, **_ACTION_ERRORS, 503: None},
     )
     def post(self, request: Request, channel_idx: str, pk: int) -> Response:
         body = parse(RewriteRequest, request.data)
