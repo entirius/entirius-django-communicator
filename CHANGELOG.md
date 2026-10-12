@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## 0.4.0 — 2026-10-12
 
 - **Toolbox switched off (`AI_TOOLBOX_ENABLED = False`).** An AI template is refused before anything is written:
   `communicate()` and `review_service.rewrite()` raise `ToolboxDisabledError` (no thread, message, version, alert or

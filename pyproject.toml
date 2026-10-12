@@ -1,7 +1,7 @@
 
 [project]
 name = "entirius-django-communicator"
-version = "0.3.0"
+version = "0.4.0"
 description = "Channel-agnostic communication for Entirius: templates, review, sequences, send policy and inbound replies"
 keywords = ["django", "email", "messaging", "outreach", "templates", "celery", "ecommerce", "entirius"]
 classifiers = [
