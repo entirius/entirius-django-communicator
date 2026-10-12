@@ -15,6 +15,7 @@
   was a read); the `communicator.review` area is flagged `pii` (same as the access catalogue).
 - OpenAPI: tags in Title Case (`Communicator Footers`, `Inbox`, `Review`, `Sending`, `Sequences`, `Suppressions`,
   `Templates`), also in `docs/openapi.yaml`. Metadata only; a client that groups by tag name sees the new names.
+- Requires `entirius-django-utils` 2.3.0 or later (the AI toolbox switch and `ToolboxDisabledError`).
 
 ## 0.3.0 — 2026-09-30
 
