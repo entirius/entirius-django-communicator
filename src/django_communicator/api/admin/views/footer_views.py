@@ -70,7 +70,7 @@ class FooterDetailView(AdminView):
         try:
             footer = footer_service.save_footer(self.channel(channel_idx), self.language(language), body.html)
         except footer_service.FooterError as error:
-            raise ValidationError({"html": [str(error)]}) from None
+            raise ValidationError({"html": [error.client_message]}) from None
         return Response(FooterResponse.of(footer).model_dump(mode="json"))
 
     @extend_schema(

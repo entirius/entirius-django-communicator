@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- Admin API refusals answer with the text the module wrote, never with `str(exc)` (CodeQL
+  `py/stack-trace-exposure`, 12 alerts). Refusals the module writes for a client derive from
+  `services.exceptions.ClientError` and the views answer with its `client_message`, never `str(exc)`:
+  `InvalidTransitionError`, `ReviewError`, `OptoutStateError`, `SequenceError`, `FooterError`, `RenderError`,
+  `LegalFooterRequiredError`, `DuplicateSuppressionError`, `DuplicateSequenceError`, `ChannelConfigError` and the
+  new `InvalidSuppressionValueError`. Any other exception reaches the v2 handler: 500 `INTERNAL_ERROR` with a
+  `debug_id`, the traceback only in the log. Unchanged on purpose: Django model validation messages (`PATCH channel/`,
+  template save) and toolbox errors (`handle_toolbox_error` in django-utils) keep their texts.
+- CI workflow token is read-only (`permissions: contents: read`; CodeQL `actions/missing-workflow-permissions`).
+
+### Changed
+
+- `POST suppressions/`: only the module's `InvalidSuppressionValueError` is a 400 on `value` (same messages:
+  "not an email address", "a domain has no @", "not a domain"); any other `ValueError` from below is now a 500
+  `INTERNAL_ERROR` instead of a 400 with its text. It is still a `ValueError`, so callers that catch that keep
+  working. Every other status, `error` code and message is unchanged.
+
 ## 0.4.0 — 2026-10-12
 
 - **Toolbox switched off (`AI_TOOLBOX_ENABLED = False`).** An AI template is refused before anything is written:

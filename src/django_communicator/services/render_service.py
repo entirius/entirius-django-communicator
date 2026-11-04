@@ -7,8 +7,10 @@
 from string import Formatter
 from typing import Any
 
+from django_communicator.services.exceptions import ClientError
 
-class RenderError(Exception):
+
+class RenderError(ClientError):
     def __init__(self, missing: list[str]) -> None:
         self.missing = missing
         super().__init__(f"missing placeholders: {', '.join(missing)}")

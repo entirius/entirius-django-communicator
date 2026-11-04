@@ -26,6 +26,7 @@ C-01…C-33, all of the communicator edge cases.
 | `test_gdpr.py` | `contact_anonymised` receiver, export / erase, global token suppression, token parity with django_leads (skipped without it) | — |
 | `test_inbox_list.py`, `test_inbox_conversations.py` | the inbox lists: `threads/` (state filter, counts, activity order, row fields) and `conversations/` (one row per `subject_ref`, state from any thread, counts, order, paging), query-count bounds | — |
 | `test_admin_api.py` | review / template / suppression endpoints, 401/403/404/409, `test/communicate/` | — |
+| `test_v2_error_exposure.py` | admin refusals answer `client_message`, never `str(exc)`; a lower-layer exception is a 500 `INTERNAL_ERROR` with no text of it | — |
 | `test_admin.py` | Django admin pages render, admin save versions, read-only messages | — |
 | `test_openapi.py` | the module schema validates | — |
 | `test_domains.py`, `test_smoke.py` | registrable domain rule; app installed | — |

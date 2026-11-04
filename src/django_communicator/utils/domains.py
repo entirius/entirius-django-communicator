@@ -10,6 +10,8 @@ eTLD+1 = the last two host labels, or three when the last two form a known multi
 
 import ipaddress
 
+NOT_A_DOMAIN = "not a domain"
+NOT_AN_EMAIL = "not an email address"
 MULTI_PART_SUFFIXES = frozenset(
     {"com.pl", "net.pl", "org.pl", "co.uk", "org.uk", "com.au", "co.jp", "com.br", "co.nz", "com.tr", "co.za"}
 )
@@ -19,12 +21,12 @@ def registrable_domain(host: str) -> str:
     """`www.shop.pl` → `shop.pl`; raises `ValueError` on a host without usable labels."""
     host = host.strip().lower().rstrip(".")
     if not host:
-        raise ValueError("not a domain")
+        raise ValueError(NOT_A_DOMAIN)
     if _is_ip(host) or "." not in host:
         return host
     labels = [label for label in host.split(".") if label]
     if len(labels) < 2 or any(" " in label for label in labels):
-        raise ValueError("not a domain")
+        raise ValueError(NOT_A_DOMAIN)
     size = 3 if ".".join(labels[-2:]) in MULTI_PART_SUFFIXES and len(labels) > 2 else 2
     return ".".join(labels[-size:])
 
@@ -33,7 +35,7 @@ def email_domain(email: str) -> str:
     """Registrable domain of an email address; raises `ValueError` when there is no host part."""
     _, _, host = email.strip().rpartition("@")
     if not host:
-        raise ValueError("not an email address")
+        raise ValueError(NOT_AN_EMAIL)
     return registrable_domain(host)
 
 

@@ -129,5 +129,5 @@ class ResumeSequenceView(AdminView):
         except Thread.DoesNotExist:
             raise NotFound("Thread not found.") from None
         except optout_service.OptoutStateError as error:
-            raise Conflict(str(error), code="optout_state") from None
+            raise Conflict(error.client_message, code="optout_state") from None
         return Response(SequenceStateResponse.model_validate(state).model_dump(mode="json"))

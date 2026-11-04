@@ -151,5 +151,5 @@ class SendNowView(AdminView):
         except Message.DoesNotExist:
             raise NotFound("Message not found.") from None
         except InvalidTransitionError as error:
-            raise Conflict(str(error), code="not_waiting") from None
+            raise Conflict(error.client_message, code="not_waiting") from None
         return Response(MessageDetailResponse.of(message).model_dump(mode="json"))

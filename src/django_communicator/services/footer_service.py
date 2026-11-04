@@ -17,6 +17,7 @@ from django.utils.html import escape
 from django_regional.models import Language
 
 from django_communicator.models import Channel, MailFooter
+from django_communicator.services.exceptions import ClientError
 from django_communicator.services.template_service import find_language
 
 LEGAL_PLACEHOLDER = "{{ legal }}"
@@ -42,7 +43,7 @@ _STYLE_ATTRIBUTE = re.compile(r'(?<=\s)style="([^"]*)"')
 _UNSAFE_STYLE = re.compile(r"expression\s*\(|url\s*\(|\\|/\*", re.IGNORECASE)  # CSS escapes/comments hide both
 
 
-class FooterError(ValueError):
+class FooterError(ClientError, ValueError):
     """Footer HTML refused on save: the `{{ legal }}` placeholder missing, repeated or inside an attribute."""
 
 
