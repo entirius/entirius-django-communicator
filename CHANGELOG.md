@@ -20,6 +20,8 @@
   "not an email address", "a domain has no @", "not a domain"); any other `ValueError` from below is now a 500
   `INTERNAL_ERROR` instead of a 400 with its text. It is still a `ValueError`, so callers that catch that keep
   working. Every other status, `error` code and message is unchanged.
+- `POST suppressions/` with a NUL byte in `value` is a 400 on `value` ("not an email address" / "not a domain")
+  instead of a 500 from the database.
 
 ## 0.4.0 — 2026-10-12
 

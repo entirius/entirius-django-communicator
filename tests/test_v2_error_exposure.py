@@ -199,3 +199,14 @@ def test_unusable_domain_is_a_400_with_the_module_message(admin_api, channel):
 
     assert response.status_code == 400
     assert response.json()["details"][0]["description"] == "not a domain"
+
+
+@pytest.mark.parametrize(
+    ("kind", "value", "message"),
+    [("email", "a\u0000b@shop.test", "not an email address"), ("domain", "sh\u0000op.pl", "not a domain")],
+)
+def test_nul_byte_in_value_is_a_400_not_a_database_error(admin_api, channel, kind, value, message):
+    response = admin_api.post(api_url("suppressions/"), {"kind": kind, "value": value}, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["details"][0]["description"] == message

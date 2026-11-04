@@ -54,12 +54,14 @@ def normalise_value(kind: str, value: str) -> str:
     if kind == SuppressionKind.DOMAIN:
         if "@" in value:
             raise InvalidSuppressionValueError("a domain has no @")
+        if "\x00" in value:  # PostgreSQL text cannot store NUL
+            raise InvalidSuppressionValueError(NOT_A_DOMAIN)
         try:
             return registrable_domain(value)
         except ValueError:
             raise InvalidSuppressionValueError(NOT_A_DOMAIN) from None
     local, _, host = value.partition("@")
-    if not local or "@" in host or not _is_dotted(host):
+    if not local or "@" in host or "\x00" in value or not _is_dotted(host):
         raise InvalidSuppressionValueError(NOT_AN_EMAIL)
     return value
 
