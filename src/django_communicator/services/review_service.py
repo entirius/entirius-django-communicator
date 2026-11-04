@@ -13,13 +13,14 @@ from django_communicator.enums import MessageStatus
 from django_communicator.models import Channel, Message
 from django_communicator.services import drafting_service, message_service, sequence_service
 from django_communicator.services.drafting_service import DraftOutputError
+from django_communicator.services.exceptions import ClientError
 from django_communicator.services.send_service import initial_slot
 from django_communicator.signals import company_skipped, message_approved
 
 REWRITE_TAG = "communicator.rewrite"
 
 
-class ReviewError(Exception):
+class ReviewError(ClientError):
     """The requested review action does not apply to this message."""
 
 

@@ -19,12 +19,13 @@ from django_communicator.services import (
     template_service,
 )
 from django_communicator.services.drafting_service import DraftOutputError
+from django_communicator.services.exceptions import ClientError
 from django_communicator.services.render_service import RenderError, render
 
 DRAFT_TAG = "communicator.draft"
 
 
-class LegalFooterRequiredError(Exception):
+class LegalFooterRequiredError(ClientError):
     """The template needs a legal footer and the caller passed none — no Message is created."""
 
 

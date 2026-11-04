@@ -45,6 +45,7 @@ src/django_communicator/
 │               sequence_service  sending_config_service  suppression_service
 │               poll_service  inbound_service (ingest)  mail_parser  dsn_service  optout_service  inbox_service
 │               anonymisation_service  draft_retry_service (transient failure retry)
+│               exceptions (ClientError: base of refusals shown to API clients)
 ├── signals/    __init__.py (message_approved, company_skipped, message_sent, sequence_finished,
 │               reply_received, optout_confirmed)  leads_receivers.py (contact_anonymised)
 ├── tasks/      send_due  schedule_follow_ups  poll_inbox  record_objection  retry_failed_drafts

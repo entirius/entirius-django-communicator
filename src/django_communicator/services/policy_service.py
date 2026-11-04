@@ -17,11 +17,12 @@ from django.core.exceptions import ValidationError
 from django_communicator import settings as communicator_settings
 from django_communicator.models import Channel, SendPolicy
 from django_communicator.services import counter_service
+from django_communicator.services.exceptions import ClientError
 
 SLOT_SEARCH_DAYS = 366
 
 
-class ChannelConfigError(Exception):
+class ChannelConfigError(ClientError):
     """The stored channel country or timezone cannot drive a send policy."""
 
 

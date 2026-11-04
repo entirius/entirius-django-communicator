@@ -46,10 +46,10 @@ class SuppressionListView(AdminView):
         channel = self.channel(channel_idx)
         try:
             row = suppression_service.create_suppression(channel, **body.model_dump(mode="json"), user=request.user)
-        except ValueError as error:
-            raise ValidationError({"value": [str(error)]}) from None
+        except suppression_service.InvalidSuppressionValueError as error:
+            raise ValidationError({"value": [error.client_message]}) from None
         except suppression_service.DuplicateSuppressionError as error:
-            raise Conflict(str(error), code="duplicate_suppression") from None
+            raise Conflict(error.client_message, code="duplicate_suppression") from None
         return Response(SuppressionResponse.model_validate(row).model_dump(mode="json"), status=201)
 
 

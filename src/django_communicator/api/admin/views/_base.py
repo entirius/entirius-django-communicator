@@ -46,7 +46,7 @@ class AdminView(APIView):
         """A stored channel country/timezone the send policy cannot use: 409 `CHANNEL_CONFIG_INVALID`, never 500."""
         if not isinstance(exc, ChannelConfigError):
             return super().handle_exception(exc)
-        detail = ErrorDetail(field=None, issue="CHANNEL_CONFIG_INVALID", description=str(exc))
+        detail = ErrorDetail(field=None, issue="CHANNEL_CONFIG_INVALID", description=exc.client_message)
         body = ErrorResponse(
             error="CHANNEL_CONFIG_INVALID",
             message="The channel country or timezone is invalid.",

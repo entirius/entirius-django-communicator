@@ -11,14 +11,19 @@ from django.db.models import Q, QuerySet
 
 from django_communicator.enums import SuppressionKind
 from django_communicator.models import Channel, Suppression
-from django_communicator.utils.domains import email_domain, registrable_domain
+from django_communicator.services.exceptions import ClientError
+from django_communicator.utils.domains import NOT_A_DOMAIN, NOT_AN_EMAIL, email_domain, registrable_domain
 from django_communicator.utils.emails import anonymised_address, is_anonymised
 
 logger = logging.getLogger(__name__)
 
 
-class DuplicateSuppressionError(Exception):
+class DuplicateSuppressionError(ClientError):
     pass
+
+
+class InvalidSuppressionValueError(ClientError, ValueError):
+    """A value that can never match an address (still a ``ValueError`` for callers that catch it so)."""
 
 
 def is_suppressed(channel: Channel, email: str) -> bool:
@@ -43,15 +48,21 @@ def suppress_token(token: str, *, reason: str) -> None:
 
 
 def normalise_value(kind: str, value: str) -> str:
-    """Lower-cased email, or the registrable domain of a domain; raises `ValueError` on a value that cannot match."""
+    """Lower-cased email, or the registrable domain of a domain; raises `InvalidSuppressionValueError` (a
+    `ValueError`) on a value that cannot match."""
     value = value.strip().lower()
     if kind == SuppressionKind.DOMAIN:
         if "@" in value:
-            raise ValueError("a domain has no @")
-        return registrable_domain(value)
+            raise InvalidSuppressionValueError("a domain has no @")
+        if "\x00" in value:  # PostgreSQL text cannot store NUL
+            raise InvalidSuppressionValueError(NOT_A_DOMAIN)
+        try:
+            return registrable_domain(value)
+        except ValueError:
+            raise InvalidSuppressionValueError(NOT_A_DOMAIN) from None
     local, _, host = value.partition("@")
-    if not local or "@" in host or not _is_dotted(host):
-        raise ValueError("not an email address")
+    if not local or "@" in host or "\x00" in value or not _is_dotted(host):
+        raise InvalidSuppressionValueError(NOT_AN_EMAIL)
     return value
 
 
@@ -67,7 +78,8 @@ def list_suppressions(channel: Channel, value: str = "") -> QuerySet[Suppression
 
 
 def create_suppression(channel: Channel, *, kind: str, value: str, reason: str = "", user=None) -> Suppression:
-    """Raises `ValueError` on an unusable value and `DuplicateSuppressionError` when it is already listed."""
+    """Raises `InvalidSuppressionValueError` (a `ValueError`) on an unusable value and `DuplicateSuppressionError`
+    when it is already listed."""
     normalised = normalise_value(kind, value)
     try:
         with transaction.atomic():

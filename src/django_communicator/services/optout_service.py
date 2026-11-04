@@ -16,6 +16,7 @@ from django.utils import timezone
 from django_communicator.enums import ReplyKind, SequenceStopReason
 from django_communicator.models import Reply, Thread, ThreadSequenceState
 from django_communicator.services import inbound_service, sequence_service, suppression_service
+from django_communicator.services.exceptions import ClientError
 from django_communicator.signals import optout_confirmed, reply_received
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 OBJECTION_RETRY_COUNTDOWN_S = 60
 
 
-class OptoutStateError(Exception):
+class OptoutStateError(ClientError):
     """The reply is not an undecided suspected opt-out, or the thread cannot resume."""
 
 
@@ -67,7 +68,7 @@ def resume(thread: Thread) -> ThreadSequenceState:
     try:
         state = sequence_service.resume_sequence(thread)
     except sequence_service.SequenceError as error:
-        raise OptoutStateError(str(error)) from None
+        raise OptoutStateError(error.client_message) from None
     inbound_service.reopen(thread)
     return state
 
