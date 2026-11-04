@@ -93,6 +93,16 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
 - **Credentials and bodies are never logged; `Reply.raw_headers` holds headers only; attachments are
   never stored.**
 
+## Admin API errors
+
+- **A view answers a refusal with `exc.client_message`, never `str(exc)`.** Only refusals the module writes for a
+  client derive from `services.exceptions.ClientError`; a view catches those types alone, and everything else goes
+  to the v2 handler (500 `INTERNAL_ERROR`, `debug_id`). `raise Conflict(str(error))` is still an exception-text
+  leak to CodeQL (`py/stack-trace-exposure`). A new refusal type derives from `ClientError` (and from `ValueError`
+  when existing callers catch that); a service that wraps another refusal passes its `client_message` on.
+  `tests/test_v2_error_exposure.py` pins it per route (add a case with a new refusal); the CodeQL scan is the
+  net for routes it does not list.
+
 ## Module boundaries and GDPR
 
 - **`utils/domains.py`, `utils/emails.py`, `utils/encryption.py` + `encrypted_field.py` are copies** (of

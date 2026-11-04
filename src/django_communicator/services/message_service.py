@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from django_communicator.enums import MESSAGE_STATUS_TRANSITIONS, MessageStatus
 from django_communicator.models import Message
+from django_communicator.services.exceptions import ClientError
 
 # Copied into every new version of a message; the caller's changes override them.
 VERSION_INHERITED_FIELDS = (
@@ -26,7 +27,7 @@ VERSION_INHERITED_FIELDS = (
 _REVIEW_STATUSES = frozenset({MessageStatus.APPROVED.value, MessageStatus.REJECTED.value})
 
 
-class InvalidTransitionError(Exception):
+class InvalidTransitionError(ClientError):
     pass
 
 

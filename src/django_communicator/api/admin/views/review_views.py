@@ -82,11 +82,11 @@ class _MessageActionView(AdminView):
         try:
             return Response(_payload(action(*args, **kwargs)), status=status)
         except InvalidTransitionError as error:
-            raise Conflict(str(error), code="already_reviewed") from None
+            raise Conflict(error.client_message, code="already_reviewed") from None
         except ToolboxDisabledError as error:
             return handle_toolbox_error(error)
         except review_service.ReviewError as error:
-            raise Conflict(str(error), code="review_refused") from None
+            raise Conflict(error.client_message, code="review_refused") from None
 
 
 class ReviewDetailView(_MessageActionView):

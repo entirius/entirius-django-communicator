@@ -129,7 +129,7 @@ class TemplateTestGenerateView(_TemplateObjectView):
         try:
             preview = preview_service.generate_preview(template, body.context)
         except RenderError as error:
-            raise ValidationError({"context": [str(error)]}) from None
+            raise ValidationError({"context": [error.client_message]}) from None
         except ToolboxError as error:
             return handle_toolbox_error(error)
         except DraftOutputError:

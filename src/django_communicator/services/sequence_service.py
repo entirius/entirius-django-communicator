@@ -27,6 +27,7 @@ from django_communicator.services.communicate_service import (
     ThreadMismatchError,
     communicate,
 )
+from django_communicator.services.exceptions import ClientError
 from django_communicator.signals import sequence_finished
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ _STOP_REASONS = {
 }
 
 
-class SequenceError(Exception):
+class SequenceError(ClientError):
     pass
 
 

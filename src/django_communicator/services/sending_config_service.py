@@ -18,11 +18,12 @@ from django_communicator.models import (
     TextPool,
     ThreadPoolUsage,
 )
+from django_communicator.services.exceptions import ClientError
 
 _EDITABLE_TEXT_FIELDS = frozenset({"body", "is_active"})
 
 
-class DuplicateSequenceError(Exception):
+class DuplicateSequenceError(ClientError):
     pass
 
 

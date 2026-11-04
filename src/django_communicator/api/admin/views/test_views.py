@@ -80,7 +80,7 @@ class DevCommunicateView(DevelopmentView):
         try:
             message = communicate(channel_idx=channel.idx, **dict(body))
         except LegalFooterRequiredError as error:
-            raise ValidationError({"recipient.legal_footer": [str(error)]}) from None
+            raise ValidationError({"recipient.legal_footer": [error.client_message]}) from None
         except ToolboxDisabledError as error:
             return handle_toolbox_error(error)
         return Response(MessageDetailResponse.of(message).model_dump(mode="json"), status=201)
@@ -149,7 +149,7 @@ class DevStartSequenceView(DevelopmentView):
         try:
             state = sequence_service.start_sequence(thread, sequence)
         except sequence_service.SequenceError as error:
-            raise ValidationError({"sequence_key": [str(error)]}) from None
+            raise ValidationError({"sequence_key": [error.client_message]}) from None
         return Response(SequenceStateResponse.model_validate(state).model_dump(mode="json"), status=201)
 
 

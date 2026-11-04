@@ -57,6 +57,7 @@ List endpoints `review/`, `messages/`, `threads/`, `conversations/` and `replies
 | 409 | a conflict; `error` names its kind — see the table below |
 | 402 / 403 / 502 / 503 / 504 | `test-generate/` and `models/` only: toolbox budget, `MODEL_NOT_ALLOWED`, provider error or invalid draft output, toolbox not configured, timeout (`django_utils.toolbox.views.handle_toolbox_error`) |
 | 503 `AI_TOOLBOX_DISABLED` | `review/<id>/rewrite/`, `test/communicate/` (AI template), `test-generate/` and `models/` while `AI_TOOLBOX_ENABLED` is `False`; body `{error, message}`, nothing is written |
+| 500 `INTERNAL_ERROR` | anything that is not a refusal written by the module; body carries a `debug_id` and no exception text, the traceback is logged under the same id |
 
 Every 409 uses the v2 error shape; `error` tells the kinds apart, `message` explains:
 

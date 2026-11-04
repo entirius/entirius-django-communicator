@@ -56,7 +56,7 @@ def _decide(view: AdminView, channel_idx: str, pk: int, action: Callable[[Reply]
     except Reply.DoesNotExist:
         raise NotFound("Reply not found.") from None
     except optout_service.OptoutStateError as error:
-        raise Conflict(str(error), code="optout_state") from None
+        raise Conflict(error.client_message, code="optout_state") from None
 
 
 class ConfirmOptoutView(AdminView):
