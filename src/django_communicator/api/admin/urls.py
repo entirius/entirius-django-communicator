@@ -48,6 +48,7 @@ urlpatterns = [
     path("messages/", sending.OutboxListView.as_view(), name="admin-communicator-messages"),
     path("messages/<int:pk>/send-now/", sending.SendNowView.as_view(), name="admin-communicator-send-now"),
     path("sequences/", sequence.SequenceListView.as_view(), name="admin-communicator-sequences"),
+    path("sequences/<int:pk>/", sequence.SequenceDetailView.as_view(), name="admin-communicator-sequence"),
     path(
         "sequences/<int:pk>/steps/", sequence.SequenceStepListView.as_view(), name="admin-communicator-sequence-steps"
     ),

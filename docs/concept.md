@@ -151,6 +151,11 @@ warning (C-27). Inactive texts are never picked. A text no thread used can be de
 only deactivates it — deleting would cascade away the usage and a thread could get the same text twice.
 Follow-ups ride the same send path, policy and cap (C-28).
 
+A sequence flagged `autostart` (at most one per channel, active, with steps) starts by itself: the first delivered
+message of an open thread that never had a sequence state arms it (`sequence_service._autostart`, called from
+`on_delivered`), so a cold mail is followed up without anyone starting the sequence. A thread that already has a
+state — running, paused or stopped — is never restarted. Without an `autostart` sequence nothing changes.
+
 The next due date counts from the delivery. Terminal outcomes go through
 `sequence_service.on_follow_up_finished`: delivered → next due date or `finished`
 (`sequence_finished`); failed / suppressed → stopped; rejected / skipped → re-armed from the last

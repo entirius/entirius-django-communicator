@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Autostart sequence (outbound roadmap F2).** `Sequence.autostart` (migration 0012, one per channel): the first
+  delivered message of an open thread without a sequence state starts the channel's `autostart` sequence, so
+  follow-ups no longer depend on a development-only endpoint. `POST sequences/` takes `autostart`; new
+  `PATCH sequences/<id>/` (`is_active`, `autostart`; a second autostart sequence answers 409).
+
 ## 0.4.1 — 2026-11-04
 
 ### Security

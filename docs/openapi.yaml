@@ -1069,6 +1069,53 @@ paths:
           description: No response body
         '409':
           description: No response body
+  /api/communicator/v2/admin/{channel_idx}/sequences/{id}/:
+    patch:
+      operationId: api_communicator_v2_admin_sequences_partial_update
+      summary: Switch a sequence on or off, or make it the channel's autostart sequence
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator Sequences
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSequenceUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSequenceUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSequenceUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SequenceResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
   /api/communicator/v2/admin/{channel_idx}/sequences/{id}/steps/:
     get:
       operationId: api_communicator_v2_admin_sequences_steps_retrieve
@@ -2916,6 +2963,29 @@ components:
           title: Sandbox Mailbox
       title: ChannelConfigRequest
       type: object
+    PatchedSequenceUpdateRequest:
+      additionalProperties: false
+      properties:
+        is_active:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: Schedules follow-ups.
+          examples:
+          - true
+          title: Is Active
+        autostart:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: Starts by itself after the first delivery. One per channel.
+          examples:
+          - true
+          title: Autostart
+      title: SequenceUpdateRequest
+      type: object
     PatchedTextUpdateRequest:
       additionalProperties: false
       properties:
@@ -3218,6 +3288,13 @@ components:
           - true
           title: Is Active
           type: boolean
+        autostart:
+          default: false
+          description: Starts by itself after the first delivered message of a thread without a sequence. One per channel.
+          examples:
+          - true
+          title: Autostart
+          type: boolean
         steps:
           description: Steps with unique numbers.
           examples:
@@ -3252,6 +3329,12 @@ components:
           - true
           title: Is Active
           type: boolean
+        autostart:
+          description: Starts by itself after the first delivery.
+          examples:
+          - true
+          title: Autostart
+          type: boolean
         steps:
           description: Steps by number.
           examples:
@@ -3264,6 +3347,7 @@ components:
       - id
       - key
       - is_active
+      - autostart
       - steps
       title: SequenceResponse
       type: object

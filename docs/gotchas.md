@@ -59,6 +59,9 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
 
 ## Sequences
 
+- **Autostart arms a thread once.** `sequence_service._autostart` runs on the first delivery of a thread with no
+  `ThreadSequenceState` at all; a paused or stopped state counts, so a later mail never restarts it. One `autostart`
+  sequence per channel (partial unique constraint); `PATCH sequences/<id>/` answers 409 for a second one.
 - **Follow-ups carry `Message.sequence_step`**, inherited by edited and rewritten versions; the step
   advance is a compare-and-set on `step`, so overlapping runs create one follow-up.
 - **Every terminal outcome of a follow-up goes through `sequence_service.on_follow_up_finished`** —

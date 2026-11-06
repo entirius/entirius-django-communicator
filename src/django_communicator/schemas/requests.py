@@ -146,6 +146,11 @@ class SequenceRequest(BaseModel):
         min_length=1, max_length=64, pattern=r"^[-a-zA-Z0-9_]+$", description="Slug.", examples=["followup"]
     )
     is_active: bool = Field(default=True, description="Schedules follow-ups.", examples=[True])
+    autostart: bool = Field(
+        default=False,
+        description="Starts by itself after the first delivered message of a thread without a sequence. One per channel.",
+        examples=[True],
+    )
     steps: list[SequenceStepRequest] = Field(min_length=1, description="Steps with unique numbers.", examples=[[]])
 
     @model_validator(mode="after")
@@ -208,6 +213,15 @@ class DevResetCountersRequest(BaseModel):
         max_length=31,
         description="Channel days whose send counters are cleared.",
         examples=[["2026-09-21"]],
+    )
+
+
+class SequenceUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_active: bool | None = Field(default=None, description="Schedules follow-ups.", examples=[True])
+    autostart: bool | None = Field(
+        default=None, description="Starts by itself after the first delivery. One per channel.", examples=[True]
     )
 
 
