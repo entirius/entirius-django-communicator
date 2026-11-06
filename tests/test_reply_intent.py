@@ -33,15 +33,21 @@ def intent_model(monkeypatch):
     monkeypatch.setattr(communicator_settings, "COMMUNICATOR_REPLY_INTENT_MODEL", MODEL)
 
 
-def reply_mail(body: str, *, subject: str = "Re: Your shop audit", sender: str = "owner@example-shop-1.test") -> bytes:
+def reply_mail(
+    body: str,
+    *,
+    subject: str = "Re: Your shop audit",
+    sender: str = "owner@example-shop-1.test",
+    in_reply_to: str = OUR_ID,
+) -> bytes:
     msg = EmailMessage()
     msg["From"] = f"Anna <{sender}>"
     msg["To"] = "outreach@mail.example.test"
     msg["Subject"] = subject
     msg["Date"] = "Mon, 14 Sep 2026 10:15:00 +0200"
     msg["Message-ID"] = f"<t4-{abs(hash((body, subject)))}@example-shop-1.test>"
-    msg["In-Reply-To"] = OUR_ID
-    msg["References"] = OUR_ID
+    msg["In-Reply-To"] = in_reply_to
+    msg["References"] = in_reply_to
     msg.set_content(body)
     return msg.as_bytes()
 

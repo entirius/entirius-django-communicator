@@ -12,6 +12,7 @@ Install-time facts (prerequisites, settings, beat schedule, bootstrap order) are
 | `django_communicator.send_due` | `*/5` min | `communicator_send` | the only send path; `QueueOnce`, graceful |
 | `django_communicator.schedule_follow_ups` | hourly | `communicator_default` | creates due sequence follow-ups; `QueueOnce`, graceful |
 | `django_communicator.poll_inbox` | `*/5` min | `communicator_inbound` | IMAP poll of every active mailbox; `QueueOnce`, graceful, retried ×3 on IMAP / socket errors |
+| `django_communicator.process_reply_followups` | hourly | `communicator_default` | resumes sequences paused until a return date and sends due reminder alerts (T4); `QueueOnce`, graceful |
 | `django_communicator.retry_failed_drafts` | `*/10` min | `communicator_default` | retries AI drafts that failed transiently (toolbox down, timeout, 5xx) once `status()` is `configured` — never while it is `disabled`, `unconfigured` or `unreachable`; `QueueOnce`, graceful |
 | `django_communicator.record_objection` | — | `communicator_default` | retry of a confirmed opt-out's agreements objection (×5, backoff) |
 

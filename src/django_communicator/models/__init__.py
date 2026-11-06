@@ -10,6 +10,7 @@ from django_communicator.models.message import Message
 from django_communicator.models.message_template import MessageTemplate
 from django_communicator.models.message_template_version import MessageTemplateVersion
 from django_communicator.models.reply import Reply
+from django_communicator.models.reply_intent_action import ReplyIntentAction
 from django_communicator.models.send_policy import SendPolicy
 from django_communicator.models.send_window import SendWindow
 from django_communicator.models.sequence import Sequence
@@ -29,6 +30,7 @@ __all__ = [
     "MessageTemplate",
     "MessageTemplateVersion",
     "Reply",
+    "ReplyIntentAction",
     "SendPolicy",
     "SendWindow",
     "Sequence",

@@ -8,7 +8,16 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from django_communicator.enums import ChannelMode, MessageStatus, ReplyIntent, ReplyKind, SuppressionKind, TemplateKind
+from django_communicator.enums import (
+    ChannelMode,
+    MessageStatus,
+    NotifySeverity,
+    ReplyIntent,
+    ReplyKind,
+    ReplySequenceAction,
+    SuppressionKind,
+    TemplateKind,
+)
 from django_communicator.services.communicate_service import RecipientData
 
 AUDIENCE_PATTERN = r"^[A-Z0-9_]*$"
@@ -259,6 +268,7 @@ class ReplyListQuery(BaseModel):
     kind: ReplyKind | None = Field(default=None, description="Only replies of this kind.")
     thread: int | None = Field(default=None, description="Only replies of this thread.")
     intent: ReplyIntent | None = Field(default=None, description="Only replies classified as this intent.")
+    needs_review: bool | None = Field(default=None, description="Only replies flagged (or not) for a person to read.")
 
 
 class MailboxRequest(BaseModel):
@@ -283,4 +293,42 @@ class FooterRequest(BaseModel):
         max_length=20000,
         description="Footer HTML with `{{ legal }}` exactly once; sanitised to an allowlist on save.",
         examples=["<p><strong>Jan Kowalski</strong><br>Example sp. z o.o.</p><div>{{ legal }}</div>"],
+    )
+
+
+class ReplyActionRequest(BaseModel):
+    """The whole next-step mapping of one intent class; omitted fields take the model defaults."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sequence: ReplySequenceAction = Field(
+        default=ReplySequenceAction.STOP,
+        description="stop (as every reply did before T4), pause, or pause_until_return (out_of_office only).",
+        examples=["pause"],
+    )
+    notify: NotifySeverity = Field(
+        default=NotifySeverity.HIGH,
+        description="Alert severity for the sales admin; none = silent.",
+        examples=["medium"],
+    )
+    remind_after_days: int | None = Field(
+        default=None,
+        ge=1,
+        le=365,
+        description="Alert a person to follow up this many days after the reply (out of office: only when the "
+        "reply gave no return date).",
+        examples=[30],
+    )
+    needs_review: bool = Field(default=False, description="Flag the reply for a person to read.", examples=[False])
+    min_confidence: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="Below this confidence the class becomes unclear; null = COMMUNICATOR_REPLY_INTENT_MIN_CONFIDENCE.",
+        examples=[0.8],
+    )
+    auto_suppress: bool = Field(
+        default=False,
+        description="unsubscribe only: confirm the opt-out (suppression) without a person, like confirm-optout.",
+        examples=[False],
     )

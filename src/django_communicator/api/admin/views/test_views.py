@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Development-only endpoints for BDD: communicate(), channel clock, beat run, sequence start, IMAP poll, counters,
-draft retry run and the toolbox outage switch.
+draft retry run, reply follow-ups and the toolbox outage switch.
 
 404 outside `ENVIRONMENT == "development"`.
 """
@@ -33,6 +33,7 @@ from django_communicator.schemas.responses import (
     CountersResetResponse,
     MessageDetailResponse,
     PollNowResponse,
+    ReplyFollowupsResponse,
     RetryDraftsResponse,
     SendDueResponse,
     SequenceStateResponse,
@@ -43,10 +44,17 @@ from django_communicator.services import (
     counter_service,
     draft_retry_service,
     poll_service,
+    reply_followup_service,
     sequence_service,
 )
 from django_communicator.services.communicate_service import LegalFooterRequiredError, communicate
-from django_communicator.tasks import poll_inbox, retry_failed_drafts, schedule_follow_ups, send_due
+from django_communicator.tasks import (
+    poll_inbox,
+    process_reply_followups,
+    retry_failed_drafts,
+    schedule_follow_ups,
+    send_due,
+)
 
 _TAGS = ["Communicator (development)"]
 T = TypeVar("T")
@@ -166,6 +174,21 @@ class DevPollNowView(DevelopmentView):
         channel = self.channel(channel_idx)
         counts = _run_locked(poll_inbox, lambda: poll_service.poll_all(channel))
         return Response(PollNowResponse(**counts).model_dump(mode="json"))
+
+
+class DevReplyFollowupsView(DevelopmentView):
+    @extend_schema(
+        tags=_TAGS,
+        summary="Run process_reply_followups now (development only)",
+        description="Resumes sequences paused until a return date and sends due reminders, on each channel's clock "
+        "(move it with test/clock/), under the celery-once lock of the beat — 409 while a beat run holds it.",
+        request=None,
+        responses={200: ReplyFollowupsResponse, **ERROR_RESPONSES, 409: None},
+    )
+    def post(self, request: Request, channel_idx: str) -> Response:
+        self.channel(channel_idx)
+        counts = _run_locked(process_reply_followups, reply_followup_service.run_due)
+        return Response(ReplyFollowupsResponse(**counts).model_dump(mode="json"))
 
 
 @method_decorator(transaction.non_atomic_requests, name="dispatch")  # no toolbox call inside a transaction

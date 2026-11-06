@@ -188,6 +188,27 @@ tracked) and hands each mail to `inbound_service.ingest`, in fixed order:
    contain soft refusals ("nie jestem zainteresowany").
 7. **Reply** → thread `replied`, `Message.replied_at`, sequence stopped, `reply_received`, `high` alert.
 
+### Next steps per intent (T4)
+
+A human reply's class selects a plan from `ReplyIntentAction` (per channel; `GET reply-actions/`), else the code
+default. Nothing here moves a stage (django_leads does, from `reply_received`) and nothing sends mail.
+
+| Class | Default plan |
+|---|---|
+| `interested` | sequence stopped, `high` alert |
+| `not_now` | sequence **paused**, `medium` alert, reminder alert after 30 days |
+| `not_interested` | sequence stopped, `medium` alert |
+| `out_of_office` | sequence **paused until the day after the return date** (`resume_at`, 00:00 channel time) and resumed by `process_reply_followups`; no usable date = paused with a reminder after 7 days; `low` alert |
+| `wrong_person` | sequence stopped, `medium` alert, flagged `needs_review` |
+| `unsubscribe` | the suspected opt-out path above (no suppression before a person confirms); the plan can set `auto_suppress` to run the same `optout_service.confirm` with no user |
+| `unclear` / below the confidence threshold | sequence stopped, `high` alert, flagged `needs_review` (a person reads it) |
+| no class (toolbox off, failed) | exactly the pre-T4 reply: sequence stopped, `high` alert, no flag |
+
+`notify: none` silences the alert; `min_confidence` per class overrides the module threshold. Beat
+`process_reply_followups` resumes a paused sequence only when nothing happened since (no later human reply, address not
+suppressed, thread not closed, sequence still paused) and turns a due reminder into a `medium` alert plus the
+`reply_followup_due` signal. The channel clock decides what is due (move it with `test/clock/`).
+
 Confirm opt-out → suppression of the thread recipient, sequence `optout`, `optout_confirmed`, and a
 `django_agreements` objection when installed (retried by task `record_objection`). Dismiss → kind
 `reply`, sequence stays paused until `threads/<id>/resume-sequence/`.

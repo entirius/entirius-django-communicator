@@ -11,6 +11,14 @@
 
 ### Added
 
+- **Next steps per reply class (outbound roadmap T4, slice S11).** `ReplyIntentAction` per channel and class (migration
+  0014): `sequence` (`stop`, `pause`, `pause_until_return`), `notify`, `remind_after_days`, `needs_review`,
+  `min_confidence`, `auto_suppress`; admin API `GET reply-actions/`, `PUT/DELETE reply-actions/<intent>/`. Safe
+  defaults: unclassified replies behave exactly as before, `not_now` / `out_of_office` pause instead of stop,
+  `unclear` and `wrong_person` are flagged `needs_review`, nothing is suppressed without a person unless
+  `auto_suppress` is set for `unsubscribe`. `Reply` gains `needs_review`, `action_applied`, `resume_at`, `resumed_at`,
+  `remind_at`, `reminded_at`. New beat task `process_reply_followups` (hourly) and signal `reply_followup_due`; dev
+  endpoint `POST test/reply-followups/`. `GET replies/` takes `?needs_review=`.
 - **Reply intent classes (outbound roadmap T4, slice S10).** A human reply is classified by the AI toolbox into
   `interested`, `not_now`, `not_interested`, `out_of_office`, `wrong_person`, `unsubscribe` or `unclear` with a
   confidence (`reply_intent_service`; migration 0013 adds `Reply.intent`, `intent_confidence`, `intent_source`,

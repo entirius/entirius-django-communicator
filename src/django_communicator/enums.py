@@ -80,6 +80,21 @@ class ReplyIntent(models.TextChoices):
     UNCLEAR = "unclear", "Unclear"
 
 
+class ReplySequenceAction(models.TextChoices):
+    """What a classified reply does to the thread's sequence. `stop` is what every reply did before T4."""
+
+    STOP = "stop", "Stop"
+    PAUSE = "pause", "Pause"
+    PAUSE_UNTIL_RETURN = "pause_until_return", "Pause until return"
+
+
+class NotifySeverity(models.TextChoices):
+    NONE = "none", "None"
+    LOW = "low", "Low"
+    MEDIUM = "medium", "Medium"
+    HIGH = "high", "High"
+
+
 class QuarantineReason(models.TextChoices):
     OVERSIZED = "oversized", "Oversized"
     UNPARSEABLE = "unparseable", "Unparseable"

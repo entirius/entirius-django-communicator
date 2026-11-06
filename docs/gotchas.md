@@ -105,6 +105,11 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   against a closed schema (unknown class, confidence outside 0..1, bad date = unclassified).
 - **The toolbox call runs outside the ingest transaction.** `ingest` is not atomic as a whole any more: parsing, matching
   and the toolbox call come first, the writes after are one transaction. A duplicate Message-ID returns before the call.
+- **Pause is not stop.** `not_now` and `out_of_office` pause the sequence (`paused`), the thread is `replied`. Only
+  `process_reply_followups` (return date) or `threads/<id>/resume-sequence/` brings it back; a paused sequence with a
+  reminder never resumes by itself. A later human reply makes the earlier plan stale (nothing resumes).
+- **`auto_suppress` fires only for the `unsubscribe` class at or above its threshold**, never for a phrase-only
+  suspicion, and it calls the same `optout_service.confirm` (user `None`).
 - **An `out_of_office` return date is dropped** when it is not in the future or more than a year away, and on any other
   class.
 - **The cursor moves only past ingested, dropped or quarantined mail.** Transient failures leave it; a

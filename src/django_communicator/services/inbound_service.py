@@ -15,7 +15,7 @@ classification changes nothing: the phrase detection decides, as before, and a p
 import logging
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 
@@ -43,6 +43,7 @@ from django_communicator.services import (
     dsn_service,
     mail_parser,
     message_service,
+    reply_action_service,
     reply_intent_service,
     sequence_service,
     suppression_service,
@@ -227,10 +228,31 @@ def _suspected_optout(
     reply = _store(inbound, match, ReplyKind.SUSPECTED_OPTOUT, body, classification)
     sequence_service.pause_sequence(match.thread)
     _mark_replied(match.thread, reply)
-    alert_service.notify_subject(
-        channel, subject_ref=match.thread.subject_ref, severity="medium", title="Possible opt-out"
-    )
+    plan = reply_action_service.plan_for(channel, ReplyIntent.UNSUBSCRIBE) if _is_unsubscribe(classification) else None
+    severity = plan.notify if plan else "medium"
+    if severity != "none":
+        alert_service.notify_subject(
+            channel, subject_ref=match.thread.subject_ref, severity=severity, title="Possible opt-out"
+        )
+    if plan is not None:
+        _apply_unsubscribe_plan(reply, plan)
     return reply
+
+
+def _is_unsubscribe(classification: reply_intent_service.Classification | None) -> bool:
+    return classification is not None and classification.intent == ReplyIntent.UNSUBSCRIBE
+
+
+def _apply_unsubscribe_plan(reply: Reply, plan: reply_action_service.Plan) -> None:
+    """The class `unsubscribe` may carry the channel's wish to confirm without a person: the very same `confirm` a
+    reviewer's click runs (suppression, sequence `optout`, `optout_confirmed`, agreements objection)."""
+    reply.needs_review = plan.needs_review
+    reply.action_applied = {**asdict(plan), "auto_suppress": plan.auto_suppress}
+    Reply.objects.filter(pk=reply.pk).update(needs_review=reply.needs_review, action_applied=reply.action_applied)
+    if plan.auto_suppress:
+        from django_communicator.services import optout_service  # imports this module
+
+        optout_service.confirm(reply, user=None)
 
 
 def _plain_reply(
@@ -243,10 +265,8 @@ def _plain_reply(
     reply = _store(inbound, match, ReplyKind.REPLY, body, classification)
     _mark_replied(match.thread, reply)
     mark_message_replied(reply)
-    sequence_service.stop_sequence(match.thread, SequenceStopReason.REPLIED)
+    reply_action_service.apply(reply, reply_action_service.plan_for(channel, reply.intent))
     transaction.on_commit(lambda: reply_received.send(sender=Thread, thread=match.thread, reply=reply))
-    title = f"Reply from {reply.from_email}"
-    alert_service.notify_subject(channel, subject_ref=match.thread.subject_ref, severity="high", title=title)
     return reply
 
 

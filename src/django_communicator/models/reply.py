@@ -36,6 +36,12 @@ class Reply(BaseModel):
     intent_confidence = models.FloatField(null=True, blank=True)
     intent_source = models.CharField(max_length=16, blank=True, default="", help_text="`toolbox` when classified.")
     intent_return_date = models.DateField(null=True, blank=True, help_text="Out of office: the day they are back.")
+    needs_review = models.BooleanField(default=False, db_index=True, help_text="A person must read and decide (T4).")
+    action_applied = models.JSONField(default=dict, blank=True, help_text="The next-step plan applied to this reply.")
+    resume_at = models.DateTimeField(null=True, blank=True, help_text="Out of office: resume the paused sequence.")
+    resumed_at = models.DateTimeField(null=True, blank=True)
+    remind_at = models.DateTimeField(null=True, blank=True, help_text="Alert a person to follow up.")
+    reminded_at = models.DateTimeField(null=True, blank=True)
     optout_confirmed_at = models.DateTimeField(null=True, blank=True)
     optout_confirmed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"

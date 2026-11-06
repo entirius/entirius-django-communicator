@@ -32,6 +32,7 @@ class ReplyListView(AdminView):
             OpenApiParameter("kind", str, enum=ReplyKind.values, description="Only replies of this kind."),
             OpenApiParameter("thread", int, description="Only replies of this thread."),
             OpenApiParameter("intent", str, enum=ReplyIntent.values, description="Only replies of this intent."),
+            OpenApiParameter("needs_review", bool, description="Only replies flagged (true) or not flagged (false)."),
             OpenApiParameter("page", int),
             OpenApiParameter("page_size", int),
         ],
@@ -40,7 +41,9 @@ class ReplyListView(AdminView):
     def get(self, request: Request, channel_idx: str) -> Response:
         query = parse(ReplyListQuery, request.query_params.dict())
         channel = self.channel(channel_idx)
-        replies = inbox_service.list_replies(channel, kind=query.kind, thread_id=query.thread, intent=query.intent)
+        replies = inbox_service.list_replies(
+            channel, kind=query.kind, thread_id=query.thread, intent=query.intent, needs_review=query.needs_review
+        )
         paginator = AdminPagination()
         page = paginator.paginate_queryset(replies, request, view=self)
         return paginator.get_paginated_response([_reply(reply) for reply in page])

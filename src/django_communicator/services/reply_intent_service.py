@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, ValidationError
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import ReplyIntent
 from django_communicator.models import Channel
+from django_communicator.services import reply_action_service
 
 logger = logging.getLogger(__name__)
 
@@ -103,12 +104,12 @@ def classify(channel: Channel, *, subject: str, body: str, today: date) -> Class
     except ValidationError:
         logger.warning("communicator reply intent not classified: unusable output")
         return None
-    return _result(output, today)
+    return _result(channel, output, today)
 
 
-def _result(output: _Output, today: date) -> Classification:
+def _result(channel: Channel, output: _Output, today: date) -> Classification:
     intent = output.intent
-    if output.confidence < communicator_settings.COMMUNICATOR_REPLY_INTENT_MIN_CONFIDENCE:
+    if output.confidence < reply_action_service.min_confidence(channel, intent):
         intent = ReplyIntent.UNCLEAR
     return_date = output.return_date
     if return_date is not None and not (today < return_date <= today + timedelta(days=MAX_RETURN_DAYS)):
