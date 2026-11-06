@@ -11,6 +11,9 @@
 
 ### Added
 
+- **Golden set of replies (outbound roadmap T4, slice S12).** Tests only: `tests/fixtures/reply_golden.json` (Polish and
+  English samples per intent class) and `tests/fake_toolbox.py` (a deterministic fake toolbox: keyword rules, respx
+  mock, drop-in client). `T4_REAL_TOOLBOX=1` runs the set against a real toolbox.
 - **Next steps per reply class (outbound roadmap T4, slice S11).** `ReplyIntentAction` per channel and class (migration
   0014): `sequence` (`stop`, `pause`, `pause_until_return`), `notify`, `remind_after_days`, `needs_review`,
   `min_confidence`, `auto_suppress`; admin API `GET reply-actions/`, `PUT/DELETE reply-actions/<intent>/`. Safe
