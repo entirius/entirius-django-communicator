@@ -41,7 +41,7 @@ The only settings table. Defaults live in `django_communicator/settings.py` and 
 | `COMMUNICATOR_INBOUND_MAX_BYTES` | `10 MB` | larger mails are quarantined unfetched |
 | `COMMUNICATOR_INBOUND_BODY_MAX_CHARS` | `100000` | stored reply body cut |
 | `COMMUNICATOR_SOFT_BOUNCE_RETRY_H` | `24` | delay of the one soft-bounce retry |
-| `COMMUNICATOR_OPTOUT_PHRASES` | `pl`, `en` lists | per-language opt-out phrases |
+| `COMMUNICATOR_OPTOUT_PHRASES` | `pl`, `en` lists | per-language opt-out phrases; matched on folded text (lower case, no diacritics, punctuation = one space), so a phrase is also a stem |
 | `COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS` | out-of-office patterns (en, pl) | autoresponder subjects |
 | `LEADS_ANONYMISED_DOMAIN` | `anonymised.invalid` | domain of token addresses — keep equal to django_leads |
 

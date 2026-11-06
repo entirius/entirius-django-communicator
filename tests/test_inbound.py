@@ -773,3 +773,47 @@ def test_dev_poll_now_scoped_to_channel(channel, mailbox, admin_api, once_backen
             poll_inbox.once_backend.clear_lock(key)
 
     assert [call.args[0].pk for call in polled.call_args_list] == [mailbox.pk]
+
+
+# F4: the opt-out list is matched on folded text, so natural wording and stems are caught.
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Prosimy o usunięcie mnie z listy.",
+        "Proszę o nie kontaktowanie się z nami w tej sprawie.",
+        "PROSZĘ MNIE WYPISAĆ",
+        "Rezygnujemy z dalszej korespondencji",
+        "Nie jesteśmy zainteresowani, dziękujemy",
+        "Prosze nie pisac wiecej",  # no diacritics
+        "Proszę\nnie\npisać",  # broken across lines
+    ],
+)
+def test_F4_polish_refusals_are_suspected_optouts(body):
+    thread = SimpleNamespace(recipient_language=SimpleNamespace(iso2="PL"))
+
+    assert inbound_service.has_optout_phrase(thread, body)
+
+
+@pytest.mark.parametrize(
+    "body",
+    ["Dzień dobry, chętnie porozmawiam we wtorek.", "Proszę przesłać ofertę.", "Czy możemy się umówić na 15:00?"],
+)
+def test_F4_ordinary_replies_are_not_suspected(body):
+    thread = SimpleNamespace(recipient_language=SimpleNamespace(iso2="PL"))
+
+    assert not inbound_service.has_optout_phrase(thread, body)
+
+
+def test_F4_english_variants_and_languageless_thread():
+    thread = SimpleNamespace(recipient_language=None)
+
+    assert inbound_service.has_optout_phrase(thread, "Please don't email me again")
+    assert inbound_service.has_optout_phrase(thread, "Take me off this list")
+    assert inbound_service.has_optout_phrase(thread, "usuń mnie z bazy")
+
+
+def test_F4_fold_is_idempotent_and_handles_l_stroke():
+    assert inbound_service.fold("Łódź, ŻÓŁĆ!  ok") == "lodz zolc ok"
+    assert inbound_service.fold(inbound_service.fold("Łódź")) == "lodz"

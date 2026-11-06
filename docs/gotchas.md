@@ -74,6 +74,13 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
 - **Step templates are resolved with `requires_review=False`** — only an `auto_approve` static template
   sends without review; anything else lands in the review queue.
 
+## Inbound
+
+- **Opt-out phrases are stems on folded text.** `inbound_service.fold` lower-cases, strips diacritics (`ł` too) and turns
+  every run of other characters into one space, for the reply and for each phrase. A configured phrase matches
+  anywhere in the text, so write stems ("nie kontaktowa", "rezygnuj"); a very short one over-matches. A match is
+  only a suspicion — a person confirms or dismisses it.
+
 ## Footer
 
 - **`{{ legal }}` goes in a block of its own** (`<div>`, `<td>`), never inside a `<p>`: it is replaced by

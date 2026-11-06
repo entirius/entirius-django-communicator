@@ -9,6 +9,8 @@ dropped, not stored. Dedup is per channel: the same mail in two channels' mailbo
 """
 
 import logging
+import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from email.message import EmailMessage
@@ -134,13 +136,23 @@ def is_autoreply(msg: EmailMessage) -> bool:
     return any(pattern in subject for pattern in communicator_settings.COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS)
 
 
+def fold(text: str) -> str:
+    """Lower case, no diacritics (`ł` too), every run of other characters one space — for phrase matching (F4)."""
+    decomposed = unicodedata.normalize("NFKD", text.casefold().replace("ł", "l"))
+    letters = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", letters).split())
+
+
 def has_optout_phrase(thread: Thread, body: str) -> bool:
-    """Phrases of the recipient's language (every language when it has no list) in the reply's unquoted text."""
+    """Phrases of the recipient's language (every language when it has no list) in the reply's unquoted text.
+
+    Both sides are folded (`fold`), so "Proszę usunąć mnie" and "usunięcie mnie z listy" match their stems; a phrase
+    is a stem, not a whole word. A reply is a suspicion only: a person confirms or dismisses it."""
     phrases = communicator_settings.COMMUNICATOR_OPTOUT_PHRASES
     language = thread.recipient_language.iso2.lower() if thread.recipient_language else ""
     candidates = phrases.get(language) or [phrase for group in phrases.values() for phrase in group]
-    text = body[:OPTOUT_SCAN_CHARS].lower()
-    return any(phrase.lower() in text for phrase in candidates)
+    text = fold(body[:OPTOUT_SCAN_CHARS])
+    return any(folded in text for phrase in candidates if (folded := fold(phrase)))
 
 
 def _store(inbound: Inbound, match: Match, kind: str, body: str | None = None) -> Reply:

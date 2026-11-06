@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed
+
+- **Opt-out detection (outbound roadmap F4).** `COMMUNICATOR_OPTOUT_PHRASES` are matched on folded text and the
+  default lists are wider (Polish stems such as "nie kontaktowa", "usunięcie mnie", "rezygnuj"; English variants).
+  Natural refusals that used to be stored as a plain `reply` now pause the sequence as a suspected opt-out.
+  Replies stay suspicions until a person decides.
+
 ### Added
 
 - **Autostart sequence (outbound roadmap F2).** `Sequence.autostart` (migration 0012, one per channel): the first
