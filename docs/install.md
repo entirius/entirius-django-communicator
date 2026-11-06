@@ -41,6 +41,9 @@ The only settings table. Defaults live in `django_communicator/settings.py` and 
 | `COMMUNICATOR_INBOUND_MAX_BYTES` | `10 MB` | larger mails are quarantined unfetched |
 | `COMMUNICATOR_INBOUND_BODY_MAX_CHARS` | `100000` | stored reply body cut |
 | `COMMUNICATOR_SOFT_BOUNCE_RETRY_H` | `24` | delay of the one soft-bounce retry |
+| `COMMUNICATOR_REPLY_INTENT_MODEL` | `""` (off) | toolbox model id for reply intent classification (T4); empty, or `AI_TOOLBOX_ENABLED = False`, = replies are never sent to the toolbox |
+| `COMMUNICATOR_REPLY_INTENT_MIN_CONFIDENCE` | `0.7` | a class below this confidence is stored as `unclear` (the confidence is kept) |
+| `COMMUNICATOR_REPLY_INTENT_MAX_CHARS` | `3000` | the part of a reply's own text (quote removed) sent to the toolbox |
 | `COMMUNICATOR_OPTOUT_PHRASES` | `pl`, `en` lists | per-language opt-out phrases; matched on folded text (lower case, no diacritics, punctuation = one space), so a phrase is also a stem |
 | `COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS` | out-of-office patterns (en, pl) | autoresponder subjects |
 | `LEADS_ANONYMISED_DOMAIN` | `anonymised.invalid` | domain of token addresses — keep equal to django_leads |

@@ -11,6 +11,14 @@
 
 ### Added
 
+- **Reply intent classes (outbound roadmap T4, slice S10).** A human reply is classified by the AI toolbox into
+  `interested`, `not_now`, `not_interested`, `out_of_office`, `wrong_person`, `unsubscribe` or `unclear` with a
+  confidence (`reply_intent_service`; migration 0013 adds `Reply.intent`, `intent_confidence`, `intent_source`,
+  `intent_return_date`). Off until `COMMUNICATOR_REPLY_INTENT_MODEL` is set; with the toolbox off or failing nothing
+  changes (phrase detection, a person reads the reply). `unsubscribe` takes the existing suspected opt-out path
+  (sequence paused, no suppression before a human confirms). Below `COMMUNICATOR_REPLY_INTENT_MIN_CONFIDENCE` the class
+  is `unclear`. `GET replies/` shows the fields and takes `?intent=`. `inbound_service.ingest` is no longer atomic as
+  a whole: the toolbox call runs before the transaction of the writes.
 - **Autostart sequence (outbound roadmap F2).** `Sequence.autostart` (migration 0012, one per channel): the first
   delivered message of an open thread without a sequence state starts the channel's `autostart` sequence, so
   follow-ups no longer depend on a development-only endpoint. `POST sequences/` takes `autostart`; new

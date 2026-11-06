@@ -174,10 +174,19 @@ tracked) and hands each mail to `inbound_service.ingest`, in fixed order:
    `failed/bounce` (C-25). A `Final-Recipient` other than the thread recipient is dropped as forged.
 3. **Thread match** — our Message-ID in `In-Reply-To`/`References` (`header`, C-20), else the newest open
    thread of the sender whose last outbound predates the mail (`sender`, C-21); no match → dropped.
-4. **Autoresponder** headers or subject patterns → `auto`, nothing else (C-22).
-5. **Opt-out phrase** of the recipient language above the quote → `suspected_optout`, sequence paused,
-   thread `replied`, `medium` alert — no suppression until a human confirms (C-23).
-6. **Reply** → thread `replied`, `Message.replied_at`, sequence stopped, `reply_received`, `high` alert.
+4. **Autoresponder** headers or subject patterns → `auto`, nothing else (C-22); never classified.
+5. **Intent** (T4, only with a toolbox model set and `AI_TOOLBOX_ENABLED`): the reply's own text goes to the toolbox
+   once (`reply_intent_service`, outside any transaction) and comes back as one of `interested`, `not_now`,
+   `not_interested`, `out_of_office`, `wrong_person`, `unsubscribe`, `unclear` with a confidence; below
+   `COMMUNICATOR_REPLY_INTENT_MIN_CONFIDENCE` the class is `unclear`. Stored on the `Reply` (`intent`,
+   `intent_confidence`, `intent_source`, `intent_return_date`). Toolbox off, unconfigured, failing or answering
+   nonsense = no class and the phrase detection below decides, exactly as before.
+6. **Opt-out** → `suspected_optout`, sequence paused, thread `replied`, `medium` alert — no suppression until a human
+   confirms (C-23). Raised by the class `unsubscribe`, or by an opt-out phrase of the recipient language above the
+   quote when there is no usable class or it is `unclear`, or when a confident class other than `not_interested`
+   disagrees with the phrase (a person decides). A confident `not_interested` wins over a phrase hit: the phrase lists
+   contain soft refusals ("nie jestem zainteresowany").
+7. **Reply** → thread `replied`, `Message.replied_at`, sequence stopped, `reply_received`, `high` alert.
 
 Confirm opt-out → suppression of the thread recipient, sequence `optout`, `optout_confirmed`, and a
 `django_agreements` objection when installed (retried by task `record_objection`). Dismiss → kind

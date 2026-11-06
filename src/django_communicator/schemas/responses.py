@@ -3,7 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Response schemas of the communicator admin API v2."""
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import Any
 
 from django_utils.toolbox import ModelInfo
@@ -420,6 +420,14 @@ class ReplyResponse(BaseModel):
     inbound_message_id: str = Field(description="Message-ID of the inbound mail.", examples=["<a@shop.test>"])
     received_at: datetime = Field(description="Ingested.", examples=["2026-09-14T10:15:00Z"])
     optout_confirmed_at: datetime | None = Field(description="Opt-out confirmed by a human.", examples=[None])
+    intent: str = Field(
+        description="interested, not_now, not_interested, out_of_office, wrong_person, unsubscribe or unclear; "
+        "empty when the reply was not classified (toolbox off or failed, auto reply, bounce).",
+        examples=["interested"],
+    )
+    intent_confidence: float | None = Field(description="Classifier confidence 0..1.", examples=[0.92])
+    intent_source: str = Field(description="`toolbox` when classified, else empty.", examples=["toolbox"])
+    intent_return_date: date | None = Field(description="Out of office: the day they are back.", examples=[None])
 
 
 class ReplyListResponse(BaseModel):

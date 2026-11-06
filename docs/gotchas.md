@@ -98,6 +98,15 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   bounce is a reply. DSNs never change `Thread.status`.
 - **An opt-out phrase is a suspicion, not a suppression.** Only `confirm-optout` suppresses. A dismissed
   suspicion keeps the sequence paused until `threads/<id>/resume-sequence/`.
+- **A class is advice, never an instruction.** The AI toolbox may be off, unreachable or wrong: the reply is stored
+  either way and a person reads it. The only class that does something on its own is `unsubscribe`, and it does what
+  the phrase list does — a suspicion that pauses the sequence; only `confirm-optout` suppresses. Reply text is
+  untrusted: it goes to the toolbox as user data, the system prompt never contains it, and the output is checked
+  against a closed schema (unknown class, confidence outside 0..1, bad date = unclassified).
+- **The toolbox call runs outside the ingest transaction.** `ingest` is not atomic as a whole any more: parsing, matching
+  and the toolbox call come first, the writes after are one transaction. A duplicate Message-ID returns before the call.
+- **An `out_of_office` return date is dropped** when it is not in the future or more than a year away, and on any other
+  class.
 - **The cursor moves only past ingested, dropped or quarantined mail.** Transient failures leave it; a
   poll that swallowed them would lose mail.
 - **Credentials and bodies are never logged; `Reply.raw_headers` holds headers only; attachments are

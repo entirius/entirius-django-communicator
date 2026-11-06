@@ -35,6 +35,11 @@ COMMUNICATOR_SOFT_BOUNCE_RETRY_H = getattr(settings, "COMMUNICATOR_SOFT_BOUNCE_R
 # Mail above this RFC822.SIZE is quarantined unfetched; stored reply bodies are cut to this many characters.
 COMMUNICATOR_INBOUND_MAX_BYTES = getattr(settings, "COMMUNICATOR_INBOUND_MAX_BYTES", 10 * 1024 * 1024)
 COMMUNICATOR_INBOUND_BODY_MAX_CHARS = getattr(settings, "COMMUNICATOR_INBOUND_BODY_MAX_CHARS", 100_000)
+# Reply intent classification (T4) over the AI toolbox. Off until a toolbox model id is set (and while
+# AI_TOOLBOX_ENABLED is False): replies then keep the phrase detection below and a person reads every one.
+COMMUNICATOR_REPLY_INTENT_MODEL = getattr(settings, "COMMUNICATOR_REPLY_INTENT_MODEL", "")
+COMMUNICATOR_REPLY_INTENT_MIN_CONFIDENCE = getattr(settings, "COMMUNICATOR_REPLY_INTENT_MIN_CONFIDENCE", 0.7)
+COMMUNICATOR_REPLY_INTENT_MAX_CHARS = getattr(settings, "COMMUNICATOR_REPLY_INTENT_MAX_CHARS", 3000)
 # Lower-case phrases matched case-insensitively on the first 2 000 characters of the reply above the quote; the
 # recipient's language list, all languages when the thread has no language with a list.
 COMMUNICATOR_OPTOUT_PHRASES = getattr(

@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from django_communicator.enums import ChannelMode, MessageStatus, ReplyKind, SuppressionKind, TemplateKind
+from django_communicator.enums import ChannelMode, MessageStatus, ReplyIntent, ReplyKind, SuppressionKind, TemplateKind
 from django_communicator.services.communicate_service import RecipientData
 
 AUDIENCE_PATTERN = r"^[A-Z0-9_]*$"
@@ -258,6 +258,7 @@ class ReplyListQuery(BaseModel):
 
     kind: ReplyKind | None = Field(default=None, description="Only replies of this kind.")
     thread: int | None = Field(default=None, description="Only replies of this thread.")
+    intent: ReplyIntent | None = Field(default=None, description="Only replies classified as this intent.")
 
 
 class MailboxRequest(BaseModel):

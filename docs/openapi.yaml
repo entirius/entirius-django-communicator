@@ -546,6 +546,19 @@ paths:
           type: string
         required: true
       - in: query
+        name: intent
+        schema:
+          type: string
+          enum:
+          - interested
+          - not_interested
+          - not_now
+          - out_of_office
+          - unclear
+          - unsubscribe
+          - wrong_person
+        description: Only replies of this intent.
+      - in: query
         name: kind
         schema:
           type: string
@@ -3226,6 +3239,36 @@ components:
           examples:
           - null
           title: Optout Confirmed At
+        intent:
+          description: interested, not_now, not_interested, out_of_office, wrong_person, unsubscribe or unclear; empty when
+            the reply was not classified (toolbox off or failed, auto reply, bounce).
+          examples:
+          - interested
+          title: Intent
+          type: string
+        intent_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Classifier confidence 0..1.
+          examples:
+          - 0.92
+          title: Intent Confidence
+        intent_source:
+          description: '`toolbox` when classified, else empty.'
+          examples:
+          - toolbox
+          title: Intent Source
+          type: string
+        intent_return_date:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          description: 'Out of office: the day they are back.'
+          examples:
+          - null
+          title: Intent Return Date
       required:
       - id
       - thread_id
@@ -3238,6 +3281,10 @@ components:
       - inbound_message_id
       - received_at
       - optout_confirmed_at
+      - intent
+      - intent_confidence
+      - intent_source
+      - intent_return_date
       title: ReplyResponse
       type: object
     RewriteRequest:
