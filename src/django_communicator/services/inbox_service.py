@@ -220,8 +220,19 @@ def _reply_entry(reply: Reply) -> dict:
     }
 
 
-def list_replies(channel: Channel, *, kind: str | None = None, thread_id: int | None = None) -> QuerySet[Reply]:
+def list_replies(
+    channel: Channel,
+    *,
+    kind: str | None = None,
+    thread_id: int | None = None,
+    intent: str | None = None,
+    needs_review: bool | None = None,
+) -> QuerySet[Reply]:
     replies = Reply.objects.filter(thread__channel=channel)
+    if needs_review is not None:
+        replies = replies.filter(needs_review=needs_review)
+    if intent:
+        replies = replies.filter(intent=intent)
     if kind:
         replies = replies.filter(kind=kind)
     if thread_id is not None:

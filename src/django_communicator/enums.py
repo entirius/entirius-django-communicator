@@ -68,6 +68,33 @@ class ReplyKind(models.TextChoices):
     BOUNCE_SOFT = "bounce_soft", "Soft bounce"
 
 
+class ReplyIntent(models.TextChoices):
+    """What a human reply wants (T4). `unclear` is also the class of a reply the classifier was not sure about."""
+
+    INTERESTED = "interested", "Interested"
+    NOT_NOW = "not_now", "Not now"
+    NOT_INTERESTED = "not_interested", "Not interested"
+    OUT_OF_OFFICE = "out_of_office", "Out of office"
+    WRONG_PERSON = "wrong_person", "Wrong person"
+    UNSUBSCRIBE = "unsubscribe", "Unsubscribe"
+    UNCLEAR = "unclear", "Unclear"
+
+
+class ReplySequenceAction(models.TextChoices):
+    """What a classified reply does to the thread's sequence. `stop` is what every reply did before T4."""
+
+    STOP = "stop", "Stop"
+    PAUSE = "pause", "Pause"
+    PAUSE_UNTIL_RETURN = "pause_until_return", "Pause until return"
+
+
+class NotifySeverity(models.TextChoices):
+    NONE = "none", "None"
+    LOW = "low", "Low"
+    MEDIUM = "medium", "Medium"
+    HIGH = "high", "High"
+
+
 class QuarantineReason(models.TextChoices):
     OVERSIZED = "oversized", "Oversized"
     UNPARSEABLE = "unparseable", "Unparseable"

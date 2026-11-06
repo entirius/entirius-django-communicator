@@ -3,11 +3,13 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Response schemas of the communicator admin API v2."""
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import Any
 
 from django_utils.toolbox import ModelInfo
 from pydantic import BaseModel, ConfigDict, Field
+
+from django_communicator.enums import NotifySeverity, ReplyIntent, ReplySequenceAction
 
 
 class ThreadResponse(BaseModel):
@@ -230,12 +232,15 @@ class SequenceResponse(BaseModel):
     id: int = Field(description="Sequence id.", examples=[1])
     key: str = Field(description="Slug.", examples=["followup"])
     is_active: bool = Field(description="Schedules follow-ups.", examples=[True])
+    autostart: bool = Field(description="Starts by itself after the first delivery.", examples=[True])
     steps: list[SequenceStepResponse] = Field(description="Steps by number.", examples=[[]])
 
     @classmethod
     def of(cls, sequence) -> "SequenceResponse":
         steps = [SequenceStepResponse.model_validate(step) for step in sequence.steps.all()]
-        return cls(id=sequence.pk, key=sequence.key, is_active=sequence.is_active, steps=steps)
+        return cls(
+            id=sequence.pk, key=sequence.key, is_active=sequence.is_active, autostart=sequence.autostart, steps=steps
+        )
 
 
 class SequenceListResponse(BaseModel):
@@ -417,6 +422,24 @@ class ReplyResponse(BaseModel):
     inbound_message_id: str = Field(description="Message-ID of the inbound mail.", examples=["<a@shop.test>"])
     received_at: datetime = Field(description="Ingested.", examples=["2026-09-14T10:15:00Z"])
     optout_confirmed_at: datetime | None = Field(description="Opt-out confirmed by a human.", examples=[None])
+    intent: str = Field(
+        description="interested, not_now, not_interested, out_of_office, wrong_person, unsubscribe or unclear; "
+        "empty when the reply was not classified (toolbox off or failed, auto reply, bounce).",
+        examples=["interested"],
+    )
+    intent_confidence: float | None = Field(description="Classifier confidence 0..1.", examples=[0.92])
+    intent_source: str = Field(description="`toolbox` when classified, else empty.", examples=["toolbox"])
+    intent_return_date: date | None = Field(description="Out of office: the day they are back.", examples=[None])
+    needs_review: bool = Field(
+        description="A person must read and decide (class unclear, or the mapping says so).", examples=[False]
+    )
+    action_applied: dict = Field(
+        description="The next-step plan applied to this reply (empty for bounces and auto replies).", examples=[{}]
+    )
+    resume_at: datetime | None = Field(description="Out of office: the paused sequence resumes then.", examples=[None])
+    resumed_at: datetime | None = Field(description="When it resumed.", examples=[None])
+    remind_at: datetime | None = Field(description="A reminder alert is due then.", examples=[None])
+    reminded_at: datetime | None = Field(description="When the reminder was sent.", examples=[None])
 
 
 class ReplyListResponse(BaseModel):
@@ -472,3 +495,25 @@ class PollNowResponse(BaseModel):
     ingested: int = Field(description="Mail that produced or matched a reply.", examples=[1])
     skipped: int = Field(description="Mail dropped (unmatched, own, expunged).", examples=[0])
     quarantined: int = Field(description="Mail recorded in the quarantine (oversized, unreadable).", examples=[0])
+
+
+class ReplyActionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    intent: ReplyIntent = Field(description="The intent class.", examples=["not_now"])
+    sequence: ReplySequenceAction = Field(description="What happens to the sequence.", examples=["pause"])
+    notify: NotifySeverity = Field(description="Alert severity (none = silent).", examples=["medium"])
+    remind_after_days: int | None = Field(description="Reminder after this many days.", examples=[30])
+    needs_review: bool = Field(description="Flag for a person to read.", examples=[False])
+    min_confidence: float | None = Field(description="Own threshold; null = module setting.", examples=[None])
+    auto_suppress: bool = Field(description="Confirm an opt-out without a person (unsubscribe only).", examples=[False])
+    is_default: bool = Field(description="No row: the code default applies.", examples=[True])
+
+
+class ReplyActionListResponse(BaseModel):
+    results: list[ReplyActionResponse] = Field(description="One entry per intent class.", examples=[[]])
+
+
+class ReplyFollowupsResponse(BaseModel):
+    resumed: int = Field(description="Sequences resumed after a return date.", examples=[1])
+    reminded: int = Field(description="Reminders sent.", examples=[1])

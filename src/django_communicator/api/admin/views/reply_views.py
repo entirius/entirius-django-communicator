@@ -12,7 +12,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from django_communicator.api.admin.views._base import ERROR_RESPONSES, AdminPagination, AdminView, Conflict, parse
-from django_communicator.enums import ReplyKind
+from django_communicator.enums import ReplyIntent, ReplyKind
 from django_communicator.models import Reply
 from django_communicator.schemas.requests import ReplyListQuery
 from django_communicator.schemas.responses import ReplyListResponse, ReplyResponse
@@ -31,6 +31,8 @@ class ReplyListView(AdminView):
         parameters=[
             OpenApiParameter("kind", str, enum=ReplyKind.values, description="Only replies of this kind."),
             OpenApiParameter("thread", int, description="Only replies of this thread."),
+            OpenApiParameter("intent", str, enum=ReplyIntent.values, description="Only replies of this intent."),
+            OpenApiParameter("needs_review", bool, description="Only replies flagged (true) or not flagged (false)."),
             OpenApiParameter("page", int),
             OpenApiParameter("page_size", int),
         ],
@@ -39,7 +41,9 @@ class ReplyListView(AdminView):
     def get(self, request: Request, channel_idx: str) -> Response:
         query = parse(ReplyListQuery, request.query_params.dict())
         channel = self.channel(channel_idx)
-        replies = inbox_service.list_replies(channel, kind=query.kind, thread_id=query.thread)
+        replies = inbox_service.list_replies(
+            channel, kind=query.kind, thread_id=query.thread, intent=query.intent, needs_review=query.needs_review
+        )
         paginator = AdminPagination()
         page = paginator.paginate_queryset(replies, request, view=self)
         return paginator.get_paginated_response([_reply(reply) for reply in page])

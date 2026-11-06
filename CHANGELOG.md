@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Opt-out detection (outbound roadmap F4).** `COMMUNICATOR_OPTOUT_PHRASES` are matched on folded text and the
+  default lists are wider (Polish stems such as "nie kontaktowa", "usunięcie mnie", "rezygnuj"; English variants).
+  Natural refusals that used to be stored as a plain `reply` now pause the sequence as a suspected opt-out.
+  Replies stay suspicions until a person decides.
+
+### Added
+
+- **Golden set of replies (outbound roadmap T4, slice S12).** Tests only: `tests/fixtures/reply_golden.json` (Polish and
+  English samples per intent class) and `tests/fake_toolbox.py` (a deterministic fake toolbox: keyword rules, respx
+  mock, drop-in client). `T4_REAL_TOOLBOX=1` runs the set against a real toolbox.
+- **Next steps per reply class (outbound roadmap T4, slice S11).** `ReplyIntentAction` per channel and class (migration
+  0014): `sequence` (`stop`, `pause`, `pause_until_return`), `notify`, `remind_after_days`, `needs_review`,
+  `min_confidence`, `auto_suppress`; admin API `GET reply-actions/`, `PUT/DELETE reply-actions/<intent>/`. Safe
+  defaults: unclassified replies behave exactly as before, `not_now` / `out_of_office` pause instead of stop,
+  `unclear` and `wrong_person` are flagged `needs_review`, nothing is suppressed without a person unless
+  `auto_suppress` is set for `unsubscribe`. `Reply` gains `needs_review`, `action_applied`, `resume_at`, `resumed_at`,
+  `remind_at`, `reminded_at`. New beat task `process_reply_followups` (hourly) and signal `reply_followup_due`; dev
+  endpoint `POST test/reply-followups/`. `GET replies/` takes `?needs_review=`.
+- **Reply intent classes (outbound roadmap T4, slice S10).** A human reply is classified by the AI toolbox into
+  `interested`, `not_now`, `not_interested`, `out_of_office`, `wrong_person`, `unsubscribe` or `unclear` with a
+  confidence (`reply_intent_service`; migration 0013 adds `Reply.intent`, `intent_confidence`, `intent_source`,
+  `intent_return_date`). Off until `COMMUNICATOR_REPLY_INTENT_MODEL` is set; with the toolbox off or failing nothing
+  changes (phrase detection, a person reads the reply). `unsubscribe` takes the existing suspected opt-out path
+  (sequence paused, no suppression before a human confirms). Below `COMMUNICATOR_REPLY_INTENT_MIN_CONFIDENCE` the class
+  is `unclear`. `GET replies/` shows the fields and takes `?intent=`. `inbound_service.ingest` is no longer atomic as
+  a whole: the toolbox call runs before the transaction of the writes.
+- **Autostart sequence (outbound roadmap F2).** `Sequence.autostart` (migration 0012, one per channel): the first
+  delivered message of an open thread without a sequence state starts the channel's `autostart` sequence, so
+  follow-ups no longer depend on a development-only endpoint. `POST sequences/` takes `autostart`; new
+  `PATCH sequences/<id>/` (`is_active`, `autostart`; a second autostart sequence answers 409).
+
 ## 0.4.1 — 2026-11-04
 
 ### Security

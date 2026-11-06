@@ -12,9 +12,18 @@ class Sequence(BaseModel):
     channel = models.ForeignKey("django_communicator.Channel", on_delete=models.CASCADE, related_name="sequences")
     key = models.SlugField(max_length=64)
     is_active = models.BooleanField(default=True)
+    autostart = models.BooleanField(
+        default=False,
+        help_text="Starts by itself after the first delivered message of a thread that has no sequence. One per channel.",
+    )
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["channel", "key"], name="communicator_sequence_key_unique")]
+        constraints = [
+            models.UniqueConstraint(fields=["channel", "key"], name="communicator_sequence_key_unique"),
+            models.UniqueConstraint(
+                fields=["channel"], condition=models.Q(autostart=True), name="communicator_sequence_one_autostart"
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.key

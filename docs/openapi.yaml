@@ -546,6 +546,19 @@ paths:
           type: string
         required: true
       - in: query
+        name: intent
+        schema:
+          type: string
+          enum:
+          - interested
+          - not_interested
+          - not_now
+          - out_of_office
+          - unclear
+          - unsubscribe
+          - wrong_person
+        description: Only replies of this intent.
+      - in: query
         name: kind
         schema:
           type: string
@@ -556,6 +569,11 @@ paths:
           - reply
           - suspected_optout
         description: Only replies of this kind.
+      - in: query
+        name: needs_review
+        schema:
+          type: boolean
+        description: Only replies flagged (true) or not flagged (false).
       - in: query
         name: page
         schema:
@@ -591,7 +609,8 @@ paths:
   /api/communicator/v2/admin/{channel_idx}/replies/{id}/confirm-optout/:
     post:
       operationId: api_communicator_v2_admin_replies_confirm_optout_create
-      description: Suppresses the thread recipient, stops the sequence and emits optout_confirmed; any other reply → 409.
+      description: Suppresses the thread recipient, stops the sequence and emits optout_confirmed;
+        any other reply → 409.
       summary: Confirm a suspected opt-out
       parameters:
       - in: path
@@ -628,8 +647,8 @@ paths:
   /api/communicator/v2/admin/{channel_idx}/replies/{id}/dismiss-optout/:
     post:
       operationId: api_communicator_v2_admin_replies_dismiss_optout_create
-      description: The reply becomes a plain reply (no notification); the sequence stays paused until resume-sequence; any
-        other → 409.
+      description: The reply becomes a plain reply (no notification); the sequence
+        stays paused until resume-sequence; any other → 409.
       summary: Dismiss a suspected opt-out
       parameters:
       - in: path
@@ -662,6 +681,116 @@ paths:
         '404':
           description: No response body
         '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/reply-actions/:
+    get:
+      operationId: communicator_reply_actions_list
+      summary: Next step per reply intent class (stored mapping or the safe default)
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Reply Actions
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplyActionListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/reply-actions/{intent}/:
+    put:
+      operationId: api_communicator_v2_admin_reply_actions_update
+      description: Replaces the whole mapping of the class. `pause_until_return` only
+        for `out_of_office`, `auto_suppress` only for `unsubscribe`. Applies to replies
+        that arrive afterwards.
+      summary: Set the next step for one intent class
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: intent
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Reply Actions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplyActionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ReplyActionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReplyActionRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplyActionResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    delete:
+      operationId: api_communicator_v2_admin_reply_actions_destroy
+      summary: Back to the default for one intent class
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: intent
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Reply Actions
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplyActionResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/review/:
     get:
@@ -1054,6 +1183,53 @@ paths:
       - jwtAuth: []
       responses:
         '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SequenceResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/sequences/{id}/:
+    patch:
+      operationId: api_communicator_v2_admin_sequences_partial_update
+      summary: Switch a sequence on or off, or make it the channel's autostart sequence
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator Sequences
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSequenceUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSequenceUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSequenceUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
           content:
             application/json:
               schema:
@@ -2916,6 +3092,29 @@ components:
           title: Sandbox Mailbox
       title: ChannelConfigRequest
       type: object
+    PatchedSequenceUpdateRequest:
+      additionalProperties: false
+      properties:
+        is_active:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: Schedules follow-ups.
+          examples:
+          - true
+          title: Is Active
+        autostart:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: Starts by itself after the first delivery. One per channel.
+          examples:
+          - true
+          title: Autostart
+      title: SequenceUpdateRequest
+      type: object
     PatchedTextUpdateRequest:
       additionalProperties: false
       properties:
@@ -3043,6 +3242,140 @@ components:
       - next_slot
       title: PolicyResponse
       type: object
+    ReplyActionListResponse:
+      properties:
+        results:
+          description: One entry per intent class.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/ReplyActionResponse'
+          title: Results
+          type: array
+      required:
+      - results
+      title: ReplyActionListResponse
+      type: object
+    ReplyActionRequest:
+      additionalProperties: false
+      description: The whole next-step mapping of one intent class; omitted fields
+        take the model defaults.
+      properties:
+        sequence:
+          $ref: '#/components/schemas/ReplySequenceAction'
+          default: stop
+          description: stop (as every reply did before T4), pause, or pause_until_return
+            (out_of_office only).
+          examples:
+          - pause
+        notify:
+          $ref: '#/components/schemas/NotifySeverity'
+          default: high
+          description: Alert severity for the sales admin; none = silent.
+          examples:
+          - medium
+        remind_after_days:
+          anyOf:
+          - maximum: 365
+            minimum: 1
+            type: integer
+          - type: 'null'
+          default: null
+          description: 'Alert a person to follow up this many days after the reply
+            (out of office: only when the reply gave no return date).'
+          examples:
+          - 30
+          title: Remind After Days
+        needs_review:
+          default: false
+          description: Flag the reply for a person to read.
+          examples:
+          - false
+          title: Needs Review
+          type: boolean
+        min_confidence:
+          anyOf:
+          - maximum: 1
+            minimum: 0
+            type: number
+          - type: 'null'
+          default: null
+          description: Below this confidence the class becomes unclear; null = COMMUNICATOR_REPLY_INTENT_MIN_CONFIDENCE.
+          examples:
+          - 0.8
+          title: Min Confidence
+        auto_suppress:
+          default: false
+          description: 'unsubscribe only: confirm the opt-out (suppression) without
+            a person, like confirm-optout.'
+          examples:
+          - false
+          title: Auto Suppress
+          type: boolean
+      title: ReplyActionRequest
+      type: object
+    ReplyActionResponse:
+      properties:
+        intent:
+          $ref: '#/components/schemas/ReplyIntent'
+          description: The intent class.
+          examples:
+          - not_now
+        sequence:
+          $ref: '#/components/schemas/ReplySequenceAction'
+          description: What happens to the sequence.
+          examples:
+          - pause
+        notify:
+          $ref: '#/components/schemas/NotifySeverity'
+          description: Alert severity (none = silent).
+          examples:
+          - medium
+        remind_after_days:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Reminder after this many days.
+          examples:
+          - 30
+          title: Remind After Days
+        needs_review:
+          description: Flag for a person to read.
+          examples:
+          - false
+          title: Needs Review
+          type: boolean
+        min_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Own threshold; null = module setting.
+          examples:
+          - null
+          title: Min Confidence
+        auto_suppress:
+          description: Confirm an opt-out without a person (unsubscribe only).
+          examples:
+          - false
+          title: Auto Suppress
+          type: boolean
+        is_default:
+          description: 'No row: the code default applies.'
+          examples:
+          - true
+          title: Is Default
+          type: boolean
+      required:
+      - intent
+      - sequence
+      - notify
+      - remind_after_days
+      - needs_review
+      - min_confidence
+      - auto_suppress
+      - is_default
+      title: ReplyActionResponse
+      type: object
     ReplyListResponse:
       properties:
         count:
@@ -3156,6 +3489,88 @@ components:
           examples:
           - null
           title: Optout Confirmed At
+        intent:
+          description: interested, not_now, not_interested, out_of_office, wrong_person,
+            unsubscribe or unclear; empty when the reply was not classified (toolbox
+            off or failed, auto reply, bounce).
+          examples:
+          - interested
+          title: Intent
+          type: string
+        intent_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Classifier confidence 0..1.
+          examples:
+          - 0.92
+          title: Intent Confidence
+        intent_source:
+          description: '`toolbox` when classified, else empty.'
+          examples:
+          - toolbox
+          title: Intent Source
+          type: string
+        intent_return_date:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          description: 'Out of office: the day they are back.'
+          examples:
+          - null
+          title: Intent Return Date
+        needs_review:
+          description: A person must read and decide (class unclear, or the mapping
+            says so).
+          examples:
+          - false
+          title: Needs Review
+          type: boolean
+        action_applied:
+          additionalProperties: true
+          description: The next-step plan applied to this reply (empty for bounces
+            and auto replies).
+          examples:
+          - {}
+          title: Action Applied
+          type: object
+        resume_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: 'Out of office: the paused sequence resumes then.'
+          examples:
+          - null
+          title: Resume At
+        resumed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: When it resumed.
+          examples:
+          - null
+          title: Resumed At
+        remind_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: A reminder alert is due then.
+          examples:
+          - null
+          title: Remind At
+        reminded_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: When the reminder was sent.
+          examples:
+          - null
+          title: Reminded At
       required:
       - id
       - thread_id
@@ -3168,6 +3583,16 @@ components:
       - inbound_message_id
       - received_at
       - optout_confirmed_at
+      - intent
+      - intent_confidence
+      - intent_source
+      - intent_return_date
+      - needs_review
+      - action_applied
+      - resume_at
+      - resumed_at
+      - remind_at
+      - reminded_at
       title: ReplyResponse
       type: object
     RewriteRequest:
@@ -3218,6 +3643,13 @@ components:
           - true
           title: Is Active
           type: boolean
+        autostart:
+          default: false
+          description: Starts by itself after the first delivered message of a thread without a sequence. One per channel.
+          examples:
+          - true
+          title: Autostart
+          type: boolean
         steps:
           description: Steps with unique numbers.
           examples:
@@ -3252,6 +3684,12 @@ components:
           - true
           title: Is Active
           type: boolean
+        autostart:
+          description: Starts by itself after the first delivery.
+          examples:
+          - true
+          title: Autostart
+          type: boolean
         steps:
           description: Steps by number.
           examples:
@@ -3264,6 +3702,7 @@ components:
       - id
       - key
       - is_active
+      - autostart
       - steps
       title: SequenceResponse
       type: object
