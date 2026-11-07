@@ -3,11 +3,13 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Response schemas of the communicator admin API v2."""
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import Any
 
 from django_utils.toolbox import ModelInfo
 from pydantic import BaseModel, ConfigDict, Field
+
+from django_communicator.enums import NotifySeverity, ReplyIntent, ReplySequenceAction
 
 
 class ThreadResponse(BaseModel):
@@ -19,6 +21,7 @@ class ThreadResponse(BaseModel):
     recipient_name: str = Field(description="Recipient name.", examples=["Jan Kowalski"])
     recipient_language: str | None = Field(description="ISO 639-1 code.", examples=["pl"])
     status: str = Field(description="open, replied or closed.", examples=["open"])
+    sender_route: str = Field(description="Sender route key set by the caller; empty = channel default.", examples=[""])
 
     @classmethod
     def of(cls, thread) -> "ThreadResponse":
@@ -73,7 +76,9 @@ class MessageResponse(BaseModel):
     send_attempts: int = Field(description="SMTP deliveries tried.", examples=[0])
     replied_at: datetime | None = Field(description="A header-matched reply answered it.", examples=[None])
     failure_code: str = Field(
-        description="no_template, render, budget, schema, model, upstream or smtp.", examples=[""]
+        description="no_template, render, budget, schema, model, upstream, smtp, bounce, send_outcome_unknown, "
+        "legal_footer or sender_route.",
+        examples=[""],
     )
     failure_detail: str = Field(description="Error class and codes — never the prompt.", examples=[""])
     created_at: datetime = Field(description="Created.", examples=["2026-09-13T12:00:00Z"])
@@ -194,6 +199,16 @@ class OutboxListResponse(BaseModel):
     results: list[OutboxMessageResponse] = Field(description="Oldest first.", examples=[[]])
 
 
+class MailboxCapResponse(BaseModel):
+    route: str = Field(description="Sender route key.", examples=["ecomhouse"])
+    from_email: str = Field(description="Mailbox.", examples=["wiktorw@ecom.house"])
+    cap_today: int | None = Field(
+        description="Deliveries allowed today (warm-up applied); null = no cap.", examples=[5]
+    )
+    sent_today: int = Field(description="Deliveries counted today from this mailbox.", examples=[0])
+    warmup: bool = Field(description="A warm-up schedule is set.", examples=[True])
+
+
 class WindowResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -213,6 +228,9 @@ class PolicyResponse(BaseModel):
     country: str = Field(description="Holiday country.", examples=["PL"])
     sent_today: int = Field(description="Deliveries counted today on the channel clock.", examples=[0])
     next_slot: datetime | None = Field(description="Next open moment from the channel clock.", examples=[None])
+    mailboxes: list[MailboxCapResponse] = Field(
+        description="Per-mailbox cap of each active route today.", examples=[[]]
+    )
 
 
 class SequenceStepResponse(BaseModel):
@@ -230,12 +248,15 @@ class SequenceResponse(BaseModel):
     id: int = Field(description="Sequence id.", examples=[1])
     key: str = Field(description="Slug.", examples=["followup"])
     is_active: bool = Field(description="Schedules follow-ups.", examples=[True])
+    autostart: bool = Field(description="Starts by itself after the first delivery.", examples=[True])
     steps: list[SequenceStepResponse] = Field(description="Steps by number.", examples=[[]])
 
     @classmethod
     def of(cls, sequence) -> "SequenceResponse":
         steps = [SequenceStepResponse.model_validate(step) for step in sequence.steps.all()]
-        return cls(id=sequence.pk, key=sequence.key, is_active=sequence.is_active, steps=steps)
+        return cls(
+            id=sequence.pk, key=sequence.key, is_active=sequence.is_active, autostart=sequence.autostart, steps=steps
+        )
 
 
 class SequenceListResponse(BaseModel):
@@ -266,6 +287,9 @@ class ChannelConfigResponse(BaseModel):
     mode: str = Field(description="dry_run, sandbox or live.", examples=["sandbox"])
     sandbox_mailbox: str = Field(description="Sandbox recipient.", examples=["sandbox@mail.test"])
     live_enabled: bool = Field(description="Live mode allowed.", examples=[False])
+    default_sender_route: str = Field(
+        description="Sender route key used when a thread has none.", examples=["ecomhouse"]
+    )
     timezone: str = Field(description="Timezone.", examples=["Europe/Warsaw"])
     country: str = Field(description="Holiday country.", examples=["PL"])
 
@@ -323,12 +347,28 @@ class ThreadWaitingResponse(BaseModel):
     next_slot: datetime | None = Field(description="Earliest send slot the policy allows.", examples=[None])
 
 
+class RowReplyIntentResponse(BaseModel):
+    reply_id: int = Field(description="The classified reply the class comes from (the newest one).", examples=[5])
+    intent: str = Field(
+        description="interested, not_now, not_interested, out_of_office, wrong_person, unsubscribe or unclear.",
+        examples=["interested"],
+    )
+    intent_confidence: float | None = Field(description="Classifier confidence 0..1.", examples=[0.92])
+    intent_return_date: date | None = Field(description="Out of office: the day they are back.", examples=[None])
+    needs_review: bool = Field(description="A person must read and decide.", examples=[False])
+
+
 class ThreadRowResponse(ThreadSummaryResponse):
     activity_at: datetime = Field(description="Latest mail, draft or reply (`sort=activity`), else last mail.")
     subject: str = Field(description="Subject of the first outbound mail, else of the first reply.", examples=["Hi"])
     last_text: str = Field(description="Body of the latest mail, draft or reply (first 300 characters).", examples=[""])
     draft: ThreadDraftResponse | None = Field(description="The newest draft waiting for review.", examples=[None])
     waiting: ThreadWaitingResponse | None = Field(description="The first mail waiting to be sent.", examples=[None])
+    reply_intent: RowReplyIntentResponse | None = Field(
+        default=None,
+        description="Class of the newest classified reply (any thread of a conversation); null when none.",
+        examples=[None],
+    )
 
     @classmethod
     def of(cls, row: dict) -> "ThreadRowResponse":
@@ -396,6 +436,14 @@ class TimelineEntryResponse(BaseModel):
         description="reply, auto, suspected_optout, bounce_hard or bounce_soft; empty for a message.",
         examples=["reply"],
     )
+    intent: str = Field(
+        default="", description="Intent class of a reply; empty for a message or an unclassified reply.", examples=[""]
+    )
+    intent_confidence: float | None = Field(default=None, description="Classifier confidence 0..1.", examples=[None])
+    intent_return_date: date | None = Field(
+        default=None, description="Out of office: the day they are back.", examples=[None]
+    )
+    needs_review: bool = Field(default=False, description="A person must read and decide.", examples=[False])
 
 
 class ThreadDetailResponse(ThreadSummaryResponse):
@@ -417,6 +465,24 @@ class ReplyResponse(BaseModel):
     inbound_message_id: str = Field(description="Message-ID of the inbound mail.", examples=["<a@shop.test>"])
     received_at: datetime = Field(description="Ingested.", examples=["2026-09-14T10:15:00Z"])
     optout_confirmed_at: datetime | None = Field(description="Opt-out confirmed by a human.", examples=[None])
+    intent: str = Field(
+        description="interested, not_now, not_interested, out_of_office, wrong_person, unsubscribe or unclear; "
+        "empty when the reply was not classified (toolbox off or failed, auto reply, bounce).",
+        examples=["interested"],
+    )
+    intent_confidence: float | None = Field(description="Classifier confidence 0..1.", examples=[0.92])
+    intent_source: str = Field(description="`toolbox` when classified, else empty.", examples=["toolbox"])
+    intent_return_date: date | None = Field(description="Out of office: the day they are back.", examples=[None])
+    needs_review: bool = Field(
+        description="A person must read and decide (class unclear, or the mapping says so).", examples=[False]
+    )
+    action_applied: dict = Field(
+        description="The next-step plan applied to this reply (empty for bounces and auto replies).", examples=[{}]
+    )
+    resume_at: datetime | None = Field(description="Out of office: the paused sequence resumes then.", examples=[None])
+    resumed_at: datetime | None = Field(description="When it resumed.", examples=[None])
+    remind_at: datetime | None = Field(description="A reminder alert is due then.", examples=[None])
+    reminded_at: datetime | None = Field(description="When the reminder was sent.", examples=[None])
 
 
 class ReplyListResponse(BaseModel):
@@ -472,3 +538,222 @@ class PollNowResponse(BaseModel):
     ingested: int = Field(description="Mail that produced or matched a reply.", examples=[1])
     skipped: int = Field(description="Mail dropped (unmatched, own, expunged).", examples=[0])
     quarantined: int = Field(description="Mail recorded in the quarantine (oversized, unreadable).", examples=[0])
+
+
+class ReplyActionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    intent: ReplyIntent = Field(description="The intent class.", examples=["not_now"])
+    sequence: ReplySequenceAction = Field(description="What happens to the sequence.", examples=["pause"])
+    notify: NotifySeverity = Field(description="Alert severity (none = silent).", examples=["medium"])
+    remind_after_days: int | None = Field(description="Reminder after this many days.", examples=[30])
+    needs_review: bool = Field(description="Flag for a person to read.", examples=[False])
+    min_confidence: float | None = Field(description="Own threshold; null = module setting.", examples=[None])
+    auto_suppress: bool = Field(description="Confirm an opt-out without a person (unsubscribe only).", examples=[False])
+    is_default: bool = Field(description="No row: the code default applies.", examples=[True])
+
+
+class ReplyActionListResponse(BaseModel):
+    results: list[ReplyActionResponse] = Field(description="One entry per intent class.", examples=[[]])
+
+
+class ReplyFollowupsResponse(BaseModel):
+    resumed: int = Field(description="Sequences resumed after a return date.", examples=[1])
+    reminded: int = Field(description="Reminders sent.", examples=[1])
+
+
+class SenderRouteResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str = Field(description="Route key.", examples=["ecomhouse"])
+    name: str = Field(description="Display name in the From header.", examples=["Wiktor W."])
+    from_email: str = Field(description="Mailbox the mail leaves from.", examples=["wiktorw@ecom.house"])
+    cc_email: str = Field(description="Copy (CC) mailbox; empty = none.", examples=["wiktorw@entirius.com"])
+    is_active: bool = Field(description="Usable.", examples=[True])
+    is_default: bool = Field(description="The channel default route.", examples=[False])
+    daily_cap: int | None = Field(description="Most deliveries per day from this From.", examples=[40])
+    warmup_start_cap: int | None = Field(description="Warm-up first-day cap; null = no warm-up.", examples=[5])
+    warmup_step: int = Field(description="Warm-up cap added per day.", examples=[2])
+    warmup_started_on: date | None = Field(description="Warm-up day one.", examples=[None])
+    cap_today: int | None = Field(description="Cap in force today; null = none.", examples=[5])
+    sent_today: int = Field(description="Deliveries from this mailbox today.", examples=[0])
+    paused: bool = Field(description="No mail leaves by this route until a manual resume (Q15).", examples=[False])
+    paused_at: datetime | None = Field(description="When it was paused.", examples=[None])
+    pause_reason: str = Field(description="Why: measured rates or the reason given by a person.", examples=[""])
+    transport: str = Field(description="smtp or gmail_api.", examples=["smtp"])
+    mail_account_id: int | None = Field(description="Mail account of a gmail_api route.", examples=[None])
+    mail_account_state: str | None = Field(
+        description="State of that account (a gmail_api route sends only while it is `connected`).", examples=[None]
+    )
+
+
+class SenderRouteListResponse(BaseModel):
+    results: list[SenderRouteResponse] = Field(description="Routes of the channel.", examples=[[]])
+
+
+class ApprovalRowResponse(BaseModel):
+    id: int = Field(description="Message id.", examples=[11])
+    channel: str = Field(description="Channel idx.", examples=["default-europe"])
+    thread_id: int = Field(description="Thread id.", examples=[3])
+    sender_route: str = Field(description="Effective route key; empty = none.", examples=["ecomhouse"])
+    sender_from: str = Field(description="Mailbox the mail will leave from; empty = the channel's own.", examples=[""])
+    sender_cc: str = Field(description="Copy mailbox.", examples=[""])
+    company: str = Field(
+        description="`company_name` of the caller's context, else the recipient name.", examples=["Shop"]
+    )
+    subject_ref: str = Field(description="Opaque reference of the caller.", examples=["leads.Company:42"])
+    recipient_email: str = Field(description="Recipient.", examples=["jan@shop.test"])
+    template_key: str = Field(description="Template key; empty without a template.", examples=["lead.cold.shop"])
+    template_version: int | None = Field(description="Template version number.", examples=[2])
+    subject: str = Field(description="Subject.", examples=["Quick question"])
+    body_preview: str = Field(description="First 300 characters of the body.", examples=["Hello"])
+    version: int = Field(description="Version in the rewrite chain.", examples=[1])
+    created_at: datetime = Field(description="Created.", examples=["2026-09-13T12:00:00Z"])
+    age_hours: float = Field(description="Hours waiting.", examples=[3.5])
+    blocker: str = Field(
+        description="Why approving would be refused (legal footer, route); empty = can approve.", examples=[""]
+    )
+
+
+class ApprovalCountsResponse(BaseModel):
+    total: int = Field(description="Drafts matching the filters.", examples=[12])
+    by_channel: dict[str, int] = Field(description="Per channel idx.", examples=[{}])
+    by_route: dict[str, int] = Field(description="Per effective route key; empty key = none.", examples=[{}])
+
+
+class ApprovalListResponse(BaseModel):
+    count: int = Field(description="Total matching drafts.", examples=[1])
+    next: str | None = Field(description="Next page URL.", examples=[None])
+    previous: str | None = Field(description="Previous page URL.", examples=[None])
+    counts: ApprovalCountsResponse = Field(description="Totals for the filter chips (whole filtered set).")
+    results: list[ApprovalRowResponse] = Field(description="Oldest first.", examples=[[]])
+
+
+class BulkApprovalResponse(BaseModel):
+    id: int = Field(description="Log entry id.", examples=[1])
+    action: str = Field(description="approve or reject.", examples=["approve"])
+    done: list[int] = Field(description="Message ids changed.", examples=[[1, 2]])
+    failed: dict[str, str] = Field(description="Message id → why it was not changed.", examples=[{}])
+
+
+class BulkApprovalLogResponse(BaseModel):
+    id: int = Field(description="Log entry id.", examples=[1])
+    user_id: int | None = Field(description="Who.", examples=[1])
+    action: str = Field(description="approve or reject.", examples=["approve"])
+    reason: str = Field(description="Reject reason.", examples=[""])
+    requested: int = Field(description="Ids in the request.", examples=[3])
+    done_ids: list[int] = Field(description="Message ids changed.", examples=[[1, 2]])
+    failed: dict[str, str] = Field(description="Message id → why it was not changed.", examples=[{}])
+    created_at: datetime = Field(description="When.", examples=["2026-09-13T12:00:00Z"])
+
+
+class BulkApprovalLogListResponse(BaseModel):
+    count: int = Field(description="Total entries.", examples=[1])
+    next: str | None = Field(description="Next page URL.", examples=[None])
+    previous: str | None = Field(description="Previous page URL.", examples=[None])
+    results: list[BulkApprovalLogResponse] = Field(description="Newest first.", examples=[[]])
+
+
+class HealthMetricsResponse(BaseModel):
+    sent: int = Field(description="Mails sent in the window.", examples=[120])
+    delivered: int = Field(description="Sent minus hard bounces.", examples=[117])
+    hard_bounces: int = Field(description="Permanent bounces (DSN 5.x.x).", examples=[3])
+    soft_bounces: int = Field(description="Temporary bounces (DSN 4.x.x) of mails that were retried.", examples=[1])
+    optouts: int = Field(description="Confirmed opt-outs and unsubscribe-link clicks.", examples=[2])
+    complaints: int = Field(description="Spam complaints (ARF); 0 while the feedback loop is off.", examples=[0])
+    replies: int = Field(description="Human replies.", examples=[9])
+    hard_bounce_rate_pct: float | None = Field(
+        description="Percent of sent; null when nothing was sent.", examples=[2.5]
+    )
+    soft_bounce_rate_pct: float | None = Field(description="Percent of sent.", examples=[0.83])
+    optout_rate_pct: float | None = Field(description="Percent of sent.", examples=[1.67])
+    complaint_rate_pct: float | None = Field(description="Percent of sent.", examples=[0.0])
+    reply_rate_pct: float | None = Field(description="Percent of sent.", examples=[7.5])
+
+
+class HealthWindowsResponse(BaseModel):
+    windows: dict[str, HealthMetricsResponse] = Field(description="Keys `24h` and `7d`.", examples=[{}])
+
+
+class HealthRouteResponse(HealthWindowsResponse):
+    route_key: str = Field(description="Route key; empty = mail without any route.", examples=["ecomhouse"])
+    from_email: str = Field(description="From mailbox; empty for the no-route row.", examples=["wiktorw@ecom.house"])
+    is_active: bool | None = Field(description="Null for the no-route row.", examples=[True])
+    paused: bool = Field(description="Paused (automatically or by a person).", examples=[False])
+    paused_at: datetime | None = Field(description="When it was paused.", examples=[None])
+    pause_reason: str = Field(description="Why.", examples=[""])
+
+
+class HealthPolicyResponse(BaseModel):
+    enabled: bool = Field(description="Auto-pause on; off by default.", examples=[False])
+    window_hours: int = Field(description="Window the thresholds are judged over.", examples=[168])
+    min_sample: int = Field(
+        description="Mails that must be sent in the window before any threshold counts.", examples=[50]
+    )
+    max_bounce_pct: float = Field(description="Hard bounces, percent of sent.", examples=[2.0])
+    max_optout_pct: float = Field(description="Opt-outs, percent of sent.", examples=[3.0])
+    max_complaint_pct: float = Field(description="Complaints, percent of sent.", examples=[0.1])
+
+
+class HealthResponse(BaseModel):
+    channel: HealthWindowsResponse = Field(description="All routes of the channel together.")
+    routes: list[HealthRouteResponse] = Field(description="One row per route, ordered by key.", examples=[[]])
+    policy: HealthPolicyResponse = Field(description="The auto-pause thresholds.")
+
+
+class PauseLogRowResponse(BaseModel):
+    id: int = Field(description="Log id.", examples=[1])
+    route_key: str = Field(description="Route key.", examples=["ecomhouse"])
+    action: str = Field(description="pause or resume.", examples=["pause"])
+    trigger: str = Field(description="bounce, optout, complaint or manual.", examples=["bounce"])
+    reason: str = Field(description="Measured rates or the person's reason.", examples=["hard bounces 3.0% ..."])
+    metrics: dict[str, Any] = Field(description="Window counts at that moment.", examples=[{}])
+    user: str | None = Field(description="Username of the person; null for the automatic pause.", examples=[None])
+    created_at: datetime = Field(description="When.")
+
+
+class PauseLogResponse(BaseModel):
+    results: list[PauseLogRowResponse] = Field(description="Newest first, at most 100.", examples=[[]])
+
+
+class MailAccountResponse(BaseModel):
+    id: int = Field(description="Mail account id.", examples=[1])
+    email: str = Field(description="The mailbox.", examples=["wiktorw@ecom.house"])
+    provider: str = Field(description="gmail.", examples=["gmail"])
+    state: str = Field(description="not_connected, connected, needs_reauth or error.", examples=["connected"])
+    inbound_enabled: bool = Field(description="Replies are read from this inbox.", examples=[False])
+    scopes: list[str] = Field(description="Scopes Google granted (no tokens are ever returned).", examples=[[]])
+    can_send: bool = Field(description="Connected with the send scope.", examples=[True])
+    can_receive: bool = Field(description="Connected with the read scope and `inbound_enabled`.", examples=[False])
+    connected_at: datetime | None = Field(description="When the account was connected.", examples=[None])
+    last_ok_at: datetime | None = Field(description="Last successful call to Google.", examples=[None])
+    last_error: str = Field(description="Short code of the last problem; never a token.", examples=[""])
+    last_error_at: datetime | None = Field(description="When it happened.", examples=[None])
+    last_polled_at: datetime | None = Field(description="Last inbox read.", examples=[None])
+    routes: list[str] = Field(
+        description="Keys of the routes that send through this account.", examples=[["ecomhouse"]]
+    )
+
+
+class MailAccountListResponse(BaseModel):
+    results: list[MailAccountResponse] = Field(description="Mail accounts of the channel.", examples=[[]])
+
+
+class MailAccountConnectResponse(BaseModel):
+    authorization_url: str = Field(
+        description="Open this Google consent page in a browser.",
+        examples=["https://accounts.google.com/o/oauth2/v2/auth?..."],
+    )
+    expires_in: int = Field(description="Seconds the sign-in link stays valid.", examples=[600])
+
+
+class MailAccountTestResponse(BaseModel):
+    ok: bool = Field(description="The connection works.", examples=[True])
+    checks: list[str] = Field(description="What passed: token, profile.", examples=[["token"]])
+    error: str = Field(description="Short code of the failure; empty when ok.", examples=[""])
+    account: MailAccountResponse = Field(description="The account after the test (its state may have changed).")
+
+
+class MailAccountTestSendResponse(BaseModel):
+    ok: bool = Field(description="The test double accepted the message.", examples=[True])
+    message_id: str = Field(description="Id the test double gave the message.", examples=["m1"])

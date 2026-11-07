@@ -21,8 +21,10 @@ from django_communicator.tasks.send_due import assert_once_backend_configured
     max_retries=3,
 )
 def poll_inbox() -> dict[str, int]:
-    """Beat every 5 minutes: ingest new mail of every active mailbox; returns `{ingested, skipped}`."""
-    from django_communicator.services import poll_service
+    """Beat every 5 minutes: ingest new mail of every active IMAP mailbox and Gmail account; returns the counts."""
+    from django_communicator.services import gmail_inbound_service, poll_service
 
     assert_once_backend_configured()
-    return dict(poll_service.poll_all())
+    counts = gmail_inbound_service.poll_all()  # first: an IMAP failure below must not hold back the Gmail accounts
+    counts.update(poll_service.poll_all())
+    return dict(counts)

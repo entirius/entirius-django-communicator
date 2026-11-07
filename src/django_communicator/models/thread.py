@@ -19,6 +19,9 @@ class Thread(BaseModel):
         "django_regional.Language", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
     status = models.CharField(max_length=16, choices=ThreadStatus.choices, default=ThreadStatus.OPEN)
+    sender_route = models.CharField(
+        max_length=64, blank=True, default="", help_text="SenderRoute key set by the caller; blank = channel default."
+    )
     last_message_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:

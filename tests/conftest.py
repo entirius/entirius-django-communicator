@@ -133,3 +133,27 @@ def approved_message(
         subject_ref=subject_ref,
         requires_review=False,
     )
+
+
+GMAIL_CALLBACK = "/api/communicator/v2/public/gmail/callback/"
+
+
+@pytest.fixture
+def gmail(monkeypatch):
+    """The local Gmail / OAuth stub (tests/gmail_stub.py) with the communicator pointed at it. Nothing reaches Google:
+    without this fixture the settings name hosts that do not resolve."""
+    from django_communicator import settings as s
+    from tests.gmail_stub import running_stub
+
+    with running_stub() as stub:
+        for name, value in {
+            "COMMUNICATOR_GMAIL_API_BASE": stub.url,
+            "COMMUNICATOR_GMAIL_AUTH_URL": stub.url + "/auth",
+            "COMMUNICATOR_GMAIL_TOKEN_URL": stub.url + "/token",
+            "COMMUNICATOR_GMAIL_REVOKE_URL": stub.url + "/revoke",
+            "COMMUNICATOR_GMAIL_CLIENT_ID": "test-client-id",
+            "COMMUNICATOR_GMAIL_CLIENT_SECRET": "test-client-secret",
+            "COMMUNICATOR_GMAIL_REDIRECT_URI": "http://testserver" + GMAIL_CALLBACK,
+        }.items():
+            monkeypatch.setattr(s, name, value)
+        yield stub

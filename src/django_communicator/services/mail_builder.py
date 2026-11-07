@@ -8,7 +8,8 @@ The SMTP connection is the channel's one from django_email; this module never re
 """
 
 import secrets
-from email.utils import parseaddr
+from email.headerregistry import BaseHeader, HeaderRegistry
+from email.utils import formataddr, parseaddr
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
@@ -18,29 +19,65 @@ from django_email.domain import EmailDomain
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import ChannelMode, MessageStatus
 from django_communicator.models import Channel, Message, MessageTemplateVersion
-from django_communicator.services import footer_service
+from django_communicator.services import footer_service, sender_route_service, unsubscribe_service
 
 FOOTER_SEPARATOR = "\n\n-- \n"
+
+
+class _UnfoldedHeader(BaseHeader):
+    """A header written as one line. Python's SMTP policy turns a header with a word longer than 78 characters (our
+    signed unsubscribe URL) into RFC 2047 encoded words, which no mail client reads as a `List-Unsubscribe` URL."""
+
+    max_count = None
+
+    @classmethod
+    def parse(cls, value, kwds):
+        kwds["decoded"] = str(value)
+        kwds["parse_tree"] = None
+
+    def fold(self, *, policy):
+        return f"{self.name}: {self}{policy.linesep}"
+
+
+class _UnsubscribeMail(EmailMultiAlternatives):
+    def message(self, *args, **kwargs):
+        message = super().message(*args, **kwargs)
+        value = message["List-Unsubscribe"]
+        if value is not None:
+            registry = HeaderRegistry()
+            registry.map_to_type("list-unsubscribe", _UnfoldedHeader)
+            policy = message.policy
+            del message["List-Unsubscribe"]
+            message.policy = policy.clone(header_factory=registry)
+            message["List-Unsubscribe"] = str(value)
+            message.policy = policy
+        return message
 
 
 class SmtpNotConfiguredError(Exception):
     """No `EMAIL_SMTP_CONFIGURATION_CHANNELS` entry for the channel — nothing is sent."""
 
 
-def build(message: Message) -> EmailMultiAlternatives:
-    """Also fills `message.footer_html` (unsaved) — the delivery stores it with the sent status."""
+def build(message: Message, *, smtp: bool = True) -> EmailMultiAlternatives:
+    """Also fills `message.footer_html` (unsaved) — the delivery stores it with the sent status.
+
+    `smtp=False` (a route that sends through the Gmail API) builds the same message without the channel's SMTP
+    connection, which then need not exist."""
     channel = message.thread.channel
-    connection = EmailDomain(channel_idx=channel.idx).get_channel_smtp_connection_if_exists()
-    if connection is None:
+    connection = EmailDomain(channel_idx=channel.idx).get_channel_smtp_connection_if_exists() if smtp else None
+    if smtp and connection is None:
         raise SmtpNotConfiguredError(f"no SMTP configuration for channel {channel.idx}")
-    sender = from_email(channel)
+    route = sender_route_service.route_for(message)
+    sender = formataddr((route.name, route.from_email)) if route else from_email(channel)
     to, subject, headers = _addressing(message, channel)
+    cc = _copy(route, channel, headers)
+    headers.update(unsubscribe_service.headers_for(channel.idx, message.thread.recipient_email))
     headers.update(_threading_headers(message))
     headers["Message-ID"] = message.message_id or (  # a soft-bounce retry keeps the Message-ID it was sent with
         f"<communicator-{message.pk}-{secrets.token_hex(4)}@{parseaddr(sender)[1].rpartition('@')[2]}>"
     )
     message.footer_html = message.footer_html or footer_html(message)
-    mail = EmailMultiAlternatives(subject, _text(message), sender, to, headers=headers, connection=connection)
+    mail = _UnsubscribeMail(subject, _text(message), sender, to, cc=cc, headers=headers, connection=connection)
     mail.attach_alternative(_html(message), "text/html")
     return mail
 
@@ -56,6 +93,16 @@ def _addressing(message: Message, channel: Channel) -> tuple[list[str], str, dic
         return [recipient], message.subject, {}
     subject = communicator_settings.COMMUNICATOR_SANDBOX_SUBJECT_PREFIX + message.subject
     return [channel.sandbox_mailbox], subject, {"X-Original-To": recipient}
+
+
+def _copy(route, channel: Channel, headers: dict[str, str]) -> list[str]:
+    """The route's DW mailbox as CC; a sandbox keeps it out of the real mailbox (header only)."""
+    if route is None or not route.cc_email:
+        return []
+    if channel.mode == ChannelMode.SANDBOX:
+        headers["X-Original-Cc"] = route.cc_email
+        return []
+    return [route.cc_email]
 
 
 def _threading_headers(message: Message) -> dict[str, str]:
@@ -94,12 +141,21 @@ def _text(message: Message) -> str:
         footer = footer_service.to_text(message.footer_html)
     else:
         footer = message.legal_footer.strip()
+    link = unsubscribe_service.url_for(message.thread.channel.idx, message.thread.recipient_email)
+    if link:
+        footer = (footer + "\n\n" if footer else "") + f"{_unsubscribe_label(message)}: {link}"
     return message.body_text + (FOOTER_SEPARATOR + footer if footer else "")
 
 
 def _html(message: Message) -> str:
     body = message.body_html or footer_service.paragraphs(message.body_text)
+    link = unsubscribe_service.url_for(message.thread.channel.idx, message.thread.recipient_email)
+    unsubscribe = f'<p><a href="{escape(link)}">{escape(_unsubscribe_label(message))}</a></p>' if link else ""
     if message.footer_html:
-        return body + message.footer_html
+        return body + message.footer_html + unsubscribe
     footer = message.legal_footer.strip()
-    return body + (f"<p>{escape(footer)}</p>" if footer else "")
+    return body + (f"<p>{escape(footer)}</p>" if footer else "") + unsubscribe
+
+
+def _unsubscribe_label(message: Message) -> str:
+    return "Wypisz się z listy" if _body_language(message).lower() == "pl" else "Unsubscribe"

@@ -12,6 +12,7 @@ Install-time facts (prerequisites, settings, beat schedule, bootstrap order) are
 | `django_communicator.send_due` | `*/5` min | `communicator_send` | the only send path; `QueueOnce`, graceful |
 | `django_communicator.schedule_follow_ups` | hourly | `communicator_default` | creates due sequence follow-ups; `QueueOnce`, graceful |
 | `django_communicator.poll_inbox` | `*/5` min | `communicator_inbound` | IMAP poll of every active mailbox; `QueueOnce`, graceful, retried ×3 on IMAP / socket errors |
+| `django_communicator.process_reply_followups` | hourly | `communicator_default` | resumes sequences paused until a return date and sends due reminder alerts (T4); `QueueOnce`, graceful |
 | `django_communicator.retry_failed_drafts` | `*/10` min | `communicator_default` | retries AI drafts that failed transiently (toolbox down, timeout, 5xx) once `status()` is `configured` — never while it is `disabled`, `unconfigured` or `unreachable`; `QueueOnce`, graceful |
 | `django_communicator.record_objection` | — | `communicator_default` | retry of a confirmed opt-out's agreements objection (×5, backoff) |
 
@@ -87,6 +88,67 @@ resets today's count — the cap can be exceeded once on that day.
 The poll never deletes or flags mail; it moves a UID cursor. A changed host, user, folder or
 UIDVALIDITY resets the cursor to 0, and per-channel dedup by Message-ID skips already known mail.
 Rotating `SECRET_KEY` empties the stored password — set it again.
+
+## Sender routes and four mailboxes (Q3, Q8)
+
+A route (`routes/`) = From mailbox + the same person's mailbox on the other domain in CC; a thread carries only the
+route key (caller sets it, blank = channel default route, none = the channel's own From). Needed outside the module:
+the channel's SMTP account must be allowed to send as each From address (send-as alias or per-address permission at the
+mail provider); SPF, DKIM and DMARC must cover both domains.
+
+Replies from all four mailboxes into one thread need no new code: a reply is matched by our Message-ID in
+`In-Reply-To` / `References`, not by mailbox, and our own CC copy is dropped (its Message-ID is ours). The channel has one
+IMAP mailbox (`mailbox/`), so make the other three mailboxes deliver into the polled one (forward / "also deliver to" /
+a shared collector or group at the mail provider). The same reply arriving twice (To and CC) is stored once.
+
+Per-mailbox cap and warm-up live on the route: `daily_cap` limits one From address per day (routes with one From share
+it; the channel `daily_cap` still applies on top). `warmup_start_cap` + `warmup_step` raise the cap each calendar day from
+`warmup_started_on` up to `daily_cap` (weekends count). Off by default; `GET policy/` lists `mailboxes` with the cap of today.
+
+## Sending health, auto-pause and the feedback loop (Q15, Q30)
+
+`health/` counts per route and channel over 24 h and 7 d. Hard bounces come from DSNs, opt-outs from confirmed opt-outs and
+unsubscribe-link clicks (attributed to the route of the address's newest sent mail), complaints from ARF reports, soft
+bounces from DSNs of mails that wait for a retry. `delivered` = sent minus hard bounces. Mail of a thread without a key
+counts for the channel default route; with neither it shows under the empty key and is never paused.
+
+The auto-pause is off until `PUT health/policy/` sets `enabled`. Each `send_due` run first judges the live channel's active
+routes over `window_hours`; with at least `min_sample` sent, the first of complaints, hard bounces, opt-outs above its
+percent (strictly) pauses that route only: its mail stays `approved` and waits, a `high` notification and a log row are
+written. There is no automatic resume: `POST routes/<key>/resume/` with a reason; afterwards only newer events count.
+Sandbox and dry-run channels are never judged.
+
+Complaints need a mail provider feedback loop that delivers ARF reports into the polled mailbox, and
+`COMMUNICATOR_COMPLAINT_FEEDBACK = True` (default off, reports are then ignored). Hard bounces already suppress the
+recipient on a live channel and send `message_bounced`; complaints do the same with `reason="complaint"`.
+`COMMUNICATOR_SOFT_BOUNCE_MAX_ATTEMPTS` (default 2) is the number of sends before another soft bounce fails the mail.
+
+## One-click unsubscribe and the legal footer (Q6)
+
+Set `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` to the public API host; mails then carry `List-Unsubscribe` and
+`List-Unsubscribe-Post`, plus a link in the text and HTML parts. Bulk senders need DKIM-signed mail for one-click to be
+honoured. A message whose template requires a legal footer and has none ends `failed/legal_footer`; accepting it is a 409.
+
+## Gmail API accounts (mail accounts, transport `gmail_api`)
+
+- A sender route chooses its transport: `smtp` (the channel's SMTP connection, the default) or `gmail_api` (`users.messages.send` in
+  the name of a connected mail account). The RFC 822 message is the one the SMTP path builds (headers, unsubscribe, DW in CC,
+  footer, Message-ID, In-Reply-To / References); only the last step differs. The channel needs no SMTP configuration for a
+  `gmail_api` route that goes out by the API.
+- The API is called only in a live channel (the live double gate was checked) or in a sandbox whose `COMMUNICATOR_GMAIL_API_BASE`
+  is not Google's (the test double). A dry run, and a sandbox facing the real Google, never call it: the sandbox mail goes the SMTP way.
+- Tokens: the refresh token is encrypted at rest (Fernet, key from `SECRET_KEY`, as the IMAP password) and is not in any response or log; access
+  tokens live in the Django cache until a minute before they expire. Changing `SECRET_KEY` makes every account `needs_reauth`.
+- `needs_reauth`: Google refused the refresh token (revoked in the Google account, password reset with token revocation, admin removed the app,
+  client secret changed). The account state changes, a `high` notification goes out (once a day), the account's routes stop sending (their mail stays
+  `approved` and waits, no other mailbox sends it, other routes continue) until a person connects the account again. Not a permanent failure: nothing is lost.
+- Failures of one send: network / 429 / 5xx / rate limit retry like a 4xx SMTP answer (`COMMUNICATOR_SMTP_MAX_ATTEMPTS`), a refusal ends
+  `failed/gmail_api` with Google's reason as `failure_detail`, a request that may have reached Google (read timeout) ends
+  `failed/send_outcome_unknown` and is never repeated.
+- Replies: with `inbound_enabled` the beat `poll_inbox` also reads the inbox of each connected account (`history.list`, cursor `historyId`, first
+  run starts the cursor) and hands each message to the same ingest as IMAP mail. A bounce or reply is therefore matched, classified and suppressed
+  identically; reading a message twice changes nothing. An expired history id falls back to the newest inbox mail.
+- Limits that stay Google's: Gmail / Workspace daily sending limits and SPF / DKIM / DMARC alignment of the sending domains are not removed by the API.
 
 ## Go/no-go: switching a channel to live
 

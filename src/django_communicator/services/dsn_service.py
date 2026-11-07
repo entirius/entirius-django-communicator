@@ -82,3 +82,44 @@ def _returned_messages(msg: EmailMessage) -> list[EmailMessage]:
         elif part.get_content_type() == "text/rfc822-headers":
             returned.append(message_from_string(part.get_content(), policy=policy.default))
     return returned
+
+
+@dataclass(frozen=True)
+class Arf:
+    """A feedback report (RFC 5965): a recipient marked the mail as spam."""
+
+    feedback_type: str
+    original_message_id: str
+    recipient: str
+
+    @property
+    def is_complaint(self) -> bool:
+        return self.feedback_type in COMPLAINT_TYPES
+
+
+COMPLAINT_TYPES = frozenset({"abuse", "fraud"})
+
+
+def is_arf(msg: EmailMessage) -> bool:
+    """Top-level `multipart/report; report-type=feedback-report` only."""
+    report_type = str(msg.get_param("report-type", "")).lower()
+    return msg.get_content_type() == "multipart/report" and report_type == "feedback-report"
+
+
+def parse_arf(msg: EmailMessage) -> Arf:
+    fields: dict[str, str] = {}
+    for part in msg.iter_parts():
+        if part.get_content_type() != "message/feedback-report":
+            continue
+        for block in part.get_payload():
+            for name, value in block.items():
+                fields.setdefault(name.lower(), str(value).strip())
+    candidates = ids_in(fields.get("original-message-id", ""))
+    for returned in _returned_messages(msg):
+        candidates += header_ids(returned, "Message-ID")
+    recipient = fields.get("original-rcpt-to", "").rpartition(";")[2].strip().lower().strip("<>")
+    return Arf(
+        feedback_type=fields.get("feedback-type", "").lower(),
+        original_message_id=candidates[0] if candidates else "",
+        recipient=recipient,
+    )

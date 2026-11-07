@@ -34,16 +34,17 @@ src/django_communicator/
 ├── apps.py  enums.py (statuses + MESSAGE_STATUS_TRANSITIONS)  settings.py  urls.py  gdpr.py  admin.py
 ├── models/     channel  message_template  message_template_version  thread  message  suppression
 │               send_policy  send_window  sequence  sequence_step  text_pool  thread_pool_usage
-│               thread_sequence_state  mailbox_config  mail_footer  reply  inbound_quarantine
+│               thread_sequence_state  mailbox_config  mail_footer  reply  inbound_quarantine  sender_route  bulk_approval_log
 ├── schemas/    requests.py  responses.py (Pydantic)
-├── api/admin/  urls.py  views/ (review, template, suppression, sending, sequence, thread, reply, mailbox, footer,
+├── api/        public/views.py (unsubscribe)  admin/ urls.py  views/ (approval, sender_route, review, template, suppression, sending, sequence, thread, reply, mailbox, footer,
 │               test)
 ├── services/   communicate_service (communicate)  drafting_service  render_service  template_service
 │               message_service (the only status writer)  review_service  preview_service
 │               send_service (send_due run)  delivery_service (deliver)  policy_service  counter_service
 │               clock_service  channel_service (live_allowed)  mail_builder  footer_service  alert_service
 │               sequence_service  sending_config_service  suppression_service
-│               poll_service  inbound_service (ingest)  mail_parser  dsn_service  optout_service  inbox_service
+│               poll_service  inbound_service (ingest)  reply_intent_service (T4)  reply_action_service  reply_followup_service  mail_parser  dsn_service  optout_service  inbox_service
+│               sender_route_service (Q3 routes, mailbox cap, warm-up)  preflight_service (legal footer + route)  approval_service (Q4)  unsubscribe_service (Q6)
 │               anonymisation_service  draft_retry_service (transient failure retry)
 │               exceptions (ClientError: base of refusals shown to API clients)
 ├── signals/    __init__.py (message_approved, company_skipped, message_sent, sequence_finished,
@@ -63,7 +64,7 @@ Flow: caller `communicate()` → `Message` (`review_required` | `approved` | `fa
 | The `communicate()` contract | `services/communicate_service.py`; `docs/concept.md` § communicate() |
 | The live double gate | `channel_service.live_allowed`; `docs/concept.md` § Sending |
 | Cap, spread quota, next slot | `policy_service.py`, `counter_service.py` |
-| Inbound order (duplicate → DSN → thread → auto → opt-out → reply) | `inbound_service.ingest`; `docs/concept.md` § Inbound |
+| Inbound order (duplicate → DSN → thread → auto → intent / opt-out → reply) | `inbound_service.ingest`; `docs/concept.md` § Inbound |
 | Request / response shape, auth, errors | `docs/api.md`; `schemas/`; `docs/openapi.yaml` |
 | Tasks, queues, alerts, what to watch, live checklist | `docs/operations.md` |
 | Which test file covers what; BDD and e2e in the entirius-zeno harness | `docs/testing.md` |

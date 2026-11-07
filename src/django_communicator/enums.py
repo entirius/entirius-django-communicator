@@ -58,6 +58,10 @@ class FailureCode(models.TextChoices):
     SMTP = "smtp", "SMTP"
     BOUNCE = "bounce", "Bounce"
     SEND_OUTCOME_UNKNOWN = "send_outcome_unknown", "Send outcome unknown"
+    LEGAL_FOOTER = "legal_footer", "Legal footer missing"
+    SENDER_ROUTE = "sender_route", "Sender route unusable"
+    PRESEND_CHECK = "presend_check", "Address refused by the pre-send check"
+    GMAIL_API = "gmail_api", "Gmail API"
 
 
 class ReplyKind(models.TextChoices):
@@ -66,6 +70,34 @@ class ReplyKind(models.TextChoices):
     SUSPECTED_OPTOUT = "suspected_optout", "Suspected opt-out"
     BOUNCE_HARD = "bounce_hard", "Hard bounce"
     BOUNCE_SOFT = "bounce_soft", "Soft bounce"
+    COMPLAINT = "complaint", "Spam complaint"
+
+
+class ReplyIntent(models.TextChoices):
+    """What a human reply wants (T4). `unclear` is also the class of a reply the classifier was not sure about."""
+
+    INTERESTED = "interested", "Interested"
+    NOT_NOW = "not_now", "Not now"
+    NOT_INTERESTED = "not_interested", "Not interested"
+    OUT_OF_OFFICE = "out_of_office", "Out of office"
+    WRONG_PERSON = "wrong_person", "Wrong person"
+    UNSUBSCRIBE = "unsubscribe", "Unsubscribe"
+    UNCLEAR = "unclear", "Unclear"
+
+
+class ReplySequenceAction(models.TextChoices):
+    """What a classified reply does to the thread's sequence. `stop` is what every reply did before T4."""
+
+    STOP = "stop", "Stop"
+    PAUSE = "pause", "Pause"
+    PAUSE_UNTIL_RETURN = "pause_until_return", "Pause until return"
+
+
+class NotifySeverity(models.TextChoices):
+    NONE = "none", "None"
+    LOW = "low", "Low"
+    MEDIUM = "medium", "Medium"
+    HIGH = "high", "High"
 
 
 class QuarantineReason(models.TextChoices):
@@ -78,12 +110,14 @@ class ReplyMatch(models.TextChoices):
     HEADER = "header", "Header"
     SENDER = "sender", "Sender"
     DSN = "dsn", "DSN"
+    FEEDBACK = "feedback", "Feedback report"
 
 
 class SequenceStopReason(models.TextChoices):
     REPLIED = "replied", "Replied"
     OPTOUT = "optout", "Opt-out"
     BOUNCE = "bounce", "Bounce"
+    COMPLAINT = "complaint", "Spam complaint"
     MANUAL = "manual", "Manual"
     FINISHED = "finished", "Finished"
     PAUSED = "paused", "Paused"
@@ -116,3 +150,35 @@ MESSAGE_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
     _S.SUPERSEDED.value: frozenset(),
     _S.SKIPPED.value: frozenset(),
 }
+
+
+class HealthTrigger(models.TextChoices):
+    """Why a sender route was paused (the pause log)."""
+
+    BOUNCE = "bounce", "Hard bounce rate"
+    OPTOUT = "optout", "Opt-out rate"
+    COMPLAINT = "complaint", "Complaint rate"
+    MANUAL = "manual", "Manual"
+
+
+class RouteLogAction(models.TextChoices):
+    PAUSE = "pause", "Pause"
+    RESUME = "resume", "Resume"
+
+
+class MailTransport(models.TextChoices):
+    """How the mail of a sender route leaves. `smtp` is the channel's SMTP connection (the old behaviour)."""
+
+    SMTP = "smtp", "SMTP"
+    GMAIL_API = "gmail_api", "Gmail API"
+
+
+class MailProvider(models.TextChoices):
+    GMAIL = "gmail", "Gmail / Google Workspace"
+
+
+class MailAccountState(models.TextChoices):
+    NOT_CONNECTED = "not_connected", "Not connected"
+    CONNECTED = "connected", "Connected"
+    NEEDS_REAUTH = "needs_reauth", "Needs re-authorisation"
+    ERROR = "error", "Error"

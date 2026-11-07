@@ -59,6 +59,9 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
 
 ## Sequences
 
+- **Autostart arms a thread once.** `sequence_service._autostart` runs on the first delivery of a thread with no
+  `ThreadSequenceState` at all; a paused or stopped state counts, so a later mail never restarts it. One `autostart`
+  sequence per channel (partial unique constraint); `PATCH sequences/<id>/` answers 409 for a second one.
 - **Follow-ups carry `Message.sequence_step`**, inherited by edited and rewritten versions; the step
   advance is a compare-and-set on `step`, so overlapping runs create one follow-up.
 - **Every terminal outcome of a follow-up goes through `sequence_service.on_follow_up_finished`** —
@@ -70,6 +73,13 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   `remove_text` blocks a concurrent usage insert between the check and the delete.
 - **Step templates are resolved with `requires_review=False`** — only an `auto_approve` static template
   sends without review; anything else lands in the review queue.
+
+## Inbound
+
+- **Opt-out phrases are stems on folded text.** `inbound_service.fold` lower-cases, strips diacritics (`ł` too) and turns
+  every run of other characters into one space, for the reply and for each phrase. A configured phrase matches
+  anywhere in the text, so write stems ("nie kontaktowa", "rezygnuj"); a very short one over-matches. A match is
+  only a suspicion — a person confirms or dismisses it.
 
 ## Footer
 
@@ -88,6 +98,20 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   bounce is a reply. DSNs never change `Thread.status`.
 - **An opt-out phrase is a suspicion, not a suppression.** Only `confirm-optout` suppresses. A dismissed
   suspicion keeps the sequence paused until `threads/<id>/resume-sequence/`.
+- **A class is advice, never an instruction.** The AI toolbox may be off, unreachable or wrong: the reply is stored
+  either way and a person reads it. The only class that does something on its own is `unsubscribe`, and it does what
+  the phrase list does — a suspicion that pauses the sequence; only `confirm-optout` suppresses. Reply text is
+  untrusted: it goes to the toolbox as user data, the system prompt never contains it, and the output is checked
+  against a closed schema (unknown class, confidence outside 0..1, bad date = unclassified).
+- **The toolbox call runs outside the ingest transaction.** `ingest` is not atomic as a whole any more: parsing, matching
+  and the toolbox call come first, the writes after are one transaction. A duplicate Message-ID returns before the call.
+- **Pause is not stop.** `not_now` and `out_of_office` pause the sequence (`paused`), the thread is `replied`. Only
+  `process_reply_followups` (return date) or `threads/<id>/resume-sequence/` brings it back; a paused sequence with a
+  reminder never resumes by itself. A later human reply makes the earlier plan stale (nothing resumes).
+- **`auto_suppress` fires only for the `unsubscribe` class at or above its threshold**, never for a phrase-only
+  suspicion, and it calls the same `optout_service.confirm` (user `None`).
+- **An `out_of_office` return date is dropped** when it is not in the future or more than a year away, and on any other
+  class.
 - **The cursor moves only past ingested, dropped or quarantined mail.** Transient failures leave it; a
   poll that swallowed them would lose mail.
 - **Credentials and bodies are never logged; `Reply.raw_headers` holds headers only; attachments are

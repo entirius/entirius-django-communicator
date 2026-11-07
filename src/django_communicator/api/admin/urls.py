@@ -6,9 +6,13 @@
 from django.urls import path
 
 from django_communicator.api.admin.views import footer_views as footer
+from django_communicator.api.admin.views import health_views as health
+from django_communicator.api.admin.views import mail_account_views as account
 from django_communicator.api.admin.views import mailbox_views as mailbox
+from django_communicator.api.admin.views import reply_action_views as reply_action
 from django_communicator.api.admin.views import reply_views as reply
 from django_communicator.api.admin.views import review_views as review
+from django_communicator.api.admin.views import sender_route_views as sender_route
 from django_communicator.api.admin.views import sending_views as sending
 from django_communicator.api.admin.views import sequence_views as sequence
 from django_communicator.api.admin.views import suppression_views as suppression
@@ -48,6 +52,7 @@ urlpatterns = [
     path("messages/", sending.OutboxListView.as_view(), name="admin-communicator-messages"),
     path("messages/<int:pk>/send-now/", sending.SendNowView.as_view(), name="admin-communicator-send-now"),
     path("sequences/", sequence.SequenceListView.as_view(), name="admin-communicator-sequences"),
+    path("sequences/<int:pk>/", sequence.SequenceDetailView.as_view(), name="admin-communicator-sequence"),
     path(
         "sequences/<int:pk>/steps/", sequence.SequenceStepListView.as_view(), name="admin-communicator-sequence-steps"
     ),
@@ -76,6 +81,33 @@ urlpatterns = [
         reply.DismissOptoutView.as_view(),
         name="admin-communicator-reply-dismiss-optout",
     ),
+    path("reply-actions/", reply_action.ReplyActionListView.as_view(), name="admin-communicator-reply-actions"),
+    path(
+        "reply-actions/<str:intent>/",
+        reply_action.ReplyActionDetailView.as_view(),
+        name="admin-communicator-reply-action",
+    ),
+    path("routes/", sender_route.RouteListView.as_view(), name="admin-communicator-routes"),
+    path("routes/<str:key>/", sender_route.RouteDetailView.as_view(), name="admin-communicator-route"),
+    path("routes/<str:key>/pause/", health.RoutePauseView.as_view(), name="admin-communicator-route-pause"),
+    path("routes/<str:key>/resume/", health.RouteResumeView.as_view(), name="admin-communicator-route-resume"),
+    path("accounts/", account.AccountListView.as_view(), name="admin-communicator-accounts"),
+    path("accounts/<int:pk>/", account.AccountDetailView.as_view(), name="admin-communicator-account"),
+    path("accounts/<int:pk>/connect/", account.AccountConnectView.as_view(), name="admin-communicator-account-connect"),
+    path(
+        "accounts/<int:pk>/disconnect/",
+        account.AccountDisconnectView.as_view(),
+        name="admin-communicator-account-disconnect",
+    ),
+    path("accounts/<int:pk>/test/", account.AccountTestView.as_view(), name="admin-communicator-account-test"),
+    path(
+        "accounts/<int:pk>/test-send/",
+        account.AccountTestSendView.as_view(),
+        name="admin-communicator-account-test-send",
+    ),
+    path("health/", health.HealthView.as_view(), name="admin-communicator-health"),
+    path("health/policy/", health.HealthPolicyView.as_view(), name="admin-communicator-health-policy"),
+    path("health/log/", health.PauseLogView.as_view(), name="admin-communicator-health-log"),
     path("mailbox/", mailbox.MailboxView.as_view(), name="admin-communicator-mailbox"),
     path("footers/", footer.FooterListView.as_view(), name="admin-communicator-footers"),
     path("footers/<str:language>/", footer.FooterDetailView.as_view(), name="admin-communicator-footer"),
@@ -89,6 +121,9 @@ if is_development():
         path("test/reset-counters/", dev.DevResetCountersView.as_view(), name="admin-communicator-test-reset-counters"),
         path("test/start-sequence/", dev.DevStartSequenceView.as_view(), name="admin-communicator-test-start-sequence"),
         path("test/poll-now/", dev.DevPollNowView.as_view(), name="admin-communicator-test-poll-now"),
+        path(
+            "test/reply-followups/", dev.DevReplyFollowupsView.as_view(), name="admin-communicator-test-reply-followups"
+        ),
         path("test/retry-drafts/", dev.DevRetryDraftsView.as_view(), name="admin-communicator-test-retry-drafts"),
         path("test/toolbox-outage/", dev.DevToolboxOutageView.as_view(), name="admin-communicator-test-toolbox-outage"),
     ]

@@ -8,10 +8,21 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from django_communicator.enums import ChannelMode, MessageStatus, ReplyKind, SuppressionKind, TemplateKind
+from django_communicator.enums import (
+    ChannelMode,
+    MessageStatus,
+    NotifySeverity,
+    ReplyIntent,
+    ReplyKind,
+    ReplySequenceAction,
+    SuppressionKind,
+    TemplateKind,
+)
 from django_communicator.services.communicate_service import RecipientData
 
 AUDIENCE_PATTERN = r"^[A-Z0-9_]*$"
+ROUTE_KEY_PATTERN = r"^[a-z0-9_-]*$"
+MAILBOX_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 
 class ReviewListQuery(BaseModel):
@@ -100,6 +111,9 @@ class DevCommunicateRequest(BaseModel):
     audience: str = Field(
         default="", max_length=64, pattern=AUDIENCE_PATTERN, description="Audience code.", examples=["RETAILER"]
     )
+    sender_route: str = Field(
+        default="", max_length=64, pattern=ROUTE_KEY_PATTERN, description="Sender route key.", examples=["ecomhouse"]
+    )
 
 
 class WindowRequest(BaseModel):
@@ -146,6 +160,11 @@ class SequenceRequest(BaseModel):
         min_length=1, max_length=64, pattern=r"^[-a-zA-Z0-9_]+$", description="Slug.", examples=["followup"]
     )
     is_active: bool = Field(default=True, description="Schedules follow-ups.", examples=[True])
+    autostart: bool = Field(
+        default=False,
+        description="Starts by itself after the first delivered message of a thread without a sequence. One per channel.",
+        examples=[True],
+    )
     steps: list[SequenceStepRequest] = Field(min_length=1, description="Steps with unique numbers.", examples=[[]])
 
     @model_validator(mode="after")
@@ -184,6 +203,14 @@ class ChannelConfigRequest(BaseModel):
         description="Sandbox recipient; empty clears.",
         examples=["sandbox@mail.test"],
     )
+    default_sender_route: str | None = Field(
+        default=None,
+        max_length=64,
+        pattern=ROUTE_KEY_PATTERN,
+        description="Key of the sender route used when a thread names none; empty clears. 409 for an unknown or "
+        "inactive route.",
+        examples=["ecomhouse"],
+    )
 
 
 class DevClockRequest(BaseModel):
@@ -208,6 +235,15 @@ class DevResetCountersRequest(BaseModel):
         max_length=31,
         description="Channel days whose send counters are cleared.",
         examples=[["2026-09-21"]],
+    )
+
+
+class SequenceUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_active: bool | None = Field(default=None, description="Schedules follow-ups.", examples=[True])
+    autostart: bool | None = Field(
+        default=None, description="Starts by itself after the first delivery. One per channel.", examples=[True]
     )
 
 
@@ -244,6 +280,8 @@ class ReplyListQuery(BaseModel):
 
     kind: ReplyKind | None = Field(default=None, description="Only replies of this kind.")
     thread: int | None = Field(default=None, description="Only replies of this thread.")
+    intent: ReplyIntent | None = Field(default=None, description="Only replies classified as this intent.")
+    needs_review: bool | None = Field(default=None, description="Only replies flagged (or not) for a person to read.")
 
 
 class MailboxRequest(BaseModel):
@@ -268,4 +306,166 @@ class FooterRequest(BaseModel):
         max_length=20000,
         description="Footer HTML with `{{ legal }}` exactly once; sanitised to an allowlist on save.",
         examples=["<p><strong>Jan Kowalski</strong><br>Example sp. z o.o.</p><div>{{ legal }}</div>"],
+    )
+
+
+class ReplyActionRequest(BaseModel):
+    """The whole next-step mapping of one intent class; omitted fields take the model defaults."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sequence: ReplySequenceAction = Field(
+        default=ReplySequenceAction.STOP,
+        description="stop (as every reply did before T4), pause, or pause_until_return (out_of_office only).",
+        examples=["pause"],
+    )
+    notify: NotifySeverity = Field(
+        default=NotifySeverity.HIGH,
+        description="Alert severity for the sales admin; none = silent.",
+        examples=["medium"],
+    )
+    remind_after_days: int | None = Field(
+        default=None,
+        ge=1,
+        le=365,
+        description="Alert a person to follow up this many days after the reply (out of office: only when the "
+        "reply gave no return date).",
+        examples=[30],
+    )
+    needs_review: bool = Field(default=False, description="Flag the reply for a person to read.", examples=[False])
+    min_confidence: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="Below this confidence the class becomes unclear; null = COMMUNICATOR_REPLY_INTENT_MIN_CONFIDENCE.",
+        examples=[0.8],
+    )
+    auto_suppress: bool = Field(
+        default=False,
+        description="unsubscribe only: confirm the opt-out (suppression) without a person, like confirm-optout.",
+        examples=[False],
+    )
+
+
+class SenderRouteBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(
+        default="", max_length=128, description="Display name in the From header.", examples=["Wiktor W."]
+    )
+    from_email: str = Field(
+        max_length=254,
+        pattern=MAILBOX_PATTERN,
+        description="Mailbox the mail leaves from.",
+        examples=["wiktorw@ecom.house"],
+    )
+    cc_email: str = Field(
+        default="",
+        max_length=254,
+        pattern=r"^([^@\s]+@[^@\s]+\.[^@\s]+)?$",
+        description="Copy (CC) mailbox: the same person on the other domain; empty = no copy.",
+        examples=["wiktorw@entirius.com"],
+    )
+    is_active: bool = Field(default=True, description="An inactive route cannot be used.", examples=[True])
+    daily_cap: int | None = Field(
+        default=None, ge=0, le=10000, description="Most deliveries per day from this From; null = none.", examples=[40]
+    )
+    warmup_start_cap: int | None = Field(
+        default=None,
+        ge=0,
+        le=10000,
+        description="Warm-up: the cap on the first day; null = no warm-up. Needs `daily_cap` as the ceiling.",
+        examples=[5],
+    )
+    warmup_step: int = Field(default=1, ge=0, le=1000, description="Warm-up: cap added per day.", examples=[2])
+    warmup_started_on: date | None = Field(
+        default=None, description="Warm-up day one; empty with a warm-up = today (channel day).", examples=[None]
+    )
+    transport: Literal["smtp", "gmail_api"] = Field(
+        default="smtp",
+        description="smtp = the channel's SMTP connection; gmail_api = send through the mail account.",
+        examples=["smtp"],
+    )
+    mail_account_id: int | None = Field(
+        default=None,
+        description="Mail account (`accounts/`) of this channel; required for gmail_api, its address must be "
+        "`from_email`; null for smtp.",
+        examples=[None],
+    )
+
+
+class SenderRouteCreateRequest(SenderRouteBody):
+    key: str = Field(
+        min_length=1, max_length=64, pattern=r"^[a-z0-9_-]+$", description="Route key.", examples=["ecomhouse"]
+    )
+
+
+class ApprovalQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    channel: str = Field(default="", max_length=128, description="Channel idx.", examples=["default-europe"])
+    sender_route: str = Field(default="", max_length=64, description="Effective route key.", examples=["ecomhouse"])
+    template: str = Field(default="", max_length=128, description="Template key.", examples=["lead.cold.shop"])
+    q: str = Field(
+        default="", max_length=200, description="Subject reference, recipient or subject.", examples=["shop"]
+    )
+    min_age_hours: float | None = Field(default=None, ge=0, le=100000, description="Waiting at least this long.")
+
+
+class BulkApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["approve", "reject"] = Field(description="approve or reject.", examples=["approve"])
+    ids: list[int] = Field(min_length=1, max_length=1000, description="Message ids; the limit is a setting.")
+    reason: str = Field(default="", max_length=255, description="Reject reason, stored on each message.", examples=[""])
+
+
+class HealthPolicyBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(default=False, description="Auto-pause on.", examples=[True])
+    window_hours: int = Field(default=168, ge=1, le=720, description="Judged window in hours.", examples=[168])
+    min_sample: int = Field(default=50, ge=1, le=100000, description="Minimum sent mails in the window.", examples=[50])
+    max_bounce_pct: float = Field(default=2, gt=0, le=100, description="Hard bounces, percent of sent.", examples=[2])
+    max_optout_pct: float = Field(default=3, gt=0, le=100, description="Opt-outs, percent of sent.", examples=[3])
+    max_complaint_pct: float = Field(default=0.1, gt=0, le=100, description="Complaints, percent.", examples=[0.1])
+
+
+class RouteReasonBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=3, max_length=255, description="Why; stored in the pause log.", examples=["checked"])
+
+
+class MailAccountCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(
+        max_length=254,
+        pattern=MAILBOX_PATTERN,
+        description="The Google mailbox to connect.",
+        examples=["wiktorw@ecom.house"],
+    )
+    inbound_enabled: bool = Field(
+        default=False, description="Also read the inbox for replies (asks Google for the read scope).", examples=[False]
+    )
+
+
+class MailAccountUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    inbound_enabled: bool = Field(
+        description="Read the inbox for replies. Turning it on needs a new sign-in to grant the read scope.",
+        examples=[True],
+    )
+
+
+class MailAccountTestSendRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    to: str = Field(
+        max_length=254,
+        pattern=MAILBOX_PATTERN,
+        description="Recipient of the test message.",
+        examples=["qa@example.test"],
     )

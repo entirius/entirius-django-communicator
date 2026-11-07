@@ -1,0 +1,31 @@
+From: Complaints <abuse@fbl.example-shop-6.test>
+To: Outreach <outreach@greenmail.test>
+Subject: Spam complaint
+Date: Mon, 14 Sep 2026 09:05:00 +0200
+Message-ID: <arf-abuse-1@fbl.example-shop-6.test>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=feedback-report; boundary="arf-boundary"
+
+--arf-boundary
+Content-Type: text/plain; charset=utf-8
+
+This is an email abuse report for a message received from our network.
+
+--arf-boundary
+Content-Type: message/feedback-report
+
+Feedback-Type: {feedback_type}
+User-Agent: ExampleFBL/1.0
+Version: 1
+Original-Mail-From: <outreach@greenmail.test>
+Original-Rcpt-To: <owner@example-shop-6.test>
+
+--arf-boundary
+Content-Type: text/rfc822-headers
+
+From: Outreach <outreach@greenmail.test>
+To: owner@example-shop-6.test
+Subject: Your shop audit
+Message-ID: {message_id}
+
+--arf-boundary--

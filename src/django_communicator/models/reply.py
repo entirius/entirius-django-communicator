@@ -6,7 +6,7 @@ from django.conf import settings
 from django.db import models
 from django_utils.models.base_model import BaseModel
 
-from django_communicator.enums import ReplyKind, ReplyMatch
+from django_communicator.enums import ReplyIntent, ReplyKind, ReplyMatch
 
 
 class Reply(BaseModel):
@@ -25,6 +25,23 @@ class Reply(BaseModel):
     inbound_message_id = models.CharField(max_length=998)
     received_at = models.DateTimeField()
     raw_headers = models.JSONField(default=dict, blank=True)
+    intent = models.CharField(
+        max_length=24,
+        choices=ReplyIntent.choices,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Empty = not classified (toolbox off or failed, auto reply, bounce).",
+    )
+    intent_confidence = models.FloatField(null=True, blank=True)
+    intent_source = models.CharField(max_length=16, blank=True, default="", help_text="`toolbox` when classified.")
+    intent_return_date = models.DateField(null=True, blank=True, help_text="Out of office: the day they are back.")
+    needs_review = models.BooleanField(default=False, db_index=True, help_text="A person must read and decide (T4).")
+    action_applied = models.JSONField(default=dict, blank=True, help_text="The next-step plan applied to this reply.")
+    resume_at = models.DateTimeField(null=True, blank=True, help_text="Out of office: resume the paused sequence.")
+    resumed_at = models.DateTimeField(null=True, blank=True)
+    remind_at = models.DateTimeField(null=True, blank=True, help_text="Alert a person to follow up.")
+    reminded_at = models.DateTimeField(null=True, blank=True)
     optout_confirmed_at = models.DateTimeField(null=True, blank=True)
     optout_confirmed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"

@@ -31,6 +31,9 @@ class Channel(BaseModel):
     mode = models.CharField(max_length=16, choices=ChannelMode.choices, default=ChannelMode.DRY_RUN)
     sandbox_mailbox = models.EmailField(blank=True, default="")
     live_enabled = models.BooleanField(default=False)
+    default_sender_route = models.CharField(
+        max_length=64, blank=True, default="", help_text="Key of the SenderRoute used when a thread names none."
+    )
 
     def __str__(self) -> str:
         return f"{self.label} [{self.idx}]"

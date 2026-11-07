@@ -45,15 +45,37 @@ def get_sequence(channel: Channel, pk: int) -> Sequence:
     return Sequence.objects.prefetch_related("steps").get(channel=channel, pk=pk)
 
 
-def create_sequence(channel: Channel, *, key: str, is_active: bool, steps: list[dict]) -> Sequence:
-    """Raises `DuplicateSequenceError` when the key exists in the channel."""
+def create_sequence(
+    channel: Channel, *, key: str, is_active: bool, steps: list[dict], autostart: bool = False
+) -> Sequence:
+    """Raises `DuplicateSequenceError` when the key exists in the channel or a second `autostart` sequence is asked."""
+    if autostart and Sequence.objects.filter(channel=channel, autostart=True).exists():
+        raise DuplicateSequenceError("the channel already has an autostart sequence")
     try:
         with transaction.atomic():
-            sequence = Sequence.objects.create(channel=channel, key=key, is_active=is_active)
+            sequence = Sequence.objects.create(channel=channel, key=key, is_active=is_active, autostart=autostart)
             SequenceStep.objects.bulk_create(SequenceStep(sequence=sequence, **step) for step in steps)
     except IntegrityError:
         raise DuplicateSequenceError(f"sequence {key} already exists") from None
     return get_sequence(channel, sequence.pk)
+
+
+@transaction.atomic
+def update_sequence(sequence: Sequence, updates: dict[str, Any]) -> Sequence:
+    """Only `is_active` and `autostart`; steps are fixed once created. Raises `DuplicateSequenceError` when another
+    sequence of the channel already autostarts."""
+    invalid = set(updates) - {"is_active", "autostart"}
+    if invalid:
+        raise ValueError(f"Fields not editable via update_sequence: {sorted(invalid)}")
+    locked = Sequence.objects.select_for_update().get(pk=sequence.pk)
+    if updates.get("autostart"):
+        others = Sequence.objects.filter(channel_id=locked.channel_id, autostart=True).exclude(pk=locked.pk)
+        if others.exists():
+            raise DuplicateSequenceError("the channel already has an autostart sequence")
+    for field, value in updates.items():
+        setattr(locked, field, value)
+    locked.save(update_fields=[*updates, "modified_at"])
+    return get_sequence(locked.channel, locked.pk)
 
 
 def list_texts(sequence: Sequence) -> QuerySet[TextPool]:

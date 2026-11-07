@@ -28,12 +28,15 @@ from django_communicator.models import Channel, Message
 from django_communicator.services import (
     alert_service,
     channel_service,
+    gmail_client,
+    gmail_transport,
     mail_builder,
     message_service,
+    preflight_service,
     sequence_service,
     suppression_service,
 )
-from django_communicator.signals import message_sent
+from django_communicator.signals import message_bounced, message_sent
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +55,10 @@ def deliver(message: Message, *, now: datetime) -> str:
     if current.status not in (MessageStatus.APPROVED, MessageStatus.SCHEDULED):
         return DEFERRED
     refusal = _refusal(current)
-    mail = None if refusal or current.thread.channel.mode == ChannelMode.DRY_RUN else mail_builder.build(current)
+    account, mail = None, None
+    if not refusal and current.thread.channel.mode != ChannelMode.DRY_RUN:
+        account = gmail_transport.account_for(current)  # a gmail_api route (live, or sandbox facing the test double)
+        mail = mail_builder.build(current, smtp=account is None)
     claimed = message_service.claim_for_sending(current)
     if claimed is None:
         return DEFERRED
@@ -62,7 +68,7 @@ def deliver(message: Message, *, now: datetime) -> str:
         message_service.release_claim(claimed, current.status)
         raise
     claimed.footer_html = current.footer_html  # filled by the build, stored with the sent status
-    return outcome or _send(claimed, mail, now)
+    return outcome or _send(claimed, mail, now, account)
 
 
 def _before_smtp(claimed: Message, current: Message, refusal: tuple[str, dict] | None, now: datetime) -> str | None:
@@ -87,10 +93,14 @@ def refuse_live(channel: Channel, now: datetime) -> None:
 
 
 def _refusal(message: Message) -> tuple[str, dict] | None:
-    """Suppressed since approval, or a follow-up whose thread got a reply or whose sequence no longer runs."""
+    """Suppressed since approval, a missing legal footer or unusable sender route (failed, readable detail), or a follow-up whose thread got a reply or whose sequence no longer runs."""
     thread = message.thread
     if suppression_service.is_suppressed(thread.channel, thread.recipient_email):
         return MessageStatus.SUPPRESSED, {}
+    if (found := preflight_service.problem(message)) is not None:
+        return MessageStatus.FAILED, {"failure_code": found[0], "failure_detail": found[1]}
+    if (reason := preflight_service.address_problem(thread.recipient_email)) is not None:
+        return MessageStatus.FAILED, {"failure_code": FailureCode.PRESEND_CHECK, "failure_detail": reason}
     blocker = sequence_service.follow_up_blocker(message)
     return (MessageStatus.SKIPPED, {"failure_detail": blocker}) if blocker else None
 
@@ -102,9 +112,18 @@ def _finish(message: Message, outcome: str, fields: dict) -> str:
     return outcome
 
 
-def _send(message: Message, mail: EmailMultiAlternatives, now: datetime) -> str:
+def _send(message: Message, mail: EmailMultiAlternatives, now: datetime, account=None) -> str:
     try:
-        mail.send()
+        if account is None:
+            mail.send()
+        else:
+            gmail_transport.send(account, mail)
+    except gmail_client.GmailAuthError:
+        # The account is `needs_reauth` now: the mail waits for a new sign-in, it is not lost and not sent by another mailbox.
+        message_service.release_claim(message, MessageStatus.APPROVED)
+        return DEFERRED
+    except gmail_client.GmailError as error:
+        return _gmail_error(message, error, now)
     except (smtplib.SMTPException, OSError) as error:
         return _smtp_error(message, error, now)
     attempts = message.send_attempts + 1
@@ -158,6 +177,30 @@ def _smtp_error(message: Message, error: Exception, now: datetime) -> str:
     return DEFERRED
 
 
+def _gmail_error(message: Message, error: gmail_client.GmailError, now: datetime) -> str:
+    """Transient (network, 429, 5xx, rate limit) retries like a 4xx SMTP answer; a refusal ends `failed/gmail_api`; a
+    request that may have reached Google is never repeated (`failed/send_outcome_unknown`)."""
+    attempts = message.send_attempts + 1
+    logger.warning("communicator message %s: Gmail API error %s (attempt %s)", message.pk, error.code, attempts)
+    if isinstance(error, gmail_client.GmailUnknownOutcome):
+        _finish(message, MessageStatus.FAILED, {"failure_code": FailureCode.SEND_OUTCOME_UNKNOWN})
+        return MessageStatus.FAILED
+    transient = isinstance(error, gmail_client.GmailTransientError | gmail_client.GmailTokenRejected)
+    if transient and attempts < communicator_settings.COMMUNICATOR_SMTP_MAX_ATTEMPTS:
+        message_service.transition(message, MessageStatus.SCHEDULED, fields={"send_attempts": attempts})
+        return DEFERRED
+    fields = {"failure_code": FailureCode.GMAIL_API, "failure_detail": error.code, "send_attempts": attempts}
+    _finish(message, MessageStatus.FAILED, fields)
+    alert_service.notify_once(
+        message.thread.channel,
+        kind="gmail_rejected",
+        severity="high",
+        title="Gmail API refused a message",
+        day=now.date(),
+    )
+    return MessageStatus.FAILED
+
+
 def _fail(message: Message, error: Exception, attempts: int, now: datetime) -> None:
     code = smtp_code(error)
     fields = {"failure_code": FailureCode.SMTP, "failure_detail": str(code), "send_attempts": attempts}
@@ -169,6 +212,8 @@ def _fail(message: Message, error: Exception, attempts: int, now: datetime) -> N
         return
     if isinstance(error, smtplib.SMTPRecipientsRefused) and code in HARD_BOUNCE_CODES:
         _suppress_live_recipient(message, code)
+        if channel.mode == ChannelMode.LIVE:
+            transaction.on_commit(lambda: message_bounced.send(sender=Message, message=message, hard=True))
 
 
 def _suppress_live_recipient(message: Message, code: int) -> None:

@@ -151,6 +151,11 @@ warning (C-27). Inactive texts are never picked. A text no thread used can be de
 only deactivates it — deleting would cascade away the usage and a thread could get the same text twice.
 Follow-ups ride the same send path, policy and cap (C-28).
 
+A sequence flagged `autostart` (at most one per channel, active, with steps) starts by itself: the first delivered
+message of an open thread that never had a sequence state arms it (`sequence_service._autostart`, called from
+`on_delivered`), so a cold mail is followed up without anyone starting the sequence. A thread that already has a
+state — running, paused or stopped — is never restarted. Without an `autostart` sequence nothing changes.
+
 The next due date counts from the delivery. Terminal outcomes go through
 `sequence_service.on_follow_up_finished`: delivered → next due date or `finished`
 (`sequence_finished`); failed / suppressed → stopped; rejected / skipped → re-armed from the last
@@ -169,10 +174,40 @@ tracked) and hands each mail to `inbound_service.ingest`, in fixed order:
    `failed/bounce` (C-25). A `Final-Recipient` other than the thread recipient is dropped as forged.
 3. **Thread match** — our Message-ID in `In-Reply-To`/`References` (`header`, C-20), else the newest open
    thread of the sender whose last outbound predates the mail (`sender`, C-21); no match → dropped.
-4. **Autoresponder** headers or subject patterns → `auto`, nothing else (C-22).
-5. **Opt-out phrase** of the recipient language above the quote → `suspected_optout`, sequence paused,
-   thread `replied`, `medium` alert — no suppression until a human confirms (C-23).
-6. **Reply** → thread `replied`, `Message.replied_at`, sequence stopped, `reply_received`, `high` alert.
+4. **Autoresponder** headers or subject patterns → `auto`, nothing else (C-22); never classified.
+5. **Intent** (T4, only with a toolbox model set and `AI_TOOLBOX_ENABLED`): the reply's own text goes to the toolbox
+   once (`reply_intent_service`, outside any transaction) and comes back as one of `interested`, `not_now`,
+   `not_interested`, `out_of_office`, `wrong_person`, `unsubscribe`, `unclear` with a confidence; below
+   `COMMUNICATOR_REPLY_INTENT_MIN_CONFIDENCE` the class is `unclear`. Stored on the `Reply` (`intent`,
+   `intent_confidence`, `intent_source`, `intent_return_date`). Toolbox off, unconfigured, failing or answering
+   nonsense = no class and the phrase detection below decides, exactly as before.
+6. **Opt-out** → `suspected_optout`, sequence paused, thread `replied`, `medium` alert — no suppression until a human
+   confirms (C-23). Raised by the class `unsubscribe`, or by an opt-out phrase of the recipient language above the
+   quote when there is no usable class or it is `unclear`, or when a confident class other than `not_interested`
+   disagrees with the phrase (a person decides). A confident `not_interested` wins over a phrase hit: the phrase lists
+   contain soft refusals ("nie jestem zainteresowany").
+7. **Reply** → thread `replied`, `Message.replied_at`, sequence stopped, `reply_received`, `high` alert.
+
+### Next steps per intent (T4)
+
+A human reply's class selects a plan from `ReplyIntentAction` (per channel; `GET reply-actions/`), else the code
+default. Nothing here moves a stage (django_leads does, from `reply_received`) and nothing sends mail.
+
+| Class | Default plan |
+|---|---|
+| `interested` | sequence stopped, `high` alert |
+| `not_now` | sequence **paused**, `medium` alert, reminder alert after 30 days |
+| `not_interested` | sequence stopped, `medium` alert |
+| `out_of_office` | sequence **paused until the day after the return date** (`resume_at`, 00:00 channel time) and resumed by `process_reply_followups`; no usable date = paused with a reminder after 7 days; `low` alert |
+| `wrong_person` | sequence stopped, `medium` alert, flagged `needs_review` |
+| `unsubscribe` | the suspected opt-out path above (no suppression before a person confirms); the plan can set `auto_suppress` to run the same `optout_service.confirm` with no user |
+| `unclear` / below the confidence threshold | sequence stopped, `high` alert, flagged `needs_review` (a person reads it) |
+| no class (toolbox off, failed) | exactly the pre-T4 reply: sequence stopped, `high` alert, no flag |
+
+`notify: none` silences the alert; `min_confidence` per class overrides the module threshold. Beat
+`process_reply_followups` resumes a paused sequence only when nothing happened since (no later human reply, address not
+suppressed, thread not closed, sequence still paused) and turns a due reminder into a `medium` alert plus the
+`reply_followup_due` signal. The channel clock decides what is due (move it with `test/clock/`).
 
 Confirm opt-out → suppression of the thread recipient, sequence `optout`, `optout_confirmed`, and a
 `django_agreements` objection when installed (retried by task `record_objection`). Dismiss → kind
@@ -198,4 +233,12 @@ the subject's data.
 ## Signals
 
 All sent on commit (`signals/__init__.py`): `message_approved`, `company_skipped`, `message_sent`,
-`sequence_finished`, `reply_received`, `optout_confirmed`.
+`sequence_finished`, `reply_received`, `optout_confirmed`, `message_bounced` (live hard DSN or SMTP 5xx recipient refusal;
+`hard=True`).
+
+## Mail accounts (Gmail API)
+
+`MailAccount` is a mailbox reached through a provider API instead of SMTP / IMAP (provider `gmail`): address, state (`not_connected`, `connected`,
+`needs_reauth`, `error`), encrypted refresh token, granted scopes, last error, inbox cursor. A `SenderRoute` may send through one
+(`transport = gmail_api`, `mail_account`). Scopes asked for: `gmail.send` (always) and `gmail.readonly` only for an account that reads replies, plus
+`openid email` to prove which Google account signed in. See `operations.md`.

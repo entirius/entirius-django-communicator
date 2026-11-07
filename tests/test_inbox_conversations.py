@@ -147,3 +147,39 @@ def test_the_plain_thread_list_still_lists_every_thread(admin_api, company):
     body = admin_api.get(api_url("threads/?sort=activity")).json()
 
     assert body["count"] == 2 and body["counts"]["all"] == 2
+
+
+def test_a_row_carries_the_class_of_its_newest_classified_reply_without_extra_queries(
+    admin_api, channel, company, django_assert_max_num_queries
+):
+    Reply.objects.filter(thread=company["old"]).update(
+        intent="out_of_office", intent_confidence=0.9, intent_return_date="2026-12-01", needs_review=True
+    )
+    for index in range(5):
+        owner = thread(channel, f"bdd:{index}@shop.test", email=f"{index}@shop.test")
+        message(owner, MessageStatus.SENT)
+        reply(owner, "No")
+    with django_assert_max_num_queries(13):
+        rows = {row["subject_ref"]: row for row in listed(admin_api)["results"]}
+    assert rows[COMPANY]["reply_intent"] == {
+        "reply_id": Reply.objects.get(thread=company["old"]).pk,
+        "intent": "out_of_office",
+        "intent_confidence": 0.9,
+        "intent_return_date": "2026-12-01",
+        "needs_review": True,
+    }
+    assert rows["bdd:0@shop.test"]["reply_intent"] is None
+
+
+def test_timeline_entries_carry_the_reply_class(admin_api, company):
+    Reply.objects.filter(thread=company["old"]).update(intent="interested", intent_confidence=0.8)
+    entries = admin_api.get(api_url(f"threads/{company['old'].pk}/")).json()["timeline"]
+    sent = next(e for e in entries if e["kind"] == "message")
+    answer = next(e for e in entries if e["kind"] == "reply")
+    assert (sent["intent"], sent["intent_confidence"], sent["needs_review"]) == ("", None, False)
+    assert (answer["intent"], answer["intent_confidence"], answer["intent_return_date"], answer["needs_review"]) == (
+        "interested",
+        0.8,
+        None,
+        False,
+    )

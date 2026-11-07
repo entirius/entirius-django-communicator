@@ -51,15 +51,23 @@ def communicate(
     requires_review: bool = True,
     thread: Thread | None = None,
     audience: str = "",
+    sender_route: str = "",
 ) -> Message:
     """Suppression → template → legal footer → render → static body or AI draft. Raises `Channel.DoesNotExist`.
 
     `audience` is the caller's opaque code (leads: the lead type); it picks the template variant, blank = default.
+    `sender_route` is the key of a `SenderRoute` of the channel, stored on the thread (a thread that has one keeps
+    it); blank = the channel default route. The key is resolved when the draft is approved and when it is sent.
     Raises `ToolboxDisabledError` for an AI template while the toolbox is switched off — nothing is written."""
     channel = channel_service.get_channel(channel_idx)
     if thread is not None:
         _check_thread(thread, channel, recipient, subject_ref)
-    base = {"render_context": context, "legal_footer": recipient.legal_footer, "requires_review": requires_review}
+    base = {
+        "render_context": context,
+        "legal_footer": recipient.legal_footer,
+        "requires_review": requires_review,
+        "sender_route": sender_route,
+    }
     if suppression_service.is_suppressed(channel, recipient.email):
         return _create(channel, recipient, subject_ref, thread, status=MessageStatus.SUPPRESSED, **base)
     try:
@@ -126,7 +134,11 @@ def _fail(channel, recipient, subject_ref, thread, code: str, detail: str, base:
 
 
 def _create(channel, recipient: RecipientData, subject_ref: str, thread: Thread | None, **fields) -> Message:
+    route = fields.pop("sender_route", "")
     thread = thread or _open_thread(channel, recipient, subject_ref)
+    if route and not thread.sender_route:
+        thread.sender_route = route
+        thread.save(update_fields=["sender_route", "modified_at"])
     return message_service.create_message(thread=thread, **fields)
 
 
