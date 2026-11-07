@@ -3,7 +3,7 @@ title: Test suite map
 description: Which test file covers what, the edge-case IDs per file, and the end-to-end layers outside this repo.
 ---
 
-Postgres only (`tests/settings.py`): `DATABASE_URL`, else
+Postgres only (`tests/settings.py`; on sqlite 9 older tests fail — inbox conversations, deferred-FK — that is why): `DATABASE_URL`, else
 `postgresql://postgres:postgres@localhost:5432/test_communicator`. The toolbox is mocked with
 `django_utils.toolbox.testing.mock_toolbox` (respx), the daily counter runs on fakeredis, mail lands in
 `django.core.mail.outbox`, celery-once uses a file backend, `imaplib` is faked. Migrations run in tests.
@@ -28,6 +28,10 @@ C-01…C-33, all of the communicator edge cases.
 | `test_inbound.py` | poll cursor, quarantine, UIDVALIDITY, thread matching, autoresponders, opt-out, DSN, idempotency — on `tests/fixtures/mail/*.eml` (copies of the emporium fixtures) | C-20…C-26 |
 | `test_gdpr.py` | `contact_anonymised` receiver, export / erase, global token suppression, token parity with django_leads (skipped without it) | — |
 | `test_inbox_list.py`, `test_inbox_conversations.py` | the inbox lists: `threads/` (state filter, counts, activity order, row fields) and `conversations/` (one row per `subject_ref`, state from any thread, counts, order, paging), query-count bounds | — |
+| `test_sender_routes.py` | Q3/Q8: route From + CC in live, default route, no key, sandbox keeps CC out, unknown / inactive route fails readable and gives the cap back, thread keeps its route, routes CRUD + channel default, per-mailbox cap (shared From, deferral, reservation back), warm-up schedule, policy `mailboxes`, one reply stored once whichever mailbox delivered it | — |
+| `test_approvals.py` | Q4: cross-channel list, filters, only `review_required`, query bound, bulk approve / reject with per-id failures, log with user, size limit, blockers, staff only | — |
+| `test_unsubscribe.py` | Q6: headers and link on / off, public POST / GET / forged tokens, escaping, suppression + owner signal, later send suppressed, legal footer at delivery and at accept | — |
+| `test_health.py` | Q15: counts and rates per route and channel, 24 h / 7 d, default-route mapping, API and staff-only access, policy API; auto-pause (off, minimum sample, threshold edge, only the bad route, log, one high notification, opt-out and complaint triggers, sandbox ignored), paused mail waits in `send_due`, manual pause / resume with reason, no re-pause on old events; Q30: ARF complaint (off, live, sandbox, not-spam, forged recipient), hard-bounce signal, soft-bounce attempt limit | — |
 | `test_admin_api.py` | review / template / suppression endpoints, 401/403/404/409, `test/communicate/` | — |
 | `test_v2_error_exposure.py` | admin refusals answer `client_message`, never `str(exc)`; a lower-layer exception is a 500 `INTERNAL_ERROR` with no text of it | — |
 | `test_admin.py` | Django admin pages render, admin save versions, read-only messages | — |
@@ -54,3 +58,11 @@ BDD layer (`communicator_inbound.feature` needs `make mail`); `make e2e-funnel` 
 
 Guides: the Entirius documentation at https://docs.entirius.com/ and Emporium `docs/e2e-leads-funnel.md`
 (page objects, one-shot tags).
+
+## Gmail API double
+
+`tests/gmail_stub.py` is a standard-library HTTP server that stands in for Google's OAuth endpoints and the Gmail API (consent redirect with PKCE
+check, token / refresh / revoke, `getProfile`, `messages.send`, `messages.list/get`, `history.list`) plus `/__stub/...` control endpoints (inject an
+inbox message, read what was sent, revoke, make sends fail, expire the history id). The `gmail` fixture in `tests/conftest.py` starts it and points
+`COMMUNICATOR_GMAIL_*` at it; `tests/settings.py` names hosts that do not resolve, so a test without the fixture cannot reach Google. Standalone:
+`python tests/gmail_stub.py --port 9099`.

@@ -9,7 +9,53 @@
   Natural refusals that used to be stored as a plain `reply` now pause the sequence as a suspected opt-out.
   Replies stay suspicions until a person decides.
 
+### Fixed
+
+- **`List-Unsubscribe` on the wire.** The signed URL is longer than 78 characters, so Python's SMTP policy sent it as
+  RFC 2047 encoded words, which mail clients do not read. The header is now written as one plain line.
+
 ### Added
+
+- **Gmail API transport and mail accounts (outbound).** `MailAccount` (address, state `not_connected` / `connected` / `needs_reauth` / `error`,
+  Fernet-encrypted refresh token, scopes, last error, inbox cursor); `SenderRoute.transport` (`smtp` default, `gmail_api`) and
+  `SenderRoute.mail_account`. A live (or test-double sandbox) mail of a `gmail_api` route is sent with `users.messages.send` from the same RFC 822
+  message the SMTP path builds. OAuth2 authorization-code flow (`access_type=offline`, `prompt=consent`, PKCE, signed one-use `state`): admin
+  `accounts/` CRUD, `connect/`, `disconnect/`, `test/`, `test-send/` (test double only), public `gmail/callback/`; the signed-in address must equal the
+  account's. A refused refresh token sets `needs_reauth`, notifies, and holds the route's mail (not sent by another mailbox). Replies: `poll_inbox` also
+  reads connected accounts with `inbound_enabled` (`history.list`) into the same `inbound_service.ingest` as IMAP. New `FailureCode` `gmail_api`.
+  Settings `COMMUNICATOR_GMAIL_*` (client id / secret / redirect URI from the environment). Test double `tests/gmail_stub.py`. Migration 0018.
+- **Sending health and automatic pause (outbound Q15).** `GET health/` (per route and channel, windows 24 h and 7 d:
+  sent, delivered, hard and soft bounces, opt-outs, complaints, replies, percent rates), `GET/PUT health/policy/`
+  (thresholds, **off by default**: hard bounces > 2 %, opt-outs > 3 %, complaints > 0.1 % of sent, minimum sample 50,
+  window 168 h), `GET health/log/`, `POST routes/<key>/pause/` and `resume/` (reason required). A live channel's
+  route that breaks a threshold is paused (`SenderRoute.paused_at`; its mail stays `approved` and waits, other routes
+  and the channel keep sending), a `high` notification is sent and the pause is logged (`RoutePauseLog`). Only a
+  manual resume ends it; after it the auto-pause judges events newer than the resume. Migration 0017.
+- **Complaint and bounce feedback loop (outbound Q30).** With `COMMUNICATOR_COMPLAINT_FEEDBACK = True` (default off)
+  an ARF report (`multipart/report; report-type=feedback-report`, type `abuse` or `fraud`) is stored as
+  `Reply.kind=complaint`; on a live channel the recipient is suppressed (`reason=complaint`), the sequence stops
+  (`complaint`), a `high` notification goes out and `message_bounced` is sent with `hard=True, reason="complaint"`.
+  A soft bounce now counts towards `COMMUNICATOR_SOFT_BOUNCE_MAX_ATTEMPTS` (default 2 = the old one retry): a mail
+  is retried while its `send_attempts` are below the limit.
+- **Outbound glue with leads.** `COMMUNICATOR_PRESEND_CHECK` (dotted path of `(email) -> reason | None`, empty = off) is
+  called right before delivery; a reason ends the message `failed/presend_check` (migration 0016, new `FailureCode`)
+  with the reason as `failure_detail`; a broken hook never blocks a send. New signal `message_bounced(sender=Message,
+  message, hard=True)` after a hard DSN or an SMTP 5xx recipient refusal in a live channel (sandbox bounces say
+  nothing about the real recipient).
+- **Sender routes (outbound roadmap Q3, with Q8 in code).** `SenderRoute` per channel (migration 0015): From mailbox,
+  CC mailbox of the same person on the other domain, display name, `daily_cap` per mailbox and an optional warm-up
+  (`warmup_start_cap`, `warmup_step`, `warmup_started_on`; off by default). `Thread.sender_route` holds only the key,
+  `communicate(sender_route=...)` sets it, `Channel.default_sender_route` is the fallback; no key and no default keeps
+  the old behaviour. An unknown or inactive route fails the message (`failed/sender_route`, readable detail) instead
+  of sending from the wrong mailbox; a sandbox never copies the real CC mailbox (`X-Original-Cc`). Admin API
+  `routes/`, `PATCH channel/` `default_sender_route`, `GET policy/` `mailboxes`.
+- **Approval inbox (Q4).** `GET approvals/` (all channels, filters, counts, `blocker`), `POST approvals/bulk/` (approve or
+  reject, per-id result, `COMMUNICATOR_BULK_APPROVAL_MAX`), `GET approvals/log/` (`BulkApprovalLog`: who, what, which
+  ids). The routes sit outside `<channel_idx>/`.
+- **One-click unsubscribe (Q6).** `List-Unsubscribe` and `List-Unsubscribe-Post` (RFC 8058) plus a link in the mail while
+  `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` is set; public signed-token endpoint `public/unsubscribe/<token>/` (GET page, POST
+  suppresses, stops sequences, emits `optout_confirmed`). A message whose template requires a legal footer and has none
+  no longer leaves (`failed/legal_footer`) and cannot be accepted (409).
 
 - **Golden set of replies (outbound roadmap T4, slice S12).** Tests only: `tests/fixtures/reply_golden.json` (Polish and
   English samples per intent class) and `tests/fake_toolbox.py` (a deterministic fake toolbox: keyword rules, respx

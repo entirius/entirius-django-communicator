@@ -233,4 +233,12 @@ the subject's data.
 ## Signals
 
 All sent on commit (`signals/__init__.py`): `message_approved`, `company_skipped`, `message_sent`,
-`sequence_finished`, `reply_received`, `optout_confirmed`.
+`sequence_finished`, `reply_received`, `optout_confirmed`, `message_bounced` (live hard DSN or SMTP 5xx recipient refusal;
+`hard=True`).
+
+## Mail accounts (Gmail API)
+
+`MailAccount` is a mailbox reached through a provider API instead of SMTP / IMAP (provider `gmail`): address, state (`not_connected`, `connected`,
+`needs_reauth`, `error`), encrypted refresh token, granted scopes, last error, inbox cursor. A `SenderRoute` may send through one
+(`transport = gmail_api`, `mail_account`). Scopes asked for: `gmail.send` (always) and `gmail.readonly` only for an account that reads replies, plus
+`openid email` to prove which Google account signed in. See `operations.md`.

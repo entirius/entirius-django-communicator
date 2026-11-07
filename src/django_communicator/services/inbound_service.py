@@ -48,7 +48,7 @@ from django_communicator.services import (
     sequence_service,
     suppression_service,
 )
-from django_communicator.signals import reply_received
+from django_communicator.signals import message_bounced, reply_received
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,8 @@ def ingest(channel: Channel, raw: bytes) -> Reply | None:
         return None  # our own mail, e.g. a sandbox copy in the polled mailbox
     if dsn_service.is_dsn(msg):
         return _ingest_dsn(channel, inbound)
+    if communicator_settings.COMMUNICATOR_COMPLAINT_FEEDBACK and dsn_service.is_arf(msg):
+        return _ingest_complaint(channel, inbound)
     match = _match_thread(channel, msg)
     if match is None:
         logger.info("communicator inbound %s in channel %s matched no thread", inbound.message_id, channel.idx)
@@ -316,6 +318,32 @@ def _ingest_dsn(channel: Channel, inbound: Inbound) -> Reply | None:
     return _soft_bounce(channel, inbound, match, dsn)
 
 
+@transaction.atomic
+def _ingest_complaint(channel: Channel, inbound: Inbound) -> Reply | None:
+    """Q30: a spam complaint. The report is stored; on a live channel the recipient is suppressed, the sequence stops
+    and `message_bounced(hard=True, reason="complaint")` goes to the owner of the subject. A sandbox or dry-run
+    complaint says nothing about the real recipient: stored only. The message status does not change."""
+    arf = dsn_service.parse_arf(inbound.msg)
+    message = _outbound_by_ids(channel, [arf.original_message_id] if arf.original_message_id else [])
+    if message is None or not arf.is_complaint:
+        logger.info("communicator feedback report %s (%r) ignored", inbound.message_id, arf.feedback_type)
+        return None
+    if arf.recipient and arf.recipient != message.thread.recipient_email.lower():
+        return None
+    match = Match(thread=message.thread, message=message, matched_by=ReplyMatch.FEEDBACK)
+    reply = _store(inbound, match, ReplyKind.COMPLAINT)
+    if channel.mode == ChannelMode.LIVE:
+        suppression_service.suppress_email(channel, match.thread.recipient_email, reason="complaint")
+        sequence_service.stop_sequence(match.thread, SequenceStopReason.COMPLAINT)
+        alert_service.notify_subject(
+            channel, subject_ref=match.thread.subject_ref, severity="high", title="Spam complaint"
+        )
+        transaction.on_commit(
+            lambda: message_bounced.send(sender=Message, message=message, hard=True, reason="complaint")
+        )
+    return reply
+
+
 def _delivery_note(inbound: Inbound, match: Match, dsn: dsn_service.Dsn) -> Reply:
     """`Action: delayed` (or another non-failure report) is noted on the message — its status never changes."""
     reply = _store(inbound, match, ReplyKind.BOUNCE_SOFT)
@@ -333,21 +361,25 @@ def _hard_bounce(channel: Channel, inbound: Inbound, match: Match, dsn: dsn_serv
         suppression_service.suppress_email(channel, match.thread.recipient_email, reason=f"dsn {dsn.status}")
     sequence_service.stop_sequence(match.thread, SequenceStopReason.BOUNCE)
     alert_service.notify_subject(channel, subject_ref=match.thread.subject_ref, severity="low", title="Bounce")
+    if channel.mode == ChannelMode.LIVE:  # a sandbox bounce says nothing about the real recipient
+        bounced = match.message
+        transaction.on_commit(lambda: message_bounced.send(sender=Message, message=bounced, hard=True))
     return reply
 
 
 def _soft_bounce(channel: Channel, inbound: Inbound, match: Match, dsn: dsn_service.Dsn) -> Reply:
-    """C-25, `Action: failed` 4.x.x: the first schedules one retry after COMMUNICATOR_SOFT_BOUNCE_RETRY_H; another
-    while that retry waits is ignored; one for the sent retry fails the message."""
+    """C-25, `Action: failed` 4.x.x: a bounce for a sent message schedules a retry after COMMUNICATOR_SOFT_BOUNCE_RETRY_H
+    while its send attempts are below COMMUNICATOR_SOFT_BOUNCE_MAX_ATTEMPTS (Q30), else it fails the message; another
+    bounce while a retry waits is ignored."""
     reply = _store(inbound, match, ReplyKind.BOUNCE_SOFT)
     message = match.message
-    if message.bounce_retry_at is None:
-        retry_at = clock_service.now_for(channel) + timedelta(
-            hours=communicator_settings.COMMUNICATOR_SOFT_BOUNCE_RETRY_H
-        )
-        _transition_logged(message, MessageStatus.SCHEDULED, {"bounce_retry_at": retry_at, "scheduled_at": retry_at})
-    elif message.status == MessageStatus.SENT:
+    if message.status != MessageStatus.SENT:
+        return reply
+    if message.send_attempts >= communicator_settings.COMMUNICATOR_SOFT_BOUNCE_MAX_ATTEMPTS:
         _fail_bounced(message, dsn)
+        return reply
+    retry_at = clock_service.now_for(channel) + timedelta(hours=communicator_settings.COMMUNICATOR_SOFT_BOUNCE_RETRY_H)
+    _transition_logged(message, MessageStatus.SCHEDULED, {"bounce_retry_at": retry_at, "scheduled_at": retry_at})
     return reply
 
 

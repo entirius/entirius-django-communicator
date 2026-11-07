@@ -24,7 +24,9 @@ from django_communicator.services import (
     clock_service,
     counter_service,
     delivery_service,
+    health_service,
     policy_service,
+    sender_route_service,
 )
 from django_communicator.services.mail_builder import SmtpNotConfiguredError
 from django_communicator.services.message_service import InvalidTransitionError
@@ -64,12 +66,21 @@ def _run_channel(channel: Channel) -> Counter:
     policy = policy_service.load_policy(channel)
     if policy is None:
         return Counter()
+    _check_health(channel, now)
     try:
         return _send_channel(policy, now)
     except SmtpNotConfiguredError:
         title = "SMTP not configured"
         alert_service.notify_once(channel, kind="smtp_missing", severity="high", title=title, day=now.date())
         return Counter()
+
+
+def _check_health(channel: Channel, now: datetime) -> None:
+    """Q15: pause the routes that broke a health threshold before this run picks the mail (off by default)."""
+    try:
+        health_service.evaluate(channel, now)
+    except Exception:  # noqa: BLE001 — a failing health check must not stop the sending of the others
+        logger.exception("communicator health check failed for channel %s", channel.idx)
 
 
 def _send_channel(policy: SendPolicy, now: datetime) -> Counter:
@@ -88,19 +99,49 @@ def _deliver_within_cap(policy: SendPolicy, message: Message, now: datetime) -> 
 
     A soft-bounce retry took its place when it was first sent, so it does not count again.
     """
+    if health_service.is_paused(message):
+        return delivery_service.DEFERRED  # Q15: the route is paused; the mail waits for a manual resume
     if message.bounce_retry_at is not None:
         return delivery_service.deliver(message, now=now)
     day = policy_service.channel_day(policy, now)
     if not counter_service.reserve(policy.channel, day, policy.daily_cap):
         return delivery_service.DEFERRED
+    mailbox = _reserve_mailbox(message, day)
+    if mailbox is False:
+        _release(policy.channel, day)
+        return delivery_service.DEFERRED
     try:
         outcome = delivery_service.deliver(message, now=now)
     except SmtpNotConfiguredError:
         _release(policy.channel, day)
+        _release_mailbox(mailbox, day)
         raise
     if outcome != MessageStatus.SENT:
         _release(policy.channel, day)
+        _release_mailbox(mailbox, day)
     return outcome
+
+
+def _reserve_mailbox(message: Message, day: date) -> str | bool | None:
+    """Per-mailbox cap (route cap or warm-up schedule): the reserved From address, None when no mailbox cap applies,
+    False when the mailbox is used up for the day. An unusable route reserves nothing — the delivery fails it."""
+    try:
+        route = sender_route_service.route_for(message)
+    except sender_route_service.SenderRouteError:
+        return None
+    cap = sender_route_service.effective_cap(route, day) if route else None
+    if cap is None:
+        return None
+    return route.from_email if counter_service.reserve_mailbox(route.from_email, day, cap) else False
+
+
+def _release_mailbox(mailbox: str | None, day: date) -> None:
+    if not mailbox:
+        return
+    try:
+        counter_service.release_mailbox(mailbox, day)
+    except redis.RedisError:
+        logger.exception("communicator could not release a mailbox cap reservation")
 
 
 def _release(channel: Channel, day: date) -> None:

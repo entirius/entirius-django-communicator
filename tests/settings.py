@@ -82,3 +82,10 @@ EMAIL_SMTP_CONFIGURATION_CHANNELS = {
 # No celery app with a once backend here; tests that run tasks configure a file backend.
 COMMUNICATOR_REQUIRE_ONCE_BACKEND = False
 REDIS_URL = "redis://redis.test:6379"
+
+# Gmail API: nothing in the suite may reach Google. These hosts do not resolve; `tests/conftest.py` points the URLs at
+# the local stub (tests/gmail_stub.py) for the tests that talk to it.
+COMMUNICATOR_GMAIL_API_BASE = "http://gmail-api.invalid"
+COMMUNICATOR_GMAIL_AUTH_URL = "http://gmail-auth.invalid/auth"
+COMMUNICATOR_GMAIL_TOKEN_URL = "http://gmail-api.invalid/token"
+COMMUNICATOR_GMAIL_REVOKE_URL = "http://gmail-api.invalid/revoke"

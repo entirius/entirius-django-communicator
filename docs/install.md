@@ -45,6 +45,13 @@ The only settings table. Defaults live in `django_communicator/settings.py` and 
 | `COMMUNICATOR_REPLY_INTENT_MIN_CONFIDENCE` | `0.7` | a class below this confidence is stored as `unclear` (the confidence is kept) |
 | `COMMUNICATOR_REPLY_INTENT_MAX_CHARS` | `3000` | the part of a reply's own text (quote removed) sent to the toolbox |
 | `COMMUNICATOR_OPTOUT_PHRASES` | `pl`, `en` lists | per-language opt-out phrases; matched on folded text (lower case, no diacritics, punctuation = one space), so a phrase is also a stem |
+| `COMMUNICATOR_BULK_APPROVAL_MAX` | `100` | most drafts one bulk approve / reject call may touch (approval inbox, Q4) |
+| `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` | `""` (off) | public base URL of the host (`https://api.example.com`, no trailing slash); set = `List-Unsubscribe` + `List-Unsubscribe-Post` headers and an unsubscribe link in every mail (Q6) |
+| `COMMUNICATOR_PRESEND_CHECK` | `""` (off) | dotted path of a callable `(email) -> str \| None` run right before each send (e.g. `django_leads.services.verification_service.presend_check`); a reason code = the message ends `failed/presend_check` with the code as `failure_detail`; an import error or exception never blocks a send |
+| `COMMUNICATOR_GMAIL_CLIENT_ID`, `COMMUNICATOR_GMAIL_CLIENT_SECRET`, `COMMUNICATOR_GMAIL_REDIRECT_URI` | `""` | OAuth client of the Google Cloud project (Gmail API transport). Read from the Django setting of the same name, else from the environment variable; never put them in the repository. Empty = connecting an account answers 409 `GMAIL_NOT_CONFIGURED`. The redirect URI is `<public API base>/api/communicator/v2/public/gmail/callback/` |
+| `COMMUNICATOR_GMAIL_RETURN_URL` | `""` | where the callback sends the browser afterwards (`?gmail=connected` or an error code); empty = a plain result page |
+| `COMMUNICATOR_GMAIL_API_BASE`, `_AUTH_URL`, `_TOKEN_URL`, `_REVOKE_URL` | Google's | only changed to point at the local test double (`tests/gmail_stub.py`); a non-Google API base is also what allows a sandbox channel and the test send to use the API |
+| `COMMUNICATOR_GMAIL_POLL_BATCH` | `50` | inbox messages read per account per `poll_inbox` run |
 | `COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS` | out-of-office patterns (en, pl) | autoresponder subjects |
 | `LEADS_ANONYMISED_DOMAIN` | `anonymised.invalid` | domain of token addresses — keep equal to django_leads |
 

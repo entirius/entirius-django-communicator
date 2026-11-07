@@ -43,7 +43,7 @@ def confirm(reply: Reply, *, user) -> Reply:
             sender=Reply, subject_ref=thread.subject_ref, email=email, channel_idx=channel_idx
         )
     )
-    transaction.on_commit(lambda: _record_objection(channel_idx, email))
+    transaction.on_commit(lambda: record_objection(channel_idx, email))
     return reply
 
 
@@ -80,7 +80,7 @@ def _locked_suspicion(reply: Reply) -> Reply:
     return locked
 
 
-def _record_objection(channel_idx: str, email: str) -> None:
+def record_objection(channel_idx: str, email: str) -> None:
     """Runs after the confirm committed — any failure is logged by class and retried by a task, never raised."""
     try:
         record_objection_now(channel_idx, email)

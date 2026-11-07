@@ -1,5 +1,3 @@
-# Generated: manage.py spectacular in the zeno service container, filtered to /api/communicator/.
-# Development-only test/ endpoints are omitted (mounted only under ENVIRONMENT=development).
 openapi: 3.1.0
 info:
   title: entirius-django-communicator Admin API v2
@@ -8,7 +6,7 @@ info:
 paths:
   /api/communicator/v2/admin/{channel_idx}/channel/:
     get:
-      operationId: api_communicator_v2_admin_channel_retrieve
+      operationId: communicator_v2_admin_channel_retrieve
       summary: Channel sending mode
       parameters:
       - in: path
@@ -36,9 +34,10 @@ paths:
         '404':
           description: No response body
     patch:
-      operationId: api_communicator_v2_admin_channel_partial_update
+      operationId: communicator_v2_admin_channel_partial_update
       description: 'live and live_enabled are set in Django admin only: `mode=live` or any `live_enabled` answers 400. sandbox
-        without a mailbox answers 409 (C-30).'
+        without a mailbox answers 409 (C-30). `default_sender_route` picks the channel''s default sender route (empty clears;
+        an unknown or inactive route answers 409).'
       summary: Change mode or sandbox mailbox
       parameters:
       - in: path
@@ -155,7 +154,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/footers/{language}/:
     get:
-      operationId: api_communicator_v2_admin_footers_retrieve
+      operationId: communicator_v2_admin_footers_retrieve
       summary: Mail footer in one language
       parameters:
       - in: path
@@ -188,7 +187,7 @@ paths:
         '404':
           description: No response body
     put:
-      operationId: api_communicator_v2_admin_footers_update
+      operationId: communicator_v2_admin_footers_update
       description: The HTML is sanitised to an allowlist (a, img, p, br, strong, em, span, div, table family; basic text,
         colour and size styles) and must keep `{{ legal }}` exactly once, else 400 on `html`. Sent messages keep the footer
         they went out with (`footer_html`).
@@ -236,7 +235,7 @@ paths:
         '404':
           description: No response body
     delete:
-      operationId: api_communicator_v2_admin_footers_destroy
+      operationId: communicator_v2_admin_footers_destroy
       description: Mail in this language falls back to the channel default language's footer, else the legal text alone.
       summary: Remove the mail footer
       parameters:
@@ -267,7 +266,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/mailbox/:
     get:
-      operationId: api_communicator_v2_admin_mailbox_retrieve
+      operationId: communicator_v2_admin_mailbox_retrieve
       summary: IMAP mailbox of the channel
       parameters:
       - in: path
@@ -295,7 +294,7 @@ paths:
         '404':
           description: No response body
     put:
-      operationId: api_communicator_v2_admin_mailbox_update
+      operationId: communicator_v2_admin_mailbox_update
       description: The password is stored encrypted and never returned; omit it to keep the stored one.
       summary: Create or replace the IMAP mailbox
       parameters:
@@ -337,7 +336,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/messages/:
     get:
-      operationId: api_communicator_v2_admin_messages_retrieve
+      operationId: communicator_v2_admin_messages_retrieve
       summary: Outbound messages by status with their next slot
       parameters:
       - in: path
@@ -394,7 +393,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/messages/{id}/send-now/:
     post:
-      operationId: api_communicator_v2_admin_messages_send_now_create
+      operationId: communicator_v2_admin_messages_send_now_create
       description: Sets scheduled_at to the channel clock only; the next beat run still applies mode, policy and cap.
       summary: Send now
       parameters:
@@ -431,7 +430,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/models/:
     get:
-      operationId: api_communicator_v2_admin_models_retrieve
+      operationId: communicator_v2_admin_models_retrieve
       summary: Toolbox models available for templates
       parameters:
       - in: path
@@ -464,7 +463,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/policy/:
     get:
-      operationId: api_communicator_v2_admin_policy_retrieve
+      operationId: communicator_v2_admin_policy_retrieve
       summary: Send policy of the channel
       parameters:
       - in: path
@@ -494,7 +493,7 @@ paths:
         '409':
           description: No response body
     put:
-      operationId: api_communicator_v2_admin_policy_update
+      operationId: communicator_v2_admin_policy_update
       summary: Create or replace the send policy
       parameters:
       - in: path
@@ -608,9 +607,8 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/replies/{id}/confirm-optout/:
     post:
-      operationId: api_communicator_v2_admin_replies_confirm_optout_create
-      description: Suppresses the thread recipient, stops the sequence and emits optout_confirmed;
-        any other reply → 409.
+      operationId: communicator_v2_admin_replies_confirm_optout_create
+      description: Suppresses the thread recipient, stops the sequence and emits optout_confirmed; any other reply → 409.
       summary: Confirm a suspected opt-out
       parameters:
       - in: path
@@ -646,9 +644,9 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/replies/{id}/dismiss-optout/:
     post:
-      operationId: api_communicator_v2_admin_replies_dismiss_optout_create
-      description: The reply becomes a plain reply (no notification); the sequence
-        stays paused until resume-sequence; any other → 409.
+      operationId: communicator_v2_admin_replies_dismiss_optout_create
+      description: The reply becomes a plain reply (no notification); the sequence stays paused until resume-sequence; any
+        other → 409.
       summary: Dismiss a suspected opt-out
       parameters:
       - in: path
@@ -713,10 +711,9 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/reply-actions/{intent}/:
     put:
-      operationId: api_communicator_v2_admin_reply_actions_update
-      description: Replaces the whole mapping of the class. `pause_until_return` only
-        for `out_of_office`, `auto_suppress` only for `unsubscribe`. Applies to replies
-        that arrive afterwards.
+      operationId: communicator_v2_admin_reply_actions_update
+      description: Replaces the whole mapping of the class. `pause_until_return` only for `out_of_office`, `auto_suppress`
+        only for `unsubscribe`. Applies to replies that arrive afterwards.
       summary: Set the next step for one intent class
       parameters:
       - in: path
@@ -760,7 +757,7 @@ paths:
         '404':
           description: No response body
     delete:
-      operationId: api_communicator_v2_admin_reply_actions_destroy
+      operationId: communicator_v2_admin_reply_actions_destroy
       summary: Back to the default for one intent class
       parameters:
       - in: path
@@ -834,7 +831,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/review/{id}/:
     get:
-      operationId: api_communicator_v2_admin_review_retrieve
+      operationId: communicator_v2_admin_review_retrieve
       description: Any status; 404 for an unknown id or another channel's message.
       summary: One message of the channel by id
       parameters:
@@ -869,7 +866,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/review/{id}/accept/:
     post:
-      operationId: api_communicator_v2_admin_review_accept_create
+      operationId: communicator_v2_admin_review_accept_create
       summary: Accept a message
       parameters:
       - in: path
@@ -905,7 +902,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/review/{id}/edit/:
     post:
-      operationId: api_communicator_v2_admin_review_edit_create
+      operationId: communicator_v2_admin_review_edit_create
       description: Creates the next version with `edited_by_human`; no toolbox call.
       summary: Edit a message by hand
       parameters:
@@ -954,9 +951,10 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/review/{id}/rewrite/:
     post:
-      operationId: api_communicator_v2_admin_review_rewrite_create
-      description: Creates the next version through the toolbox; the reviewed one becomes `superseded`. A toolbox failure
-        returns a `failed` version and keeps the reviewed message in the queue.
+      operationId: communicator_v2_admin_review_rewrite_create
+      description: 'Creates the next version through the toolbox; the reviewed one becomes `superseded`. A toolbox failure
+        returns a `failed` version and keeps the reviewed message in the queue. 503 `AI_TOOLBOX_DISABLED` while the toolbox
+        is switched off: no version is created.'
       summary: Rewrite an AI draft with reviewer notes
       parameters:
       - in: path
@@ -1002,9 +1000,11 @@ paths:
           description: No response body
         '409':
           description: No response body
+        '503':
+          description: No response body
   /api/communicator/v2/admin/{channel_idx}/review/{id}/skip/:
     post:
-      operationId: api_communicator_v2_admin_review_skip_create
+      operationId: communicator_v2_admin_review_skip_create
       summary: Reject a message
       parameters:
       - in: path
@@ -1051,7 +1051,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/review/{id}/skip-company/:
     post:
-      operationId: api_communicator_v2_admin_review_skip_company_create
+      operationId: communicator_v2_admin_review_skip_company_create
       description: Emits `company_skipped(subject_ref)`; the owner of the reference decides what that means.
       summary: Reject a message and skip its subject
       parameters:
@@ -1099,7 +1099,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/review/next/:
     get:
-      operationId: api_communicator_v2_admin_review_next_retrieve
+      operationId: communicator_v2_admin_review_next_retrieve
       description: With thread, template version and the caller's context; 404 when the queue is empty.
       summary: Oldest message waiting for review
       parameters:
@@ -1126,6 +1126,195 @@ paths:
         '403':
           description: No response body
         '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/routes/:
+    get:
+      operationId: communicator_routes_list
+      summary: Sender routes of the channel
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Sender Routes
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SenderRouteListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    post:
+      operationId: routes_create
+      description: Mail of a thread with this route key leaves from `from_email` with `cc_email` in CC. 409 for an existing
+        key or a warm-up without `daily_cap`.
+      summary: Create a sender route
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Sender Routes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SenderRouteCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SenderRouteCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SenderRouteCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SenderRouteResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/routes/{key}/:
+    get:
+      operationId: routes_retrieve
+      summary: One sender route
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: key
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Sender Routes
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SenderRouteResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    put:
+      operationId: routes_update
+      description: All fields are replaced; the key is fixed. A warm-up without a start date starts today; no `warmup_start_cap`
+        ends the warm-up.
+      summary: Replace a sender route
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: key
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Sender Routes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SenderRouteBody'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SenderRouteBody'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SenderRouteBody'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SenderRouteResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+    delete:
+      operationId: routes_destroy
+      description: 409 while it is the channel default. Threads keep the key; their messages then fail with a readable error
+        instead of leaving from a wrong mailbox.
+      summary: Delete a sender route
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: key
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Sender Routes
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/sequences/:
     get:
@@ -1157,7 +1346,7 @@ paths:
         '404':
           description: No response body
     post:
-      operationId: api_communicator_v2_admin_sequences_create
+      operationId: communicator_v2_admin_sequences_create
       summary: Create a sequence with its steps
       parameters:
       - in: path
@@ -1200,7 +1389,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/sequences/{id}/:
     patch:
-      operationId: api_communicator_v2_admin_sequences_partial_update
+      operationId: communicator_v2_admin_sequences_partial_update
       summary: Switch a sequence on or off, or make it the channel's autostart sequence
       parameters:
       - in: path
@@ -1247,7 +1436,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/sequences/{id}/steps/:
     get:
-      operationId: api_communicator_v2_admin_sequences_steps_retrieve
+      operationId: communicator_v2_admin_sequences_steps_retrieve
       summary: Steps of a sequence
       parameters:
       - in: path
@@ -1314,7 +1503,7 @@ paths:
         '404':
           description: No response body
     post:
-      operationId: api_communicator_v2_admin_sequences_texts_create
+      operationId: communicator_v2_admin_sequences_texts_create
       summary: Add a text to the pool
       parameters:
       - in: path
@@ -1360,7 +1549,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/sequences/{id}/texts/{text_pk}/:
     patch:
-      operationId: api_communicator_v2_admin_sequences_texts_partial_update
+      operationId: communicator_v2_admin_sequences_texts_partial_update
       description: Changes future follow-ups only — sent messages keep their rendered body.
       summary: Edit or restore a text
       parameters:
@@ -1410,7 +1599,7 @@ paths:
         '404':
           description: No response body
     delete:
-      operationId: api_communicator_v2_admin_sequences_texts_destroy
+      operationId: communicator_v2_admin_sequences_texts_destroy
       description: '204: never used by a thread, deleted. 200 with the row (`is_active=false`): already used, deactivated
         so the thread history stays and no thread gets the same text twice.'
       summary: Remove a text
@@ -1487,7 +1676,7 @@ paths:
         '404':
           description: No response body
     post:
-      operationId: api_communicator_v2_admin_suppressions_create
+      operationId: communicator_v2_admin_suppressions_create
       description: Emails are lower-cased; a domain or host is stored as its registrable domain.
       summary: Suppress an email or a registrable domain
       parameters:
@@ -1531,7 +1720,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/suppressions/{id}/:
     delete:
-      operationId: api_communicator_v2_admin_suppressions_destroy
+      operationId: communicator_v2_admin_suppressions_destroy
       summary: Remove a suppression
       parameters:
       - in: path
@@ -1589,7 +1778,7 @@ paths:
         '404':
           description: No response body
     post:
-      operationId: api_communicator_v2_admin_templates_create
+      operationId: communicator_v2_admin_templates_create
       summary: Create a template (version 1)
       parameters:
       - in: path
@@ -1630,7 +1819,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/templates/{id}/:
     get:
-      operationId: api_communicator_v2_admin_templates_retrieve
+      operationId: communicator_v2_admin_templates_retrieve
       summary: Get one template
       parameters:
       - in: path
@@ -1663,7 +1852,7 @@ paths:
         '404':
           description: No response body
     put:
-      operationId: api_communicator_v2_admin_templates_update
+      operationId: communicator_v2_admin_templates_update
       description: A change of subject, body, json_schema or model creates the next version; existing drafts keep the version
         they were rendered with.
       summary: Replace a template
@@ -1711,7 +1900,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/templates/{id}/test-generate/:
     post:
-      operationId: api_communicator_v2_admin_templates_test_generate_create
+      operationId: communicator_v2_admin_templates_test_generate_create
       description: Static templates only render; ai_prompt templates call the toolbox (tag `communicator.test_generate`).
         Toolbox errors keep their v2 status and code.
       summary: Draft with a sample context without saving
@@ -1766,7 +1955,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/templates/{id}/versions/:
     get:
-      operationId: api_communicator_v2_admin_templates_versions_retrieve
+      operationId: communicator_v2_admin_templates_versions_retrieve
       summary: List versions of a template
       parameters:
       - in: path
@@ -1859,7 +2048,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/threads/{id}/:
     get:
-      operationId: api_communicator_v2_admin_threads_retrieve
+      operationId: communicator_v2_admin_threads_retrieve
       summary: One thread with its messages and replies
       parameters:
       - in: path
@@ -1893,7 +2082,7 @@ paths:
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/threads/{id}/resume-sequence/:
     post:
-      operationId: api_communicator_v2_admin_threads_resume_sequence_create
+      operationId: communicator_v2_admin_threads_resume_sequence_create
       description: 'After a dismissed opt-out: the thread is open again and the sequence runs, re-armed from the last delivery.
         An undecided opt-out or a sequence that is not paused → 409.'
       summary: Resume the paused sequence of a thread
@@ -1929,8 +2118,1084 @@ paths:
           description: No response body
         '409':
           description: No response body
+  /api/communicator/v2/admin/approvals/:
+    get:
+      operationId: communicator_approvals_list
+      description: 'Oldest first, paginated (`page`, `page_size` ≤ 100). Filters: `channel`, `sender_route` (effective route
+        key), `template` (template key), `q` (subject reference, recipient or subject), `min_age_hours`. `counts` covers the
+        whole filtered set. `blocker` says why approving a row would be refused.'
+      summary: Every draft waiting for approval, all channels
+      parameters:
+      - in: query
+        name: channel
+        schema:
+          type: string
+      - in: query
+        name: min_age_hours
+        schema:
+          type: number
+          format: double
+      - in: query
+        name: page
+        schema:
+          type: integer
+      - in: query
+        name: page_size
+        schema:
+          type: integer
+      - in: query
+        name: q
+        schema:
+          type: string
+      - in: query
+        name: sender_route
+        schema:
+          type: string
+      - in: query
+        name: template
+        schema:
+          type: string
+      tags:
+      - Communicator Approvals
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/approvals/bulk/:
+    post:
+      operationId: communicator_v2_admin_approvals_bulk_create
+      description: 'Each id is handled on its own: a draft that is no longer waiting, is unknown or would be refused (legal
+        footer, sender route) lands in `failed` with the reason and never blocks the others. At most `COMMUNICATOR_BULK_APPROVAL_MAX`
+        ids (default 100), else 400. The batch is logged with the user.'
+      summary: Approve or reject several drafts at once
+      tags:
+      - Communicator Approvals
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkApprovalRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkApprovalRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkApprovalRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkApprovalResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/approvals/log/:
+    get:
+      operationId: communicator_v2_admin_approvals_log_retrieve
+      description: 'Newest first, paginated: who, what, which ids were changed and which were not.'
+      summary: Log of bulk approvals and rejections
+      tags:
+      - Communicator Approvals
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkApprovalLogListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/health/:
+    get:
+      operationId: communicator_health
+      description: Counts and percent rates over the last 24 h and 7 days, per route and for the channel. Rates are percent
+        of mails sent in the same window; null when nothing was sent.
+      summary: Sending health of the channel and of each sender route
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Health
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/health/log/:
+    get:
+      operationId: communicator_health_log
+      summary: Pause and resume log
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Health
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PauseLogResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/health/policy/:
+    get:
+      operationId: communicator_health_policy
+      summary: Auto-pause thresholds
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Health
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthPolicyResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    put:
+      operationId: health_policy_update
+      description: Off by default. When on, a live channel's route is paused as soon as, within `window_hours` and with at
+        least `min_sample` mails sent, hard bounces, opt-outs or complaints exceed their percent threshold. A paused route
+        is resumed only by `routes/{key}/resume/`.
+      summary: Replace the auto-pause thresholds
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Health
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HealthPolicyBody'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/HealthPolicyBody'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/HealthPolicyBody'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthPolicyResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/routes/{key}/pause/:
+    post:
+      operationId: communicator_route_pause
+      description: No mail leaves by the route (it waits, approved) until `resume/`. 409 when already paused.
+      summary: Pause a sender route by hand
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: key
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Health
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteReasonBody'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RouteReasonBody'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RouteReasonBody'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SenderRouteResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/routes/{key}/resume/:
+    post:
+      operationId: communicator_route_resume
+      description: The only way back from a pause, automatic or manual; a reason is required and logged. The auto-pause then
+        judges only events after the resume. 409 when the route is not paused.
+      summary: Resume a paused sender route
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: key
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Health
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteReasonBody'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RouteReasonBody'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RouteReasonBody'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SenderRouteResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/accounts/:
+    get:
+      operationId: communicator_accounts_list
+      summary: Mail accounts of the channel
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Mail Accounts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailAccountListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    post:
+      operationId: accounts_create
+      description: Adds the Google mailbox only; `accounts/{id}/connect/` starts the sign-in. 409 `ACCOUNT_EXISTS`.
+      summary: Add a mail account (not connected yet)
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Mail Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MailAccountCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MailAccountCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MailAccountCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailAccountResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/accounts/{id}/:
+    get:
+      operationId: accounts_retrieve
+      summary: One mail account
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator Mail Accounts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailAccountResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    patch:
+      operationId: accounts_partial_update
+      description: Switching reading on for an account connected without the read scope needs a new sign-in (`connect/`);
+        until then `can_receive` stays false.
+      summary: Turn reading replies on or off
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator Mail Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedMailAccountUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedMailAccountUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedMailAccountUpdateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailAccountResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    delete:
+      operationId: accounts_destroy
+      description: Revokes the token at Google first. 409 `ACCOUNT_IN_USE` while a route sends through it.
+      summary: Delete a mail account
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator Mail Accounts
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/accounts/{id}/connect/:
+    post:
+      operationId: accounts_connect_create
+      description: 'Returns the consent URL (authorization code flow, `access_type=offline`, `prompt=consent`, PKCE, signed
+        `state`); open it in a browser. Google then calls the public callback and the account becomes `connected` - poll `accounts/{id}/`.
+        Scopes: send, plus read only for an account with `inbound_enabled`. 409 `GMAIL_NOT_CONFIGURED` while the OAuth client
+        settings are empty.'
+      summary: Start the Google sign-in
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator Mail Accounts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailAccountConnectResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/accounts/{id}/disconnect/:
+    post:
+      operationId: accounts_disconnect_create
+      description: Revokes the token at Google and forgets it; the routes of the account stop sending.
+      summary: Disconnect
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator Mail Accounts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailAccountResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/accounts/{id}/test/:
+    post:
+      operationId: accounts_test_create
+      description: 'Refreshes the access token and, with the read scope, reads the Gmail profile and compares the address.
+        Always 200: `ok` false carries a short `error`; a refused token sets the state `needs_reauth`.'
+      summary: Test the connection
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator Mail Accounts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailAccountTestResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/accounts/{id}/test-send/:
+    post:
+      operationId: accounts_test_send_create
+      description: Sends one short message in the name of the account, but only while the Gmail API base URL is not Google's
+        (the local test double). 409 `TEST_SEND_NEEDS_DOUBLE` otherwise; 409 `ACCOUNT_NOT_CONNECTED`.
+      summary: Send a test message (test double only)
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator Mail Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MailAccountTestSendRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MailAccountTestSendRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MailAccountTestSendRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailAccountTestSendResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+        '409':
+          description: No response body
 components:
   schemas:
+    ActionEnum:
+      enum:
+      - approve
+      - reject
+      type: string
+    ApprovalCountsResponse:
+      properties:
+        total:
+          description: Drafts matching the filters.
+          examples:
+          - 12
+          title: Total
+          type: integer
+        by_channel:
+          additionalProperties:
+            type: integer
+          description: Per channel idx.
+          examples:
+          - {}
+          title: By Channel
+          type: object
+        by_route:
+          additionalProperties:
+            type: integer
+          description: Per effective route key; empty key = none.
+          examples:
+          - {}
+          title: By Route
+          type: object
+      required:
+      - total
+      - by_channel
+      - by_route
+      title: ApprovalCountsResponse
+      type: object
+    ApprovalListResponse:
+      properties:
+        count:
+          description: Total matching drafts.
+          examples:
+          - 1
+          title: Count
+          type: integer
+        next:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Next page URL.
+          examples:
+          - null
+          title: Next
+        previous:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Previous page URL.
+          examples:
+          - null
+          title: Previous
+        counts:
+          $ref: '#/components/schemas/ApprovalCountsResponse'
+          description: Totals for the filter chips (whole filtered set).
+        results:
+          description: Oldest first.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/ApprovalRowResponse'
+          title: Results
+          type: array
+      required:
+      - count
+      - next
+      - previous
+      - counts
+      - results
+      title: ApprovalListResponse
+      type: object
+    ApprovalRowResponse:
+      properties:
+        id:
+          description: Message id.
+          examples:
+          - 11
+          title: Id
+          type: integer
+        channel:
+          description: Channel idx.
+          examples:
+          - default-europe
+          title: Channel
+          type: string
+        thread_id:
+          description: Thread id.
+          examples:
+          - 3
+          title: Thread Id
+          type: integer
+        sender_route:
+          description: Effective route key; empty = none.
+          examples:
+          - ecomhouse
+          title: Sender Route
+          type: string
+        sender_from:
+          description: Mailbox the mail will leave from; empty = the channel's own.
+          examples:
+          - ''
+          title: Sender From
+          type: string
+        sender_cc:
+          description: Copy mailbox.
+          examples:
+          - ''
+          title: Sender Cc
+          type: string
+        company:
+          description: '`company_name` of the caller''s context, else the recipient name.'
+          examples:
+          - Shop
+          title: Company
+          type: string
+        subject_ref:
+          description: Opaque reference of the caller.
+          examples:
+          - leads.Company:42
+          title: Subject Ref
+          type: string
+        recipient_email:
+          description: Recipient.
+          examples:
+          - jan@shop.test
+          title: Recipient Email
+          type: string
+        template_key:
+          description: Template key; empty without a template.
+          examples:
+          - lead.cold.shop
+          title: Template Key
+          type: string
+        template_version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Template version number.
+          examples:
+          - 2
+          title: Template Version
+        subject:
+          description: Subject.
+          examples:
+          - Quick question
+          title: Subject
+          type: string
+        body_preview:
+          description: First 300 characters of the body.
+          examples:
+          - Hello
+          title: Body Preview
+          type: string
+        version:
+          description: Version in the rewrite chain.
+          examples:
+          - 1
+          title: Version
+          type: integer
+        created_at:
+          description: Created.
+          examples:
+          - '2026-09-13T12:00:00Z'
+          format: date-time
+          title: Created At
+          type: string
+        age_hours:
+          description: Hours waiting.
+          examples:
+          - 3.5
+          title: Age Hours
+          type: number
+        blocker:
+          description: Why approving would be refused (legal footer, route); empty = can approve.
+          examples:
+          - ''
+          title: Blocker
+          type: string
+      required:
+      - id
+      - channel
+      - thread_id
+      - sender_route
+      - sender_from
+      - sender_cc
+      - company
+      - subject_ref
+      - recipient_email
+      - template_key
+      - template_version
+      - subject
+      - body_preview
+      - version
+      - created_at
+      - age_hours
+      - blocker
+      title: ApprovalRowResponse
+      type: object
+    BulkApprovalLogListResponse:
+      properties:
+        count:
+          description: Total entries.
+          examples:
+          - 1
+          title: Count
+          type: integer
+        next:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Next page URL.
+          examples:
+          - null
+          title: Next
+        previous:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Previous page URL.
+          examples:
+          - null
+          title: Previous
+        results:
+          description: Newest first.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/BulkApprovalLogResponse'
+          title: Results
+          type: array
+      required:
+      - count
+      - next
+      - previous
+      - results
+      title: BulkApprovalLogListResponse
+      type: object
+    BulkApprovalLogResponse:
+      properties:
+        id:
+          description: Log entry id.
+          examples:
+          - 1
+          title: Id
+          type: integer
+        user_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Who.
+          examples:
+          - 1
+          title: User Id
+        action:
+          description: approve or reject.
+          examples:
+          - approve
+          title: Action
+          type: string
+        reason:
+          description: Reject reason.
+          examples:
+          - ''
+          title: Reason
+          type: string
+        requested:
+          description: Ids in the request.
+          examples:
+          - 3
+          title: Requested
+          type: integer
+        done_ids:
+          description: Message ids changed.
+          examples:
+          - - 1
+            - 2
+          items:
+            type: integer
+          title: Done Ids
+          type: array
+        failed:
+          additionalProperties:
+            type: string
+          description: Message id → why it was not changed.
+          examples:
+          - {}
+          title: Failed
+          type: object
+        created_at:
+          description: When.
+          examples:
+          - '2026-09-13T12:00:00Z'
+          format: date-time
+          title: Created At
+          type: string
+      required:
+      - id
+      - user_id
+      - action
+      - reason
+      - requested
+      - done_ids
+      - failed
+      - created_at
+      title: BulkApprovalLogResponse
+      type: object
+    BulkApprovalRequest:
+      additionalProperties: false
+      properties:
+        action:
+          allOf:
+          - $ref: '#/components/schemas/ActionEnum'
+          description: approve or reject.
+          examples:
+          - approve
+          title: Action
+        ids:
+          description: Message ids; the limit is a setting.
+          items:
+            type: integer
+          maxItems: 1000
+          minItems: 1
+          title: Ids
+          type: array
+        reason:
+          default: ''
+          description: Reject reason, stored on each message.
+          examples:
+          - ''
+          maxLength: 255
+          title: Reason
+          type: string
+      required:
+      - action
+      - ids
+      title: BulkApprovalRequest
+      type: object
+    BulkApprovalResponse:
+      properties:
+        id:
+          description: Log entry id.
+          examples:
+          - 1
+          title: Id
+          type: integer
+        action:
+          description: approve or reject.
+          examples:
+          - approve
+          title: Action
+          type: string
+        done:
+          description: Message ids changed.
+          examples:
+          - - 1
+            - 2
+          items:
+            type: integer
+          title: Done
+          type: array
+        failed:
+          additionalProperties:
+            type: string
+          description: Message id → why it was not changed.
+          examples:
+          - {}
+          title: Failed
+          type: object
+      required:
+      - id
+      - action
+      - done
+      - failed
+      title: BulkApprovalResponse
+      type: object
     ChannelConfigResponse:
       properties:
         idx:
@@ -1963,6 +3228,12 @@ components:
           - false
           title: Live Enabled
           type: boolean
+        default_sender_route:
+          description: Sender route key used when a thread has none.
+          examples:
+          - ecomhouse
+          title: Default Sender Route
+          type: string
         timezone:
           description: Timezone.
           examples:
@@ -1981,6 +3252,7 @@ components:
       - mode
       - sandbox_mailbox
       - live_enabled
+      - default_sender_route
       - timezone
       - country
       title: ChannelConfigResponse
@@ -2167,6 +3439,14 @@ components:
           description: The first mail waiting to be sent in any thread of the conversation.
           examples:
           - null
+        reply_intent:
+          anyOf:
+          - $ref: '#/components/schemas/RowReplyIntentResponse'
+          - type: 'null'
+          default: null
+          description: Class of the newest classified reply (any thread of a conversation); null when none.
+          examples:
+          - null
         thread_count:
           description: Threads of the conversation.
           examples:
@@ -2314,6 +3594,48 @@ components:
       - html
       - modified_at
       title: FooterResponse
+      type: object
+    MailboxCapResponse:
+      properties:
+        route:
+          description: Sender route key.
+          examples:
+          - ecomhouse
+          title: Route
+          type: string
+        from_email:
+          description: Mailbox.
+          examples:
+          - wiktorw@ecom.house
+          title: From Email
+          type: string
+        cap_today:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Deliveries allowed today (warm-up applied); null = no cap.
+          examples:
+          - 5
+          title: Cap Today
+        sent_today:
+          description: Deliveries counted today from this mailbox.
+          examples:
+          - 0
+          title: Sent Today
+          type: integer
+        warmup:
+          description: A warm-up schedule is set.
+          examples:
+          - true
+          title: Warmup
+          type: boolean
+      required:
+      - route
+      - from_email
+      - cap_today
+      - sent_today
+      - warmup
+      title: MailboxCapResponse
       type: object
     MailboxRequest:
       additionalProperties: false
@@ -2627,7 +3949,8 @@ components:
           - null
           title: Replied At
         failure_code:
-          description: no_template, render, budget, schema, model, upstream or smtp.
+          description: no_template, render, budget, schema, model, upstream, smtp, bounce, send_outcome_unknown, legal_footer
+            or sender_route.
           examples:
           - ''
           title: Failure Code
@@ -2782,6 +4105,14 @@ components:
       - results
       title: ModelListResponse
       type: object
+    NotifySeverity:
+      enum:
+      - none
+      - low
+      - medium
+      - high
+      title: NotifySeverity
+      type: string
     OutboxListResponse:
       properties:
         count:
@@ -2998,7 +4329,8 @@ components:
           - null
           title: Replied At
         failure_code:
-          description: no_template, render, budget, schema, model, upstream or smtp.
+          description: no_template, render, budget, schema, model, upstream, smtp, bounce, send_outcome_unknown, legal_footer
+            or sender_route.
           examples:
           - ''
           title: Failure Code
@@ -3090,6 +4422,18 @@ components:
           examples:
           - sandbox@mail.test
           title: Sandbox Mailbox
+        default_sender_route:
+          anyOf:
+          - maxLength: 64
+            pattern: ^[a-z0-9_-]*$
+            type: string
+          - type: 'null'
+          default: null
+          description: Key of the sender route used when a thread names none; empty clears. 409 for an unknown or inactive
+            route.
+          examples:
+          - ecomhouse
+          title: Default Sender Route
       title: ChannelConfigRequest
       type: object
     PatchedSequenceUpdateRequest:
@@ -3231,6 +4575,14 @@ components:
           examples:
           - null
           title: Next Slot
+        mailboxes:
+          description: Per-mailbox cap of each active route today.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/MailboxCapResponse'
+          title: Mailboxes
+          type: array
       required:
       - business_days_only
       - daily_cap
@@ -3240,6 +4592,7 @@ components:
       - country
       - sent_today
       - next_slot
+      - mailboxes
       title: PolicyResponse
       type: object
     ReplyActionListResponse:
@@ -3258,14 +4611,12 @@ components:
       type: object
     ReplyActionRequest:
       additionalProperties: false
-      description: The whole next-step mapping of one intent class; omitted fields
-        take the model defaults.
+      description: The whole next-step mapping of one intent class; omitted fields take the model defaults.
       properties:
         sequence:
           $ref: '#/components/schemas/ReplySequenceAction'
           default: stop
-          description: stop (as every reply did before T4), pause, or pause_until_return
-            (out_of_office only).
+          description: stop (as every reply did before T4), pause, or pause_until_return (out_of_office only).
           examples:
           - pause
         notify:
@@ -3281,8 +4632,8 @@ components:
             type: integer
           - type: 'null'
           default: null
-          description: 'Alert a person to follow up this many days after the reply
-            (out of office: only when the reply gave no return date).'
+          description: 'Alert a person to follow up this many days after the reply (out of office: only when the reply gave
+            no return date).'
           examples:
           - 30
           title: Remind After Days
@@ -3306,8 +4657,7 @@ components:
           title: Min Confidence
         auto_suppress:
           default: false
-          description: 'unsubscribe only: confirm the opt-out (suppression) without
-            a person, like confirm-optout.'
+          description: 'unsubscribe only: confirm the opt-out (suppression) without a person, like confirm-optout.'
           examples:
           - false
           title: Auto Suppress
@@ -3376,6 +4726,18 @@ components:
       - is_default
       title: ReplyActionResponse
       type: object
+    ReplyIntent:
+      description: What a human reply wants (T4). `unclear` is also the class of a reply the classifier was not sure about.
+      enum:
+      - interested
+      - not_now
+      - not_interested
+      - out_of_office
+      - wrong_person
+      - unsubscribe
+      - unclear
+      title: ReplyIntent
+      type: string
     ReplyListResponse:
       properties:
         count:
@@ -3490,9 +4852,8 @@ components:
           - null
           title: Optout Confirmed At
         intent:
-          description: interested, not_now, not_interested, out_of_office, wrong_person,
-            unsubscribe or unclear; empty when the reply was not classified (toolbox
-            off or failed, auto reply, bounce).
+          description: interested, not_now, not_interested, out_of_office, wrong_person, unsubscribe or unclear; empty when
+            the reply was not classified (toolbox off or failed, auto reply, bounce).
           examples:
           - interested
           title: Intent
@@ -3521,16 +4882,14 @@ components:
           - null
           title: Intent Return Date
         needs_review:
-          description: A person must read and decide (class unclear, or the mapping
-            says so).
+          description: A person must read and decide (class unclear, or the mapping says so).
           examples:
           - false
           title: Needs Review
           type: boolean
         action_applied:
           additionalProperties: true
-          description: The next-step plan applied to this reply (empty for bounces
-            and auto replies).
+          description: The next-step plan applied to this reply (empty for bounces and auto replies).
           examples:
           - {}
           title: Action Applied
@@ -3595,6 +4954,14 @@ components:
       - reminded_at
       title: ReplyResponse
       type: object
+    ReplySequenceAction:
+      description: What a classified reply does to the thread's sequence. `stop` is what every reply did before T4.
+      enum:
+      - stop
+      - pause
+      - pause_until_return
+      title: ReplySequenceAction
+      type: string
     RewriteRequest:
       additionalProperties: false
       properties:
@@ -3609,6 +4976,418 @@ components:
       required:
       - notes
       title: RewriteRequest
+      type: object
+    RowReplyIntentResponse:
+      properties:
+        reply_id:
+          description: The classified reply the class comes from (the newest one).
+          examples:
+          - 5
+          title: Reply Id
+          type: integer
+        intent:
+          description: interested, not_now, not_interested, out_of_office, wrong_person, unsubscribe or unclear.
+          examples:
+          - interested
+          title: Intent
+          type: string
+        intent_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Classifier confidence 0..1.
+          examples:
+          - 0.92
+          title: Intent Confidence
+        intent_return_date:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          description: 'Out of office: the day they are back.'
+          examples:
+          - null
+          title: Intent Return Date
+        needs_review:
+          description: A person must read and decide.
+          examples:
+          - false
+          title: Needs Review
+          type: boolean
+      required:
+      - reply_id
+      - intent
+      - intent_confidence
+      - intent_return_date
+      - needs_review
+      title: RowReplyIntentResponse
+      type: object
+    SenderRouteBody:
+      additionalProperties: false
+      properties:
+        name:
+          default: ''
+          description: Display name in the From header.
+          examples:
+          - Wiktor W.
+          maxLength: 128
+          title: Name
+          type: string
+        from_email:
+          description: Mailbox the mail leaves from.
+          examples:
+          - wiktorw@ecom.house
+          maxLength: 254
+          pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+          title: From Email
+          type: string
+        cc_email:
+          default: ''
+          description: 'Copy (CC) mailbox: the same person on the other domain; empty = no copy.'
+          examples:
+          - wiktorw@entirius.com
+          maxLength: 254
+          pattern: ^([^@\s]+@[^@\s]+\.[^@\s]+)?$
+          title: Cc Email
+          type: string
+        is_active:
+          default: true
+          description: An inactive route cannot be used.
+          examples:
+          - true
+          title: Is Active
+          type: boolean
+        daily_cap:
+          anyOf:
+          - maximum: 10000
+            minimum: 0
+            type: integer
+          - type: 'null'
+          default: null
+          description: Most deliveries per day from this From; null = none.
+          examples:
+          - 40
+          title: Daily Cap
+        warmup_start_cap:
+          anyOf:
+          - maximum: 10000
+            minimum: 0
+            type: integer
+          - type: 'null'
+          default: null
+          description: 'Warm-up: the cap on the first day; null = no warm-up. Needs `daily_cap` as the ceiling.'
+          examples:
+          - 5
+          title: Warmup Start Cap
+        warmup_step:
+          default: 1
+          description: 'Warm-up: cap added per day.'
+          examples:
+          - 2
+          maximum: 1000
+          minimum: 0
+          title: Warmup Step
+          type: integer
+        warmup_started_on:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          default: null
+          description: Warm-up day one; empty with a warm-up = today (channel day).
+          examples:
+          - null
+          title: Warmup Started On
+        transport:
+          allOf:
+          - $ref: '#/components/schemas/TransportEnum'
+          default: smtp
+          description: smtp = the channel's SMTP connection; gmail_api = send through the mail account.
+          examples:
+          - smtp
+          title: Transport
+        mail_account_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          description: Mail account (`accounts/`) of this channel; required for gmail_api, its address must be `from_email`;
+            null for smtp.
+          examples:
+          - null
+          title: Mail Account Id
+      required:
+      - from_email
+      title: SenderRouteBody
+      type: object
+    SenderRouteCreateRequest:
+      additionalProperties: false
+      properties:
+        name:
+          default: ''
+          description: Display name in the From header.
+          examples:
+          - Wiktor W.
+          maxLength: 128
+          title: Name
+          type: string
+        from_email:
+          description: Mailbox the mail leaves from.
+          examples:
+          - wiktorw@ecom.house
+          maxLength: 254
+          pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+          title: From Email
+          type: string
+        cc_email:
+          default: ''
+          description: 'Copy (CC) mailbox: the same person on the other domain; empty = no copy.'
+          examples:
+          - wiktorw@entirius.com
+          maxLength: 254
+          pattern: ^([^@\s]+@[^@\s]+\.[^@\s]+)?$
+          title: Cc Email
+          type: string
+        is_active:
+          default: true
+          description: An inactive route cannot be used.
+          examples:
+          - true
+          title: Is Active
+          type: boolean
+        daily_cap:
+          anyOf:
+          - maximum: 10000
+            minimum: 0
+            type: integer
+          - type: 'null'
+          default: null
+          description: Most deliveries per day from this From; null = none.
+          examples:
+          - 40
+          title: Daily Cap
+        warmup_start_cap:
+          anyOf:
+          - maximum: 10000
+            minimum: 0
+            type: integer
+          - type: 'null'
+          default: null
+          description: 'Warm-up: the cap on the first day; null = no warm-up. Needs `daily_cap` as the ceiling.'
+          examples:
+          - 5
+          title: Warmup Start Cap
+        warmup_step:
+          default: 1
+          description: 'Warm-up: cap added per day.'
+          examples:
+          - 2
+          maximum: 1000
+          minimum: 0
+          title: Warmup Step
+          type: integer
+        warmup_started_on:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          default: null
+          description: Warm-up day one; empty with a warm-up = today (channel day).
+          examples:
+          - null
+          title: Warmup Started On
+        transport:
+          allOf:
+          - $ref: '#/components/schemas/TransportEnum'
+          default: smtp
+          description: smtp = the channel's SMTP connection; gmail_api = send through the mail account.
+          examples:
+          - smtp
+          title: Transport
+        mail_account_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          description: Mail account (`accounts/`) of this channel; required for gmail_api, its address must be `from_email`;
+            null for smtp.
+          examples:
+          - null
+          title: Mail Account Id
+        key:
+          description: Route key.
+          examples:
+          - ecomhouse
+          maxLength: 64
+          minLength: 1
+          pattern: ^[a-z0-9_-]+$
+          title: Key
+          type: string
+      required:
+      - from_email
+      - key
+      title: SenderRouteCreateRequest
+      type: object
+    SenderRouteListResponse:
+      properties:
+        results:
+          description: Routes of the channel.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/SenderRouteResponse'
+          title: Results
+          type: array
+      required:
+      - results
+      title: SenderRouteListResponse
+      type: object
+    SenderRouteResponse:
+      properties:
+        key:
+          description: Route key.
+          examples:
+          - ecomhouse
+          title: Key
+          type: string
+        name:
+          description: Display name in the From header.
+          examples:
+          - Wiktor W.
+          title: Name
+          type: string
+        from_email:
+          description: Mailbox the mail leaves from.
+          examples:
+          - wiktorw@ecom.house
+          title: From Email
+          type: string
+        cc_email:
+          description: Copy (CC) mailbox; empty = none.
+          examples:
+          - wiktorw@entirius.com
+          title: Cc Email
+          type: string
+        is_active:
+          description: Usable.
+          examples:
+          - true
+          title: Is Active
+          type: boolean
+        is_default:
+          description: The channel default route.
+          examples:
+          - false
+          title: Is Default
+          type: boolean
+        daily_cap:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Most deliveries per day from this From.
+          examples:
+          - 40
+          title: Daily Cap
+        warmup_start_cap:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Warm-up first-day cap; null = no warm-up.
+          examples:
+          - 5
+          title: Warmup Start Cap
+        warmup_step:
+          description: Warm-up cap added per day.
+          examples:
+          - 2
+          title: Warmup Step
+          type: integer
+        warmup_started_on:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          description: Warm-up day one.
+          examples:
+          - null
+          title: Warmup Started On
+        cap_today:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Cap in force today; null = none.
+          examples:
+          - 5
+          title: Cap Today
+        sent_today:
+          description: Deliveries from this mailbox today.
+          examples:
+          - 0
+          title: Sent Today
+          type: integer
+        paused:
+          description: No mail leaves by this route until a manual resume (Q15).
+          examples:
+          - false
+          title: Paused
+          type: boolean
+        paused_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: When it was paused.
+          examples:
+          - null
+          title: Paused At
+        pause_reason:
+          description: 'Why: measured rates or the reason given by a person.'
+          examples:
+          - ''
+          title: Pause Reason
+          type: string
+        transport:
+          description: smtp or gmail_api.
+          examples:
+          - smtp
+          title: Transport
+          type: string
+        mail_account_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Mail account of a gmail_api route.
+          examples:
+          - null
+          title: Mail Account Id
+        mail_account_state:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: State of that account (a gmail_api route sends only while it is `connected`).
+          examples:
+          - null
+          title: Mail Account State
+      required:
+      - key
+      - name
+      - from_email
+      - cc_email
+      - is_active
+      - is_default
+      - daily_cap
+      - warmup_start_cap
+      - warmup_step
+      - warmup_started_on
+      - cap_today
+      - sent_today
+      - paused
+      - paused_at
+      - pause_reason
+      - transport
+      - mail_account_id
+      - mail_account_state
+      title: SenderRouteResponse
       type: object
     SequenceListResponse:
       properties:
@@ -4565,6 +6344,12 @@ components:
           - open
           title: Status
           type: string
+        sender_route:
+          description: Sender route key set by the caller; empty = channel default.
+          examples:
+          - ''
+          title: Sender Route
+          type: string
       required:
       - id
       - subject_ref
@@ -4572,6 +6357,7 @@ components:
       - recipient_name
       - recipient_language
       - status
+      - sender_route
       title: ThreadResponse
       type: object
     ThreadRowResponse:
@@ -4644,6 +6430,14 @@ components:
           - $ref: '#/components/schemas/ThreadWaitingResponse'
           - type: 'null'
           description: The first mail waiting to be sent.
+          examples:
+          - null
+        reply_intent:
+          anyOf:
+          - $ref: '#/components/schemas/RowReplyIntentResponse'
+          - type: 'null'
+          default: null
+          description: Class of the newest classified reply (any thread of a conversation); null when none.
           examples:
           - null
       required:
@@ -4758,6 +6552,39 @@ components:
           - reply
           title: Reply Kind
           type: string
+        intent:
+          default: ''
+          description: Intent class of a reply; empty for a message or an unclassified reply.
+          examples:
+          - ''
+          title: Intent
+          type: string
+        intent_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          default: null
+          description: Classifier confidence 0..1.
+          examples:
+          - null
+          title: Intent Confidence
+        intent_return_date:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          default: null
+          description: 'Out of office: the day they are back.'
+          examples:
+          - null
+          title: Intent Return Date
+        needs_review:
+          default: false
+          description: A person must read and decide.
+          examples:
+          - false
+          title: Needs Review
+          type: boolean
       required:
       - kind
       - message_id
@@ -4828,8 +6655,981 @@ components:
       - end_time
       title: WindowResponse
       type: object
+    ClockResponse:
+      properties:
+        now:
+          description: Channel clock after the change.
+          examples:
+          - '2026-09-14T10:00:00+02:00'
+          format: date-time
+          title: Now
+          type: string
+      required:
+      - now
+      title: ClockResponse
+      type: object
+    CountersResetResponse:
+      properties:
+        cleared:
+          description: Channel days cleared.
+          examples:
+          - 7
+          title: Cleared
+          type: integer
+      required:
+      - cleared
+      title: CountersResetResponse
+      type: object
+    DevClockRequest:
+      additionalProperties: false
+      properties:
+        iso_datetime:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Channel clock; naive = channel timezone; null clears.
+          examples:
+          - '2026-09-14T10:00:00'
+          title: Iso Datetime
+      required:
+      - iso_datetime
+      title: DevClockRequest
+      type: object
+    DevCommunicateRequest:
+      additionalProperties: false
+      properties:
+        template_key:
+          description: Template key.
+          examples:
+          - lead.cold.shop
+          maxLength: 128
+          minLength: 1
+          title: Template Key
+          type: string
+        recipient:
+          $ref: '#/components/schemas/RecipientData'
+          description: Who the message is for.
+        context:
+          additionalProperties: true
+          description: Placeholder values.
+          examples:
+          - {}
+          title: Context
+          type: object
+        subject_ref:
+          description: Opaque reference.
+          examples:
+          - bdd:c-01
+          maxLength: 200
+          minLength: 1
+          title: Subject Ref
+          type: string
+        requires_review:
+          default: true
+          description: False lets auto_approve templates pass.
+          examples:
+          - true
+          title: Requires Review
+          type: boolean
+        audience:
+          default: ''
+          description: Audience code.
+          examples:
+          - RETAILER
+          maxLength: 64
+          pattern: ^[A-Z0-9_]*$
+          title: Audience
+          type: string
+        sender_route:
+          default: ''
+          description: Sender route key.
+          examples:
+          - ecomhouse
+          maxLength: 64
+          pattern: ^[a-z0-9_-]*$
+          title: Sender Route
+          type: string
+      required:
+      - template_key
+      - recipient
+      - subject_ref
+      title: DevCommunicateRequest
+      type: object
+    DevResetCountersRequest:
+      additionalProperties: false
+      properties:
+        days:
+          description: Channel days whose send counters are cleared.
+          examples:
+          - - '2026-09-21'
+          items:
+            format: date
+            type: string
+          maxItems: 31
+          minItems: 1
+          title: Days
+          type: array
+      required:
+      - days
+      title: DevResetCountersRequest
+      type: object
+    DevStartSequenceRequest:
+      additionalProperties: false
+      properties:
+        thread_id:
+          description: Thread of the channel.
+          examples:
+          - 3
+          title: Thread Id
+          type: integer
+        sequence_key:
+          description: Sequence key.
+          examples:
+          - followup
+          maxLength: 64
+          minLength: 1
+          title: Sequence Key
+          type: string
+      required:
+      - thread_id
+      - sequence_key
+      title: DevStartSequenceRequest
+      type: object
+    DevToolboxOutageRequest:
+      additionalProperties: false
+      properties:
+        down:
+          description: True simulates a toolbox outage, false ends it.
+          examples:
+          - true
+          title: Down
+          type: boolean
+      required:
+      - down
+      title: DevToolboxOutageRequest
+      type: object
+    HealthMetricsResponse:
+      properties:
+        sent:
+          description: Mails sent in the window.
+          examples:
+          - 120
+          title: Sent
+          type: integer
+        delivered:
+          description: Sent minus hard bounces.
+          examples:
+          - 117
+          title: Delivered
+          type: integer
+        hard_bounces:
+          description: Permanent bounces (DSN 5.x.x).
+          examples:
+          - 3
+          title: Hard Bounces
+          type: integer
+        soft_bounces:
+          description: Temporary bounces (DSN 4.x.x) of mails that were retried.
+          examples:
+          - 1
+          title: Soft Bounces
+          type: integer
+        optouts:
+          description: Confirmed opt-outs and unsubscribe-link clicks.
+          examples:
+          - 2
+          title: Optouts
+          type: integer
+        complaints:
+          description: Spam complaints (ARF); 0 while the feedback loop is off.
+          examples:
+          - 0
+          title: Complaints
+          type: integer
+        replies:
+          description: Human replies.
+          examples:
+          - 9
+          title: Replies
+          type: integer
+        hard_bounce_rate_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Percent of sent; null when nothing was sent.
+          examples:
+          - 2.5
+          title: Hard Bounce Rate Pct
+        soft_bounce_rate_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Percent of sent.
+          examples:
+          - 0.83
+          title: Soft Bounce Rate Pct
+        optout_rate_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Percent of sent.
+          examples:
+          - 1.67
+          title: Optout Rate Pct
+        complaint_rate_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Percent of sent.
+          examples:
+          - 0.0
+          title: Complaint Rate Pct
+        reply_rate_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Percent of sent.
+          examples:
+          - 7.5
+          title: Reply Rate Pct
+      required:
+      - sent
+      - delivered
+      - hard_bounces
+      - soft_bounces
+      - optouts
+      - complaints
+      - replies
+      - hard_bounce_rate_pct
+      - soft_bounce_rate_pct
+      - optout_rate_pct
+      - complaint_rate_pct
+      - reply_rate_pct
+      title: HealthMetricsResponse
+      type: object
+    HealthPolicyBody:
+      additionalProperties: false
+      properties:
+        enabled:
+          default: false
+          description: Auto-pause on.
+          examples:
+          - true
+          title: Enabled
+          type: boolean
+        window_hours:
+          default: 168
+          description: Judged window in hours.
+          examples:
+          - 168
+          maximum: 720
+          minimum: 1
+          title: Window Hours
+          type: integer
+        min_sample:
+          default: 50
+          description: Minimum sent mails in the window.
+          examples:
+          - 50
+          maximum: 100000
+          minimum: 1
+          title: Min Sample
+          type: integer
+        max_bounce_pct:
+          default: 2
+          description: Hard bounces, percent of sent.
+          examples:
+          - 2
+          exclusiveMinimum: 0
+          maximum: 100
+          title: Max Bounce Pct
+          type: number
+        max_optout_pct:
+          default: 3
+          description: Opt-outs, percent of sent.
+          examples:
+          - 3
+          exclusiveMinimum: 0
+          maximum: 100
+          title: Max Optout Pct
+          type: number
+        max_complaint_pct:
+          default: 0.1
+          description: Complaints, percent.
+          examples:
+          - 0.1
+          exclusiveMinimum: 0
+          maximum: 100
+          title: Max Complaint Pct
+          type: number
+      title: HealthPolicyBody
+      type: object
+    HealthPolicyResponse:
+      properties:
+        enabled:
+          description: Auto-pause on; off by default.
+          examples:
+          - false
+          title: Enabled
+          type: boolean
+        window_hours:
+          description: Window the thresholds are judged over.
+          examples:
+          - 168
+          title: Window Hours
+          type: integer
+        min_sample:
+          description: Mails that must be sent in the window before any threshold counts.
+          examples:
+          - 50
+          title: Min Sample
+          type: integer
+        max_bounce_pct:
+          description: Hard bounces, percent of sent.
+          examples:
+          - 2.0
+          title: Max Bounce Pct
+          type: number
+        max_optout_pct:
+          description: Opt-outs, percent of sent.
+          examples:
+          - 3.0
+          title: Max Optout Pct
+          type: number
+        max_complaint_pct:
+          description: Complaints, percent of sent.
+          examples:
+          - 0.1
+          title: Max Complaint Pct
+          type: number
+      required:
+      - enabled
+      - window_hours
+      - min_sample
+      - max_bounce_pct
+      - max_optout_pct
+      - max_complaint_pct
+      title: HealthPolicyResponse
+      type: object
+    HealthResponse:
+      properties:
+        channel:
+          $ref: '#/components/schemas/HealthWindowsResponse'
+          description: All routes of the channel together.
+        routes:
+          description: One row per route, ordered by key.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/HealthRouteResponse'
+          title: Routes
+          type: array
+        policy:
+          $ref: '#/components/schemas/HealthPolicyResponse'
+          description: The auto-pause thresholds.
+      required:
+      - channel
+      - routes
+      - policy
+      title: HealthResponse
+      type: object
+    HealthRouteResponse:
+      properties:
+        windows:
+          additionalProperties:
+            $ref: '#/components/schemas/HealthMetricsResponse'
+          description: Keys `24h` and `7d`.
+          examples:
+          - {}
+          title: Windows
+          type: object
+        route_key:
+          description: Route key; empty = mail without any route.
+          examples:
+          - ecomhouse
+          title: Route Key
+          type: string
+        from_email:
+          description: From mailbox; empty for the no-route row.
+          examples:
+          - wiktorw@ecom.house
+          title: From Email
+          type: string
+        is_active:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          description: Null for the no-route row.
+          examples:
+          - true
+          title: Is Active
+        paused:
+          description: Paused (automatically or by a person).
+          examples:
+          - false
+          title: Paused
+          type: boolean
+        paused_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: When it was paused.
+          examples:
+          - null
+          title: Paused At
+        pause_reason:
+          description: Why.
+          examples:
+          - ''
+          title: Pause Reason
+          type: string
+      required:
+      - windows
+      - route_key
+      - from_email
+      - is_active
+      - paused
+      - paused_at
+      - pause_reason
+      title: HealthRouteResponse
+      type: object
+    HealthWindowsResponse:
+      properties:
+        windows:
+          additionalProperties:
+            $ref: '#/components/schemas/HealthMetricsResponse'
+          description: Keys `24h` and `7d`.
+          examples:
+          - {}
+          title: Windows
+          type: object
+      required:
+      - windows
+      title: HealthWindowsResponse
+      type: object
+    PauseLogResponse:
+      properties:
+        results:
+          description: Newest first, at most 100.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/PauseLogRowResponse'
+          title: Results
+          type: array
+      required:
+      - results
+      title: PauseLogResponse
+      type: object
+    PauseLogRowResponse:
+      properties:
+        id:
+          description: Log id.
+          examples:
+          - 1
+          title: Id
+          type: integer
+        route_key:
+          description: Route key.
+          examples:
+          - ecomhouse
+          title: Route Key
+          type: string
+        action:
+          description: pause or resume.
+          examples:
+          - pause
+          title: Action
+          type: string
+        trigger:
+          description: bounce, optout, complaint or manual.
+          examples:
+          - bounce
+          title: Trigger
+          type: string
+        reason:
+          description: Measured rates or the person's reason.
+          examples:
+          - hard bounces 3.0% ...
+          title: Reason
+          type: string
+        metrics:
+          additionalProperties: true
+          description: Window counts at that moment.
+          examples:
+          - {}
+          title: Metrics
+          type: object
+        user:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Username of the person; null for the automatic pause.
+          examples:
+          - null
+          title: User
+        created_at:
+          description: When.
+          format: date-time
+          title: Created At
+          type: string
+      required:
+      - id
+      - route_key
+      - action
+      - trigger
+      - reason
+      - metrics
+      - user
+      - created_at
+      title: PauseLogRowResponse
+      type: object
+    PollNowResponse:
+      properties:
+        ingested:
+          description: Mail that produced or matched a reply.
+          examples:
+          - 1
+          title: Ingested
+          type: integer
+        skipped:
+          description: Mail dropped (unmatched, own, expunged).
+          examples:
+          - 0
+          title: Skipped
+          type: integer
+        quarantined:
+          description: Mail recorded in the quarantine (oversized, unreadable).
+          examples:
+          - 0
+          title: Quarantined
+          type: integer
+      required:
+      - ingested
+      - skipped
+      - quarantined
+      title: PollNowResponse
+      type: object
+    RecipientData:
+      properties:
+        email:
+          description: Recipient email.
+          examples:
+          - jan@shop.test
+          maxLength: 254
+          minLength: 3
+          title: Email
+          type: string
+        first_name:
+          default: ''
+          description: Recipient first name.
+          examples:
+          - Jan
+          title: First Name
+          type: string
+        last_name:
+          default: ''
+          description: Recipient last name.
+          examples:
+          - Kowalski
+          title: Last Name
+          type: string
+        language:
+          default: ''
+          description: ISO 639-1 code of the recipient.
+          examples:
+          - pl
+          title: Language
+          type: string
+        legal_footer:
+          default: ''
+          description: Footer carried verbatim on the message.
+          examples:
+          - ''
+          title: Legal Footer
+          type: string
+      required:
+      - email
+      title: RecipientData
+      type: object
+    ReplyFollowupsResponse:
+      properties:
+        resumed:
+          description: Sequences resumed after a return date.
+          examples:
+          - 1
+          title: Resumed
+          type: integer
+        reminded:
+          description: Reminders sent.
+          examples:
+          - 1
+          title: Reminded
+          type: integer
+      required:
+      - resumed
+      - reminded
+      title: ReplyFollowupsResponse
+      type: object
+    RetryDraftsResponse:
+      properties:
+        recovered:
+          description: Drafts moved from failed to review_required.
+          examples:
+          - 1
+          title: Recovered
+          type: integer
+        failed:
+          description: Drafts whose retry failed again.
+          examples:
+          - 0
+          title: Failed
+          type: integer
+      required:
+      - recovered
+      - failed
+      title: RetryDraftsResponse
+      type: object
+    RouteReasonBody:
+      additionalProperties: false
+      properties:
+        reason:
+          description: Why; stored in the pause log.
+          examples:
+          - checked
+          maxLength: 255
+          minLength: 3
+          title: Reason
+          type: string
+      required:
+      - reason
+      title: RouteReasonBody
+      type: object
+    SendDueResponse:
+      properties:
+        sent:
+          description: Delivered over SMTP.
+          examples:
+          - 1
+          title: Sent
+          type: integer
+        would_send:
+          description: Recorded by dry_run channels.
+          examples:
+          - 0
+          title: Would Send
+          type: integer
+        suppressed:
+          description: Recipient suppressed after approval.
+          examples:
+          - 0
+          title: Suppressed
+          type: integer
+        failed:
+          description: Failed on SMTP.
+          examples:
+          - 0
+          title: Failed
+          type: integer
+        deferred:
+          description: Left for a later run (window, cap, spread, 4xx).
+          examples:
+          - 0
+          title: Deferred
+          type: integer
+        follow_ups_scheduled:
+          description: Follow-ups created before sending.
+          examples:
+          - 0
+          title: Follow Ups Scheduled
+          type: integer
+      required:
+      - sent
+      - would_send
+      - suppressed
+      - failed
+      - deferred
+      - follow_ups_scheduled
+      title: SendDueResponse
+      type: object
+    ToolboxOutageResponse:
+      properties:
+        down:
+          description: Whether the simulated toolbox outage is on.
+          examples:
+          - true
+          title: Down
+          type: boolean
+      required:
+      - down
+      title: ToolboxOutageResponse
+      type: object
+    MailAccountConnectResponse:
+      properties:
+        authorization_url:
+          description: Open this Google consent page in a browser.
+          examples:
+          - https://accounts.google.com/o/oauth2/v2/auth?...
+          title: Authorization Url
+          type: string
+        expires_in:
+          description: Seconds the sign-in link stays valid.
+          examples:
+          - 600
+          title: Expires In
+          type: integer
+      required:
+      - authorization_url
+      - expires_in
+      title: MailAccountConnectResponse
+      type: object
+    MailAccountCreateRequest:
+      additionalProperties: false
+      properties:
+        email:
+          description: The Google mailbox to connect.
+          examples:
+          - wiktorw@ecom.house
+          maxLength: 254
+          pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+          title: Email
+          type: string
+        inbound_enabled:
+          default: false
+          description: Also read the inbox for replies (asks Google for the read scope).
+          examples:
+          - false
+          title: Inbound Enabled
+          type: boolean
+      required:
+      - email
+      title: MailAccountCreateRequest
+      type: object
+    MailAccountListResponse:
+      properties:
+        results:
+          description: Mail accounts of the channel.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/MailAccountResponse'
+          title: Results
+          type: array
+      required:
+      - results
+      title: MailAccountListResponse
+      type: object
+    MailAccountResponse:
+      properties:
+        id:
+          description: Mail account id.
+          examples:
+          - 1
+          title: Id
+          type: integer
+        email:
+          description: The mailbox.
+          examples:
+          - wiktorw@ecom.house
+          title: Email
+          type: string
+        provider:
+          description: gmail.
+          examples:
+          - gmail
+          title: Provider
+          type: string
+        state:
+          description: not_connected, connected, needs_reauth or error.
+          examples:
+          - connected
+          title: State
+          type: string
+        inbound_enabled:
+          description: Replies are read from this inbox.
+          examples:
+          - false
+          title: Inbound Enabled
+          type: boolean
+        scopes:
+          description: Scopes Google granted (no tokens are ever returned).
+          examples:
+          - []
+          items:
+            type: string
+          title: Scopes
+          type: array
+        can_send:
+          description: Connected with the send scope.
+          examples:
+          - true
+          title: Can Send
+          type: boolean
+        can_receive:
+          description: Connected with the read scope and `inbound_enabled`.
+          examples:
+          - false
+          title: Can Receive
+          type: boolean
+        connected_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: When the account was connected.
+          examples:
+          - null
+          title: Connected At
+        last_ok_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Last successful call to Google.
+          examples:
+          - null
+          title: Last Ok At
+        last_error:
+          description: Short code of the last problem; never a token.
+          examples:
+          - ''
+          title: Last Error
+          type: string
+        last_error_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: When it happened.
+          examples:
+          - null
+          title: Last Error At
+        last_polled_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Last inbox read.
+          examples:
+          - null
+          title: Last Polled At
+        routes:
+          description: Keys of the routes that send through this account.
+          examples:
+          - - ecomhouse
+          items:
+            type: string
+          title: Routes
+          type: array
+      required:
+      - id
+      - email
+      - provider
+      - state
+      - inbound_enabled
+      - scopes
+      - can_send
+      - can_receive
+      - connected_at
+      - last_ok_at
+      - last_error
+      - last_error_at
+      - last_polled_at
+      - routes
+      title: MailAccountResponse
+      type: object
+    MailAccountTestResponse:
+      properties:
+        ok:
+          description: The connection works.
+          examples:
+          - true
+          title: Ok
+          type: boolean
+        checks:
+          description: 'What passed: token, profile.'
+          examples:
+          - - token
+          items:
+            type: string
+          title: Checks
+          type: array
+        error:
+          description: Short code of the failure; empty when ok.
+          examples:
+          - ''
+          title: Error
+          type: string
+        account:
+          $ref: '#/components/schemas/MailAccountResponse'
+          description: The account after the test (its state may have changed).
+      required:
+      - ok
+      - checks
+      - error
+      - account
+      title: MailAccountTestResponse
+      type: object
+    MailAccountTestSendRequest:
+      additionalProperties: false
+      properties:
+        to:
+          description: Recipient of the test message.
+          examples:
+          - qa@example.test
+          maxLength: 254
+          pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+          title: To
+          type: string
+      required:
+      - to
+      title: MailAccountTestSendRequest
+      type: object
+    MailAccountTestSendResponse:
+      properties:
+        ok:
+          description: The test double accepted the message.
+          examples:
+          - true
+          title: Ok
+          type: boolean
+        message_id:
+          description: Id the test double gave the message.
+          examples:
+          - m1
+          title: Message Id
+          type: string
+      required:
+      - ok
+      - message_id
+      title: MailAccountTestSendResponse
+      type: object
+    PatchedMailAccountUpdateRequest:
+      additionalProperties: false
+      properties:
+        inbound_enabled:
+          description: Read the inbox for replies. Turning it on needs a new sign-in to grant the read scope.
+          examples:
+          - true
+          title: Inbound Enabled
+          type: boolean
+      required:
+      - inbound_enabled
+      title: MailAccountUpdateRequest
+      type: object
+    TransportEnum:
+      enum:
+      - smtp
+      - gmail_api
+      type: string
   securitySchemes:
     jwtAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-KEY

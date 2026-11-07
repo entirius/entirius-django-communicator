@@ -167,6 +167,21 @@ def _row(thread: Thread, messages: list[Message], replies: list[Reply], policy: 
         "last_text": entries[-1][1][:LAST_TEXT_MAX] if entries else "",
         "draft": {"id": draft.pk, "subject": draft.subject} if draft else None,
         "waiting": _waiting(waiting, policy) if waiting else None,
+        "reply_intent": _reply_intent(replies),
+    }
+
+
+def _reply_intent(replies: list[Reply]) -> dict | None:
+    """The newest classified reply of the row (replies are already loaded, oldest first), else `None`."""
+    reply = next((r for r in reversed(replies) if r.intent), None)
+    if reply is None:
+        return None
+    return {
+        "reply_id": reply.pk,
+        "intent": reply.intent,
+        "intent_confidence": reply.intent_confidence,
+        "intent_return_date": reply.intent_return_date,
+        "needs_review": reply.needs_review,
     }
 
 
@@ -203,6 +218,10 @@ def _message_entry(message: Message) -> dict:
         "body_text": message.body_text,
         "from_email": "",
         "reply_kind": "",
+        "intent": "",
+        "intent_confidence": None,
+        "intent_return_date": None,
+        "needs_review": False,
     }
 
 
@@ -217,6 +236,10 @@ def _reply_entry(reply: Reply) -> dict:
         "body_text": reply.body_text,
         "from_email": reply.from_email,
         "reply_kind": reply.kind,
+        "intent": reply.intent,
+        "intent_confidence": reply.intent_confidence,
+        "intent_return_date": reply.intent_return_date,
+        "needs_review": reply.needs_review,
     }
 
 

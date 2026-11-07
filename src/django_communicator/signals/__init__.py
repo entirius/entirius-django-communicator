@@ -8,6 +8,9 @@
 - `message_sent(sender=Message, message=...)`, `sequence_finished(sender=Thread, thread=...)`.
 - `reply_received(sender=Thread, thread=..., reply=...)` — a human reply (or a dismissed opt-out suspicion).
 - `optout_confirmed(sender=Reply, subject_ref=..., email=..., channel_idx=...)` — a human confirmed an opt-out.
+- `message_bounced(sender=Message, message=..., hard=True)` — a live message hit a permanent failure (hard DSN or an SMTP
+  5xx recipient refusal); the owner of the `subject_ref` may mark the address dead at once.
+  A spam complaint (ARF, Q30) is sent the same way with an extra `reason="complaint"`.
 - `reply_followup_due(sender=Reply, thread=..., reply=..., kind="reminder")` — a reminder set by a reply's next-step plan
   (T4) came due; a person should follow up.
 - `draft_retry_requested(sender=Message, message=...)` — sent synchronously before a failed draft is retried; the
@@ -24,3 +27,4 @@ reply_received = Signal()
 optout_confirmed = Signal()
 reply_followup_due = Signal()
 draft_retry_requested = Signal()
+message_bounced = Signal()

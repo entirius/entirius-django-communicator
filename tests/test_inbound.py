@@ -252,6 +252,7 @@ def test_C24_dsn_hard_bounce_failed_suppressed_sequence_stopped_notify_low(chann
 
 def test_C25_dsn_soft_bounce_retry_after_24h_then_failed(channel):
     message = make_sent(channel, "owner@example-shop-6.test")
+    Message.objects.filter(pk=message.pk).update(send_attempts=1)  # the delivery counted its attempt
 
     ingest(channel, eml("dsn_soft.eml"))
 
@@ -260,7 +261,7 @@ def test_C25_dsn_soft_bounce_retry_after_24h_then_failed(channel):
     assert abs(message.bounce_retry_at - timezone.now() - timedelta(hours=24)) < timedelta(minutes=1)
     resent_id = "<communicator-1-resent00@mail.example.test>"
     message_service.transition(message, MessageStatus.SENDING)
-    message_service.transition(message, MessageStatus.SENT, fields={"message_id": resent_id})
+    message_service.transition(message, MessageStatus.SENT, fields={"message_id": resent_id, "send_attempts": 2})
 
     second = eml("dsn_soft.eml", resent_id).replace(b"<dsn-soft-1@", b"<dsn-soft-2@")
     ingest(channel, second)
@@ -817,3 +818,19 @@ def test_F4_english_variants_and_languageless_thread():
 def test_F4_fold_is_idempotent_and_handles_l_stroke():
     assert inbound_service.fold("Łódź, ŻÓŁĆ!  ok") == "lodz zolc ok"
     assert inbound_service.fold(inbound_service.fold("Łódź")) == "lodz"
+
+
+def test_glue_hard_dsn_in_live_sends_message_bounced_and_sandbox_does_not(channel, django_capture_on_commit_callbacks):
+    from django_communicator.signals import message_bounced
+
+    go_live(channel)
+    message = make_sent(channel, "owner@example-shop-6.test")
+    heard = []
+    message_bounced.connect(lambda sender, **kw: heard.append(kw), weak=False, dispatch_uid="glue-dsn")
+    try:
+        with mock.patch(NOTIFY), django_capture_on_commit_callbacks(execute=True):
+            ingest(channel, eml("dsn_hard.eml"))
+    finally:
+        message_bounced.disconnect(dispatch_uid="glue-dsn")
+
+    assert [(h["message"].pk, h["hard"]) for h in heard] == [(message.pk, True)]

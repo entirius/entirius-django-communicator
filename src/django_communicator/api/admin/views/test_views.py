@@ -43,8 +43,10 @@ from django_communicator.services import (
     clock_service,
     counter_service,
     draft_retry_service,
+    gmail_inbound_service,
     poll_service,
     reply_followup_service,
+    sender_route_service,
     sequence_service,
 )
 from django_communicator.services.communicate_service import LegalFooterRequiredError, communicate
@@ -128,15 +130,18 @@ class DevSendDueView(DevelopmentView):
 class DevResetCountersView(DevelopmentView):
     @extend_schema(
         tags=_TAGS,
-        summary="Clear the channel's daily send counters (development only)",
+        summary="Clear the channel's daily send counters, mailbox counters included (development only)",
         request=DevResetCountersRequest,
         responses={200: CountersResetResponse, **ERROR_RESPONSES},
     )
     def post(self, request: Request, channel_idx: str) -> Response:
         body = parse(DevResetCountersRequest, request.data)
         channel = self.channel(channel_idx)
+        mailboxes = {route.from_email for route in sender_route_service.list_routes(channel)}
         for day in body.days:
             counter_service.reset(channel, day)
+            for mailbox in mailboxes:
+                counter_service.reset_mailbox(mailbox, day)
         return Response(CountersResetResponse(cleared=len(body.days)).model_dump(mode="json"))
 
 
@@ -164,15 +169,21 @@ class DevStartSequenceView(DevelopmentView):
 class DevPollNowView(DevelopmentView):
     @extend_schema(
         tags=_TAGS,
-        summary="Run the IMAP poll now (development only)",
-        description="Polls the active mailbox of this channel in-process under the poll_inbox celery-once lock of the "
+        summary="Run the inbox poll now (development only)",
+        description="Polls the active IMAP mailbox and the connected Gmail accounts of this channel in-process under the poll_inbox celery-once lock of the "
         "beat — 409 while a beat run holds it.",
         request=None,
         responses={200: PollNowResponse, **ERROR_RESPONSES, 409: None},
     )
     def post(self, request: Request, channel_idx: str) -> Response:
         channel = self.channel(channel_idx)
-        counts = _run_locked(poll_inbox, lambda: poll_service.poll_all(channel))
+
+        def poll():
+            counts = gmail_inbound_service.poll_all(channel)
+            counts.update(poll_service.poll_all(channel))
+            return counts
+
+        counts = _run_locked(poll_inbox, poll)
         return Response(PollNowResponse(**counts).model_dump(mode="json"))
 
 

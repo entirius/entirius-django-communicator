@@ -15,6 +15,7 @@ from django_communicator.models import Message
 from django_communicator.schemas.requests import ChannelConfigRequest, OutboxQuery, PolicyRequest
 from django_communicator.schemas.responses import (
     ChannelConfigResponse,
+    MailboxCapResponse,
     MessageDetailResponse,
     OutboxListResponse,
     OutboxMessageResponse,
@@ -27,11 +28,26 @@ from django_communicator.services import (
     policy_service,
     review_service,
     send_service,
+    sender_route_service,
     sending_config_service,
 )
 from django_communicator.services.message_service import InvalidTransitionError
 
 _TAGS = ["Communicator Sending"]
+
+
+def _mailboxes(channel, today) -> list[MailboxCapResponse]:
+    rows = sender_route_service.list_routes(channel).filter(is_active=True)
+    return [
+        MailboxCapResponse(
+            route=route.key,
+            from_email=route.from_email,
+            cap_today=sender_route_service.effective_cap(route, today),
+            sent_today=counter_service.mailbox_sent_on(route.from_email, today),
+            warmup=route.warmup_start_cap is not None,
+        )
+        for route in rows
+    ]
 
 
 def _policy_response(policy) -> dict:
@@ -46,6 +62,7 @@ def _policy_response(policy) -> dict:
         country=channel.country,
         sent_today=counter_service.sent_on(channel, now.date()),
         next_slot=policy_service.next_slot(policy, now),
+        mailboxes=_mailboxes(channel, now.date()),
     ).model_dump(mode="json")
 
 
@@ -62,7 +79,8 @@ class ChannelConfigView(AdminView):
         tags=_TAGS,
         summary="Change mode or sandbox mailbox",
         description="live and live_enabled are set in Django admin only: `mode=live` or any `live_enabled` answers "
-        "400. sandbox without a mailbox answers 409 (C-30).",
+        "400. sandbox without a mailbox answers 409 (C-30). `default_sender_route` picks the channel's default "
+        "sender route (empty clears; an unknown or inactive route answers 409).",
         request=ChannelConfigRequest,
         responses={200: ChannelConfigResponse, **ERROR_RESPONSES, 409: None},
     )
@@ -72,9 +90,14 @@ class ChannelConfigView(AdminView):
         if body.mode == ChannelMode.LIVE and channel.mode != ChannelMode.LIVE:
             raise ValidationError({"mode": ["live is set in Django admin only"]})
         try:
-            channel_service.set_mode(channel, **body.model_dump(mode="json"))
+            channel_service.set_mode(channel, **body.model_dump(mode="json", exclude={"default_sender_route"}))
         except DjangoValidationError as error:
             raise Conflict("; ".join(error.messages), code="channel_mode_invalid") from None
+        if body.default_sender_route is not None:
+            try:
+                sender_route_service.set_default(channel, body.default_sender_route)
+            except sender_route_service.SenderRouteError as error:
+                raise Conflict(error.client_message, code="sender_route_unknown") from None
         return Response(ChannelConfigResponse.model_validate(channel).model_dump(mode="json"))
 
 
