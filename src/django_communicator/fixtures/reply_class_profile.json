@@ -1,0 +1,7 @@
+{
+  "prompt_text": "Read ONE reply to a B2B sales e-mail and give it exactly one class.\n- interested: wants to talk, asks for details, a call, a price or a meeting.\n- not_now: may be interested later (timing, budget, busy) or asks to come back later.\n- not_interested: declines the offer without asking to be removed from contact.\n- out_of_office: an away message written by the person; return_date is the ISO date they are back, else null.\n- wrong_person: not the right person; may point to someone else.\n- unsubscribe: asks to stop receiving mail, to be removed from a list or never to be contacted again.\n- unclear: anything else, mixed or too short to decide.\nconfidence is your certainty from 0 to 1; when unsure, answer unclear with a low confidence. Replies may be Polish or English. Answer only with the JSON object of the schema.",
+  "model": "fake-chat",
+  "min_confidence": 0.7,
+  "max_chars": 3000,
+  "is_active": true
+}

@@ -61,10 +61,10 @@ def start_sequence(thread: Thread, sequence: Sequence) -> ThreadSequenceState:
 
 
 def stop_sequence(thread: Thread, reason: str) -> None:
-    """Stops a running or paused sequence; an already stopped one keeps its reason."""
+    """Stops a running or paused sequence; an already stopped one keeps its reason. A planned resume is dropped."""
     active = Q(stopped_at=None) | Q(stop_reason=SequenceStopReason.PAUSED)
     ThreadSequenceState.objects.filter(active, thread=thread).update(
-        stopped_at=timezone.now(), stop_reason=reason, next_due_at=None
+        stopped_at=timezone.now(), stop_reason=reason, next_due_at=None, resume_at=None
     )
 
 
@@ -77,8 +77,8 @@ def resume_sequence(thread: Thread) -> ThreadSequenceState:
     state = ThreadSequenceState.objects.filter(thread=thread, stop_reason=SequenceStopReason.PAUSED).first()
     if state is None:
         raise SequenceError(f"thread {thread.pk} has no paused sequence")
-    state.stopped_at, state.stop_reason = None, ""
-    state.save(update_fields=["stopped_at", "stop_reason", "modified_at"])
+    state.stopped_at, state.stop_reason, state.resume_at = None, "", None
+    state.save(update_fields=["stopped_at", "stop_reason", "resume_at", "modified_at"])
     last = _last_delivered(thread)
     _arm(thread, last.sent_at if last else clock_service.now_for(thread.channel))
     state.refresh_from_db()

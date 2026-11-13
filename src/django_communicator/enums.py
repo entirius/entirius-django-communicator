@@ -161,6 +161,36 @@ class SequenceStopReason(models.TextChoices):
     COMPLAINT = "complaint", "Spam complaint"
 
 
+class ReplyIntent(models.TextChoices):
+    """The class of a human reply, given by the AI toolbox; advice for a person, never a decision."""
+
+    INTERESTED = "interested", "Interested"
+    NOT_NOW = "not_now", "Not now"
+    NOT_INTERESTED = "not_interested", "Not interested"
+    OUT_OF_OFFICE = "out_of_office", "Out of office"
+    WRONG_PERSON = "wrong_person", "Wrong person"
+    UNSUBSCRIBE = "unsubscribe", "Unsubscribe"
+    UNCLEAR = "unclear", "Unclear"
+
+
+class IntentSource(models.TextChoices):
+    TOOLBOX = "toolbox", "AI toolbox"
+
+
+class ReplySequenceAction(models.TextChoices):
+    """What a classified reply does to the thread's sequence."""
+
+    STOP = "stop", "Stop"
+    PAUSE = "pause", "Pause"
+    PAUSE_UNTIL_RETURN = "pause_until_return", "Pause until the return date"
+
+
+class AlertSeverity(models.TextChoices):
+    LOW = "low", "Low"
+    MEDIUM = "medium", "Medium"
+    HIGH = "high", "High"
+
+
 _S = MessageStatus
 _DELIVERY_OUTCOMES = frozenset(
     {_S.SENT.value, _S.FAILED.value, _S.SUPPRESSED.value, _S.WOULD_SEND.value, _S.SKIPPED.value}

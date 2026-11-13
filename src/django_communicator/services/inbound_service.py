@@ -2,10 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Inbound mail → `Reply`. Fixed order: duplicate → DSN → complaint → thread match → autoresponder → opt-out → reply.
+"""Inbound mail → `Reply`. Fixed order: duplicate → DSN → complaint → thread match → autoresponder → class /
+opt-out → reply.
 
 The only writer of `Thread.status` besides the plan 05 close action; a closed thread stays closed. Unmatched mail is
 dropped, not stored. Dedup is per channel: the same mail in two channels' mailboxes is ingested for each.
+
+A human reply may get a class from the AI toolbox (`reply_class_service`) before it is stored. That call runs outside
+any transaction; the writes of one reply are atomic, and so are the DSN and complaint paths. Without a class the
+phrase detection decides, as before.
 """
 
 import logging
@@ -14,6 +19,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from email.message import EmailMessage
+from email.utils import make_msgid
 
 from django.db import transaction
 from django.db.models import Max, Q
@@ -26,6 +32,7 @@ from django_communicator.enums import (
     Direction,
     FailureCode,
     MessageStatus,
+    ReplyIntent,
     ReplyKind,
     ReplyMatch,
     SequenceStopReason,
@@ -40,10 +47,13 @@ from django_communicator.services import (
     dsn_service,
     mail_parser,
     message_service,
+    reply_class_service,
+    reply_plan_service,
     sequence_service,
     suppression_service,
     unsubscribe_service,
 )
+from django_communicator.services.reply_class_service import Classification
 from django_communicator.signals import message_bounced, reply_received
 
 logger = logging.getLogger(__name__)
@@ -66,12 +76,11 @@ class Match:
     matched_by: str
 
 
-@transaction.atomic
 def ingest(channel: Channel, raw: bytes) -> Reply | None:
     """Store one inbound mail; the existing `Reply` for an already seen Message-ID, no side effects (C-26)."""
     msg = mail_parser.parse(raw)
     inbound = Inbound(msg=msg, message_id=mail_parser.inbound_message_id(msg, raw))
-    existing = Reply.objects.filter(channel=channel, inbound_message_id=inbound.message_id).first()
+    existing = _existing(channel, inbound)
     if existing is not None:
         return existing
     if _outbound_by_ids(channel, [inbound.message_id]) is not None:
@@ -84,7 +93,11 @@ def ingest(channel: Channel, raw: bytes) -> Reply | None:
     if match is None:
         logger.info("communicator inbound %s in channel %s matched no thread", inbound.message_id, channel.idx)
         return None
-    return _classify(channel, inbound, match)
+    return _human_reply(channel, inbound, match)
+
+
+def _existing(channel: Channel, inbound: Inbound) -> Reply | None:
+    return Reply.objects.filter(channel=channel, inbound_message_id=inbound.message_id).first()
 
 
 def _outbound_by_ids(channel: Channel, ids: list[str], *, lock: bool = False) -> Message | None:
@@ -121,13 +134,55 @@ def _sender_thread(channel: Channel, sender: str, written_at: datetime) -> Threa
     return threads.order_by("-created_at", "-pk").first()
 
 
-def _classify(channel: Channel, inbound: Inbound, match: Match) -> Reply:
+def _human_reply(channel: Channel, inbound: Inbound, match: Match) -> Reply:
     if is_autoreply(inbound.msg):
-        return _store(inbound, match, ReplyKind.AUTO)  # C-22: sequence, thread and notifications untouched
+        with transaction.atomic():
+            return _store(inbound, match, ReplyKind.AUTO)  # C-22: sequence, thread and notifications untouched
     body = mail_parser.body_text(inbound.msg)
-    if has_optout_phrase(match.thread, mail_parser.unquoted(body)):
-        return _suspected_optout(channel, inbound, match, body)
-    return _plain_reply(channel, inbound, match, body)
+    today = clock_service.now_for(channel).date()
+    subject = mail_parser.subject(inbound.msg)
+    classification = reply_class_service.classify(
+        channel, subject=subject, body=mail_parser.unquoted(body), today=today
+    )
+    return _store_human_reply(channel, inbound, match, body, classification)
+
+
+@transaction.atomic
+def _store_human_reply(
+    channel: Channel, inbound: Inbound, match: Match, body: str, classification: Classification | None
+) -> Reply:
+    """The writes of one human reply. A poll that stored the same mail while the toolbox answered wins."""
+    existing = _existing(channel, inbound)
+    if existing is not None:
+        return existing
+    match.thread.refresh_from_db(fields=["status"])  # a person may have closed it while the toolbox answered
+    phrase = has_optout_phrase(match.thread, mail_parser.unquoted(body))
+    if is_suspected_optout(classification, phrase):
+        return _suspected_optout(channel, inbound, match, body, classification)
+    return _plain_reply(channel, inbound, match, body, classification)
+
+
+def ingest_with_class(thread: Thread, body: str, classification: Classification | None) -> Reply:
+    """Development only: a human reply to the thread through the normal write path, with this class (or none)
+    instead of a toolbox call. It answers the newest outbound message of the thread."""
+    msg = EmailMessage()
+    msg["From"], msg["Subject"] = thread.recipient_email, "Re: test reply"
+    msg["Message-ID"] = make_msgid(domain="test-reply.invalid")
+    msg.set_content(body)
+    last = Message.objects.filter(thread=thread, direction=Direction.OUT).order_by("-pk").first()
+    match = Match(thread=thread, message=last, matched_by=ReplyMatch.HEADER if last else ReplyMatch.SENDER)
+    inbound = Inbound(msg=msg, message_id=msg["Message-ID"])
+    return _store_human_reply(thread.channel, inbound, match, mail_parser.body_text(msg), classification)
+
+
+def is_suspected_optout(classification: Classification | None, phrase: bool) -> bool:
+    """`unsubscribe` always is; without a usable class (or `unclear`) the phrase decides; a confident other class
+    with a phrase hit is one too (a person decides), except `not_interested`, whose refusal wins over the phrase."""
+    if classification is None or classification.intent == ReplyIntent.UNCLEAR:
+        return phrase
+    if classification.intent == ReplyIntent.UNSUBSCRIBE:
+        return True
+    return phrase and classification.intent != ReplyIntent.NOT_INTERESTED
 
 
 def is_autoreply(msg: EmailMessage) -> bool:
@@ -165,7 +220,9 @@ def _without_unsubscribe_lines(body: str) -> str:
     return "\n".join(line for line in body.splitlines() if unsubscribe_service.PATH_PREFIX not in line)
 
 
-def _store(inbound: Inbound, match: Match, kind: str, body: str | None = None) -> Reply:
+def _store(
+    inbound: Inbound, match: Match, kind: str, body: str | None = None, classification: Classification | None = None
+) -> Reply:
     msg = inbound.msg
     body_limit = communicator_settings.COMMUNICATOR_INBOUND_BODY_MAX_CHARS
     return Reply.objects.create(
@@ -180,28 +237,44 @@ def _store(inbound: Inbound, match: Match, kind: str, body: str | None = None) -
         inbound_message_id=inbound.message_id,
         received_at=timezone.now(),
         raw_headers=mail_parser.headers(msg),
+        **_class_fields(classification),
     )
 
 
-def _suspected_optout(channel: Channel, inbound: Inbound, match: Match, body: str) -> Reply:
-    """C-23: a suspicion only — the sequence pauses until a human confirms or dismisses; no suppression yet."""
-    reply = _store(inbound, match, ReplyKind.SUSPECTED_OPTOUT, body)
+def _class_fields(classification: Classification | None) -> dict:
+    if classification is None:
+        return {}
+    return {
+        "intent": classification.intent,
+        "intent_confidence": classification.confidence,
+        "intent_source": classification.source,
+        "intent_return_date": classification.return_date,
+    }
+
+
+def _suspected_optout(
+    channel: Channel, inbound: Inbound, match: Match, body: str, classification: Classification | None
+) -> Reply:
+    """C-23: a suspicion only — the sequence pauses until a human confirms or dismisses; no suppression yet, under
+    any plan. The class `unsubscribe` takes its plan's alert and review flag; a phrase hit alone, what it always did."""
+    reply = _store(inbound, match, ReplyKind.SUSPECTED_OPTOUT, body, classification)
     sequence_service.pause_sequence(match.thread)
     _mark_replied(match.thread, reply)
-    alert_service.notify_subject(
-        channel, subject_ref=match.thread.subject_ref, severity="medium", title="Possible opt-out"
-    )
+    by_class = reply.intent == ReplyIntent.UNSUBSCRIBE
+    plan = reply_plan_service.plan_for(channel, reply.intent) if by_class else reply_plan_service.PHRASE_OPTOUT_PLAN
+    reply_plan_service.record(reply, plan)
+    reply_plan_service.notify(reply, plan, title="Possible opt-out")
     return reply
 
 
-def _plain_reply(channel: Channel, inbound: Inbound, match: Match, body: str) -> Reply:
-    reply = _store(inbound, match, ReplyKind.REPLY, body)
+def _plain_reply(
+    channel: Channel, inbound: Inbound, match: Match, body: str, classification: Classification | None
+) -> Reply:
+    reply = _store(inbound, match, ReplyKind.REPLY, body, classification)
     _mark_replied(match.thread, reply)
     mark_message_replied(reply)
-    sequence_service.stop_sequence(match.thread, SequenceStopReason.REPLIED)
+    reply_plan_service.apply(reply, reply_plan_service.plan_for(channel, reply.intent))
     transaction.on_commit(lambda: reply_received.send(sender=Thread, thread=match.thread, reply=reply))
-    title = f"Reply from {reply.from_email}"
-    alert_service.notify_subject(channel, subject_ref=match.thread.subject_ref, severity="high", title=title)
     return reply
 
 
@@ -228,6 +301,7 @@ def mark_message_replied(reply: Reply) -> None:
         Message.objects.filter(pk=reply.message_id, replied_at=None).update(replied_at=reply.received_at)
 
 
+@transaction.atomic
 def _ingest_dsn(channel: Channel, inbound: Inbound) -> Reply | None:
     dsn = dsn_service.parse(inbound.msg)
     ids = [dsn.original_message_id] if dsn.original_message_id else []
@@ -274,6 +348,7 @@ def _hard_bounce(channel: Channel, inbound: Inbound, match: Match, dsn: dsn_serv
     return reply
 
 
+@transaction.atomic
 def _ingest_complaint(channel: Channel, inbound: Inbound) -> Reply | None:
     """A spam complaint for one of our messages is stored; on a live channel the recipient is suppressed, the
     sequence stops, a high notification goes out and `message_bounced(reason="complaint")` follows on commit. A

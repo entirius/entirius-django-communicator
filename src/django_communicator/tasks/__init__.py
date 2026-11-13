@@ -6,6 +6,7 @@
 
 from django_communicator.tasks.poll_inbox import poll_inbox
 from django_communicator.tasks.record_objection import record_objection
+from django_communicator.tasks.resume_paused_sequences import resume_paused_sequences
 from django_communicator.tasks.retry_failed_drafts import retry_failed_drafts
 from django_communicator.tasks.reverify_addresses import reverify_addresses
 from django_communicator.tasks.schedule_follow_ups import schedule_follow_ups
@@ -14,6 +15,7 @@ from django_communicator.tasks.send_due import send_due
 __all__ = [
     "poll_inbox",
     "record_objection",
+    "resume_paused_sequences",
     "retry_failed_drafts",
     "reverify_addresses",
     "schedule_follow_ups",
