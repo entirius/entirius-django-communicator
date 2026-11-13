@@ -60,7 +60,7 @@ Under `/api/communicator/v2/admin/approvals/`, area `communicator.review`, same 
 ## Public unsubscribe
 
 `/api/communicator/v2/public/unsubscribe/<token>/`: no authentication (the signed token is the credential), no CSRF,
-throttled per client address (scope `communicator_unsubscribe`, fallback `20/hour` when
+throttled per client address (scope `communicator_unsubscribe`, fallback `60/min` when
 `DEFAULT_THROTTLE_RATES` has no valid rate; 429 above it). Not an admin route, so the access gate lets it through
 without an area.
 

@@ -95,7 +95,7 @@ resets today's count — the cap can be exceeded once on that day.
   first templated delivery of a new thread; one per channel. Switching it off stops new starts only.
 - **One-click unsubscribe.** Set `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` to the public URL of the service before
   going live; the route `api/communicator/v2/public/unsubscribe/<token>/` must be reachable from the internet and is
-  throttled per client address (`DEFAULT_THROTTLE_RATES["communicator_unsubscribe"]`, fallback `20/hour`). Behind a
+  throttled per client address (`DEFAULT_THROTTLE_RATES["communicator_unsubscribe"]`, fallback `60/min`). Behind a
   proxy set DRF `NUM_PROXIES` so the throttle sees the client, not the proxy.
 - **Complaints.** Point the provider's feedback loop at a polled mailbox and set
   `COMMUNICATOR_COMPLAINT_FEEDBACK = True`.

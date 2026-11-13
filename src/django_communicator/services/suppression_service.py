@@ -8,6 +8,7 @@ import logging
 
 from django.db import IntegrityError, transaction
 from django.db.models import Q, QuerySet
+from django.utils import timezone
 
 from django_communicator.enums import SuppressionKind
 from django_communicator.models import Channel, Suppression
@@ -90,16 +91,30 @@ def create_suppression(channel: Channel, *, kind: str, value: str, reason: str =
         raise DuplicateSuppressionError(f"{kind} {normalised} is already suppressed") from None
 
 
-def suppress_email(channel: Channel, email: str, *, reason: str, user=None) -> bool:
-    """Idempotent: an address already listed keeps its row; an unusable address is only logged. True when a row
-    was written."""
+def suppress_email(channel: Channel, email: str, *, reason: str, user=None) -> None:
+    """Idempotent: an address already listed keeps its row; an unusable address is only logged."""
     try:
         create_suppression(channel, kind=SuppressionKind.EMAIL, value=email, reason=reason, user=user)
     except DuplicateSuppressionError:
-        return False
+        return
+    except ValueError:
+        logger.warning("communicator cannot suppress an unusable address in channel %s", channel.idx)
+
+
+def suppress_email_for(channel: Channel, email: str, *, reason: str) -> bool:
+    """The channel `email` row of the address carries `reason`: created, or an existing row of another reason takes
+    it. False when the row already had this reason or the address is unusable."""
+    try:
+        value = normalise_value(SuppressionKind.EMAIL, email)
     except ValueError:
         logger.warning("communicator cannot suppress an unusable address in channel %s", channel.idx)
         return False
+    row, created = Suppression.objects.get_or_create(
+        channel=channel, kind=SuppressionKind.EMAIL, value=value, defaults={"reason": reason}
+    )
+    if created or row.reason == reason:
+        return created
+    Suppression.objects.filter(pk=row.pk).update(reason=reason, modified_at=timezone.now())
     return True
 
 

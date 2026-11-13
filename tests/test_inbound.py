@@ -910,16 +910,29 @@ def test_complaint_in_sandbox_is_stored_but_changes_nothing(
     assert state_of(message).stopped_at is None and not notify.called
 
 
-def test_not_spam_reports_and_forged_recipients_are_ignored(channel, feedback_on):
+def test_not_spam_reports_are_ignored(channel, feedback_on):
     go_live(channel)
     make_sent(channel, "owner@example-shop-6.test")
 
     assert ingest(channel, arf("not-spam")) is None
-    forged = arf().replace(
-        b"Original-Rcpt-To: <owner@example-shop-6.test>", b"Original-Rcpt-To: <victim@example-shop-9.test>"
-    )
-    assert ingest(channel, forged) is None
     assert not Suppression.objects.exists()
+
+
+def test_redacted_recipient_still_counts_by_message_id(channel, feedback_on):
+    go_live(channel)
+    make_sent(channel, "owner@example-shop-6.test")
+    redacted = arf().replace(b"<owner@example-shop-6.test>", b"<redacted@fbl.example-shop-6.test>")
+
+    with mock.patch(NOTIFY):
+        assert ingest(channel, redacted).kind == ReplyKind.COMPLAINT
+
+    assert Suppression.objects.get().value == "owner@example-shop-6.test"
+
+
+def test_complaint_for_an_unknown_message_is_ignored(channel, feedback_on):
+    make_sent(channel, "owner@example-shop-6.test")
+
+    assert ingest(channel, arf(message_id="<unknown@mail.example.test>")) is None
 
 
 def test_live_hard_bounce_sends_message_bounced(channel, bounced, django_capture_on_commit_callbacks):
@@ -939,3 +952,13 @@ def test_sandbox_hard_bounce_sends_no_signal(channel, sandbox, bounced, django_c
         ingest(channel, eml("dsn_hard.eml"))
 
     assert bounced == []
+
+
+def test_our_quoted_unsubscribe_line_is_not_an_optout():
+    thread = SimpleNamespace(recipient_language=SimpleNamespace(iso2="PL"))
+    body = (
+        "Dziękuję, proszę o telefon we wtorek.\n\nFrom: Outreach\nSent: Monday\nWypisz się z listy: "
+        "https://api.example.test/api/communicator/v2/public/unsubscribe/abc/"
+    )
+
+    assert not inbound_service.has_optout_phrase(thread, body)

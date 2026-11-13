@@ -75,12 +75,15 @@ def bulk(*, user, action: str, ids: list[int], reason: str = "") -> BulkApproval
         raise BulkLimitError(f"at most {limit} drafts per request")
     found = Message.objects.select_related("thread__channel", "template_version__template").in_bulk(ids)
     done, failed = [], {}
-    for pk in ids:
-        if (problem := _apply(found.get(pk), user, action, reason)) is None:
-            done.append(pk)
-        else:
-            failed[str(pk)] = problem
-    return BulkApprovalLog.objects.create(user=user, action=action, reason=reason, ids=ids, done=done, failed=failed)
+    try:  # an unexpected error still logs the ids already changed
+        for pk in ids:
+            if (problem := _apply(found.get(pk), user, action, reason)) is None:
+                done.append(pk)
+            else:
+                failed[str(pk)] = problem
+    finally:
+        log = BulkApprovalLog.objects.create(user=user, action=action, reason=reason, ids=ids, done=done, failed=failed)
+    return log
 
 
 def _apply(message: Message | None, user, action: str, reason: str) -> str | None:

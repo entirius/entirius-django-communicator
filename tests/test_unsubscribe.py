@@ -191,3 +191,21 @@ def test_throttle_falls_back_when_the_rate_is_missing_or_malformed(configured):
 
     with mock.patch.object(UnsubscribeThrottle, "THROTTLE_RATES", configured):
         assert UnsubscribeThrottle().get_rate() == UnsubscribeThrottle.fallback_rate
+
+
+def test_address_suppressed_for_another_reason_still_records_the_objection(
+    running, anon, django_capture_on_commit_callbacks
+):
+    Suppression.objects.create(
+        channel=running.thread.channel, kind=SuppressionKind.EMAIL, value=EMAIL, reason="smtp 550"
+    )
+    fake = SimpleNamespace(record_objection=mock.Mock())
+
+    with (
+        mock.patch("django_communicator.services.optout_service._objection_service", return_value=fake),
+        django_capture_on_commit_callbacks(execute=True),
+    ):
+        anon.post(url(token()))
+
+    assert Suppression.objects.get().reason == "unsubscribe link"
+    fake.record_objection.assert_called_once()

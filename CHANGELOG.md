@@ -14,7 +14,7 @@
   by the body language. Public route `api/communicator/v2/public/unsubscribe/<token>/` (signed token, no expiry):
   GET shows a confirmation page, POST suppresses the address on the channel (reason `unsubscribe link`), stops its
   sequences, sends `optout_confirmed` per `subject_ref` and records the agreements objection; idempotent; an invalid
-  token is 400; throttled per client address (scope `communicator_unsubscribe`, fallback `20/hour`).
+  token is 400; throttled per client address (scope `communicator_unsubscribe`, fallback `60/min`).
 - **Preflight.** `preflight_service.problem` checks the legal footer at accept (409 `REVIEW_REFUSED`) and again at
   delivery (`failed/legal_footer`, new `FailureCode.LEGAL_FOOTER`, migration 0014). A message without a template
   version always needs one.

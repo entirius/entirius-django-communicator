@@ -135,3 +135,20 @@ def test_approvals_route_wins_over_a_channel_named_approvals(drafts, admin_api):
     ChannelFactory(idx="approvals", label="Clash")
 
     assert admin_api.get(URL).json()["counts"]["total"] == 2
+
+
+def test_an_unexpected_error_still_logs_the_ids_already_changed(drafts, admin_api):
+    from django_communicator.services import approval_service, review_service
+
+    real_accept = review_service.accept
+
+    def accept_then_break(message, *, user):
+        if message.pk == drafts[1].pk:
+            raise RuntimeError("database gone")
+        return real_accept(message, user=user)
+
+    with mock.patch.object(review_service, "accept", side_effect=accept_then_break), pytest.raises(RuntimeError):
+        approval_service.bulk(user=admin_api.user, action="approve", ids=[d.pk for d in drafts])
+
+    log = BulkApprovalLog.objects.get()
+    assert (log.done, log.failed) == ([drafts[0].pk], {})

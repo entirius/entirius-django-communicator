@@ -26,7 +26,8 @@ from django_communicator.signals import optout_confirmed
 logger = logging.getLogger(__name__)
 
 SALT = "django_communicator.unsubscribe"
-PATH = "/api/communicator/v2/public/unsubscribe/{token}/"
+PATH_PREFIX = "/api/communicator/v2/public/unsubscribe/"
+PATH = PATH_PREFIX + "{token}/"
 REASON = "unsubscribe link"
 INVALID = "invalid unsubscribe link"
 
@@ -67,10 +68,11 @@ def headers_for(url: str) -> dict[str, str]:
 
 @transaction.atomic
 def unsubscribe(token: str) -> tuple[Channel, str]:
-    """Suppress the address of the token on its channel; returns the channel and the address. An address already suppressed on the
-    channel changes nothing more (a second click is harmless). Raises `InvalidTokenError`."""
+    """Suppress the address of the token on its channel; returns the channel and the address. An address already
+    suppressed for another reason (bounce, manual) takes the unsubscribe reason and the objection is recorded; one
+    already unsubscribed changes nothing more (a second click is harmless). Raises `InvalidTokenError`."""
     channel, email = read_token(token)
-    if not suppression_service.suppress_email(channel, email, reason=REASON):
+    if not suppression_service.suppress_email_for(channel, email, reason=REASON):
         return channel, email
     threads = list(Thread.objects.filter(channel=channel, recipient_email__iexact=email))
     for thread in threads:

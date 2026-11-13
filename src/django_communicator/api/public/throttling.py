@@ -14,7 +14,8 @@ from rest_framework.throttling import AnonRateThrottle
 
 class UnsubscribeThrottle(AnonRateThrottle):
     scope = "communicator_unsubscribe"
-    fallback_rate = "20/hour"
+    # One-click POSTs come from the mailbox providers' servers: many recipients share one address.
+    fallback_rate = "60/min"
 
     def get_rate(self) -> str:
         """Never ``None`` and never malformed: either would switch throttling off."""

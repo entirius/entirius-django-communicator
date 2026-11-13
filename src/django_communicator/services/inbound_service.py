@@ -40,6 +40,7 @@ from django_communicator.services import (
     message_service,
     sequence_service,
     suppression_service,
+    unsubscribe_service,
 )
 from django_communicator.signals import message_bounced, reply_received
 
@@ -153,8 +154,13 @@ def has_optout_phrase(thread: Thread, body: str) -> bool:
     phrases = communicator_settings.COMMUNICATOR_OPTOUT_PHRASES
     language = thread.recipient_language.iso2.lower() if thread.recipient_language else ""
     candidates = phrases.get(language) or [phrase for group in phrases.values() for phrase in group]
-    text = fold(body[:OPTOUT_SCAN_CHARS])
+    text = fold(_without_unsubscribe_lines(body)[:OPTOUT_SCAN_CHARS])
     return any(folded in text for phrase in candidates if (folded := fold(phrase)))
+
+
+def _without_unsubscribe_lines(body: str) -> str:
+    """Our own unsubscribe link quoted back without `>` (Outlook) is not the recipient's wording."""
+    return "\n".join(line for line in body.splitlines() if unsubscribe_service.PATH_PREFIX not in line)
 
 
 def _store(inbound: Inbound, match: Match, kind: str, body: str | None = None) -> Reply:
@@ -267,17 +273,17 @@ def _hard_bounce(channel: Channel, inbound: Inbound, match: Match, dsn: dsn_serv
 def _ingest_complaint(channel: Channel, inbound: Inbound) -> Reply | None:
     """A spam complaint for one of our messages is stored; on a live channel the recipient is suppressed, the
     sequence stops, a high notification goes out and `message_bounced(reason="complaint")` follows on commit. A
-    sandbox or dry-run complaint says nothing about the real recipient: stored only. The message status stays."""
+    sandbox or dry-run complaint says nothing about the real recipient: stored only. The message status stays.
+    `Original-Rcpt-To` is not compared: feedback loops redact it, and our Message-ID already names the recipient."""
     arf = dsn_service.parse_arf(inbound.msg)
     message = _outbound_by_ids(channel, [arf.original_message_id] if arf.original_message_id else [])
-    recipient = message.thread.recipient_email.lower() if message else ""
-    if message is None or not arf.is_complaint or arf.recipient not in ("", recipient):
+    if message is None or not arf.is_complaint:
         logger.info("communicator feedback report %s (%r) ignored", inbound.message_id, arf.feedback_type)
         return None
     match = Match(thread=message.thread, message=message, matched_by=ReplyMatch.FEEDBACK)
     reply = _store(inbound, match, ReplyKind.COMPLAINT)
     if channel.mode == ChannelMode.LIVE:
-        suppression_service.suppress_email(channel, recipient, reason="complaint")
+        suppression_service.suppress_email(channel, match.thread.recipient_email, reason="complaint")
         sequence_service.stop_sequence(match.thread, SequenceStopReason.COMPLAINT)
         alert_service.notify_subject(
             channel, subject_ref=match.thread.subject_ref, severity="high", title="Spam complaint"

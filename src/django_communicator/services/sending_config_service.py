@@ -26,6 +26,7 @@ _EDITABLE_SEQUENCE_FIELDS = frozenset({"is_active", "autostart"})
 
 
 _AUTOSTART_TAKEN = "the channel already has an autostart sequence"
+_ONE_AUTOSTART = "communicator_sequence_one_autostart"
 
 
 class DuplicateSequenceError(ClientError):
@@ -59,14 +60,14 @@ def create_sequence(
 ) -> Sequence:
     """Raises `DuplicateSequenceError` when the key exists in the channel; `DuplicateAutostartError` when the
     channel already has an autostart sequence."""
-    if autostart and Sequence.objects.filter(channel=channel, autostart=True).exists():
-        raise DuplicateAutostartError(_AUTOSTART_TAKEN)
     try:
         with transaction.atomic():
             sequence = Sequence.objects.create(channel=channel, key=key, is_active=is_active, autostart=autostart)
             SequenceStep.objects.bulk_create(SequenceStep(sequence=sequence, **step) for step in steps)
-    except IntegrityError:
-        raise DuplicateSequenceError(f"sequence {key} already exists or the channel has an autostart one") from None
+    except IntegrityError as error:
+        if _ONE_AUTOSTART in str(error):
+            raise DuplicateAutostartError(_AUTOSTART_TAKEN) from None
+        raise DuplicateSequenceError(f"sequence {key} already exists") from None
     return get_sequence(channel, sequence.pk)
 
 

@@ -9,6 +9,7 @@ The SMTP connection is the channel's one from django_email; this module never re
 
 import secrets
 from email.headerregistry import BaseHeader, HeaderRegistry
+from email.policy import EmailPolicy
 from email.utils import parseaddr
 
 from django.conf import settings
@@ -42,12 +43,13 @@ class _UnfoldedHeader(BaseHeader):
 
 
 class _UnsubscribeMail(EmailMultiAlternatives):
-    """Writes `List-Unsubscribe` unfolded; every other header keeps the default policy."""
+    """Writes `List-Unsubscribe` unfolded; every other header keeps the default policy. A `compat32` message (Django
+    before 6.0) never encodes the URL, so it is left as it is."""
 
     def message(self, *args, **kwargs):
         message = super().message(*args, **kwargs)
         value = message["List-Unsubscribe"]
-        if value is None:
+        if value is None or not isinstance(message.policy, EmailPolicy):
             return message
         registry = HeaderRegistry()
         registry.map_to_type("list-unsubscribe", _UnfoldedHeader)
