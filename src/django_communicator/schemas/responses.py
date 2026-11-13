@@ -366,6 +366,8 @@ class ThreadRowResponse(ThreadSummaryResponse):
     last_text: str = Field(description="Body of the latest mail, draft or reply (first 300 characters).", examples=[""])
     draft: ThreadDraftResponse | None = Field(description="The newest draft waiting for review.", examples=[None])
     waiting: ThreadWaitingResponse | None = Field(description="The first mail waiting to be sent.", examples=[None])
+    reply_intent: str = Field(description="Class of the newest human reply; empty when none.", examples=["not_now"])
+    needs_review: bool = Field(description="The newest human reply is flagged for a person.", examples=[False])
 
     @classmethod
     def of(cls, row: dict) -> "ThreadRowResponse":
@@ -433,6 +435,10 @@ class TimelineEntryResponse(BaseModel):
         description="reply, auto, suspected_optout, bounce_hard or bounce_soft; empty for a message.",
         examples=["reply"],
     )
+    intent: str = Field(description="Class of a reply; empty when none or for a message.", examples=["not_now"])
+    intent_confidence: float | None = Field(description="Confidence of the class.", examples=[0.85])
+    intent_return_date: date | None = Field(description="Return date of an out-of-office reply.", examples=[None])
+    needs_review: bool = Field(description="A reply flagged for a person.", examples=[False])
 
 
 class ThreadDetailResponse(ThreadSummaryResponse):
@@ -454,6 +460,38 @@ class ReplyResponse(BaseModel):
     inbound_message_id: str = Field(description="Message-ID of the inbound mail.", examples=["<a@shop.test>"])
     received_at: datetime = Field(description="Ingested.", examples=["2026-09-14T10:15:00Z"])
     optout_confirmed_at: datetime | None = Field(description="Opt-out confirmed by a human.", examples=[None])
+    intent: str = Field(description="Class of the reply; empty = not classified.", examples=["interested"])
+    intent_confidence: float | None = Field(description="Confidence of the class.", examples=[0.9])
+    intent_source: str = Field(description="toolbox; empty = not classified.", examples=["toolbox"])
+    intent_return_date: date | None = Field(description="Return date of an out-of-office reply.", examples=[None])
+    needs_review: bool = Field(description="The plan of the class asks a person to look.", examples=[False])
+    plan_applied: dict[str, Any] = Field(
+        description="What the plan did: sequence, notify, needs_review, resume_at.", examples=[{}]
+    )
+
+
+class ReplyClassProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    prompt_text: str = Field(description="System prompt naming the classes.", examples=["Classify the reply ..."])
+    model: str = Field(description="Toolbox model id.", examples=["fake-chat"])
+    min_confidence: float = Field(description="Below it the class is unclear.", examples=[0.7])
+    max_chars: int = Field(description="Reply characters sent to the model.", examples=[3000])
+    is_active: bool = Field(description="Classification on.", examples=[True])
+
+
+class ReplyClassPlanResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    intent: str = Field(description="Class.", examples=["out_of_office"])
+    sequence: str = Field(description="stop, pause or pause_until_return.", examples=["pause_until_return"])
+    notify: str = Field(description="Alert severity: low, medium or high.", examples=["low"])
+    needs_review: bool = Field(description="Flag the reply for a person.", examples=[False])
+    is_default: bool = Field(description="The code default (no stored plan).", examples=[True])
+
+
+class ReplyClassPlanListResponse(BaseModel):
+    results: list[ReplyClassPlanResponse] = Field(description="One plan per class.", examples=[[]])
 
 
 class ReplyListResponse(BaseModel):

@@ -70,6 +70,15 @@ urlpatterns = [
     ),
     path("replies/", reply.ReplyListView.as_view(), name="admin-communicator-replies"),
     path(
+        "reply-classes/profile/", reply.ReplyClassProfileView.as_view(), name="admin-communicator-reply-class-profile"
+    ),
+    path("reply-classes/plans/", reply.ReplyClassPlanListView.as_view(), name="admin-communicator-reply-class-plans"),
+    path(
+        "reply-classes/plans/<str:intent>/",
+        reply.ReplyClassPlanDetailView.as_view(),
+        name="admin-communicator-reply-class-plan",
+    ),
+    path(
         "replies/<int:pk>/confirm-optout/",
         reply.ConfirmOptoutView.as_view(),
         name="admin-communicator-reply-confirm-optout",
@@ -98,6 +107,7 @@ if is_development():
         path("test/send-due/", dev.DevSendDueView.as_view(), name="admin-communicator-test-send-due"),
         path("test/reset-counters/", dev.DevResetCountersView.as_view(), name="admin-communicator-test-reset-counters"),
         path("test/start-sequence/", dev.DevStartSequenceView.as_view(), name="admin-communicator-test-start-sequence"),
+        path("test/ingest-reply/", dev.DevIngestReplyView.as_view(), name="admin-communicator-test-ingest-reply"),
         path("test/poll-now/", dev.DevPollNowView.as_view(), name="admin-communicator-test-poll-now"),
         path("test/retry-drafts/", dev.DevRetryDraftsView.as_view(), name="admin-communicator-test-retry-drafts"),
         path("test/toolbox-outage/", dev.DevToolboxOutageView.as_view(), name="admin-communicator-test-toolbox-outage"),

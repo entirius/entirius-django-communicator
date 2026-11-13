@@ -5,12 +5,13 @@
 """Read side of the inbound flow for the admin API: threads with their timeline, replies."""
 
 from collections import defaultdict
+from dataclasses import dataclass
 from itertools import chain
 
 from django.db.models import Count, Exists, OuterRef, Q, QuerySet, Subquery
 from django.db.models.functions import Coalesce, Greatest
 
-from django_communicator.enums import Direction, MessageStatus, ThreadStatus
+from django_communicator.enums import Direction, MessageStatus, ReplyKind, ThreadStatus
 from django_communicator.models import Channel, Message, Reply, SendPolicy, Thread
 from django_communicator.services.send_service import DUE_STATUSES, next_slot_for
 
@@ -19,6 +20,7 @@ TIMELINE_HIDDEN_STATUSES = (MessageStatus.SUPERSEDED, MessageStatus.REJECTED)
 THREAD_STATES = ("draft", "waiting", "replied")
 THREAD_SORTS = ("created", "activity")
 LAST_TEXT_MAX = 300
+HUMAN_KINDS = (ReplyKind.REPLY, ReplyKind.SUSPECTED_OPTOUT)
 
 
 def list_threads(
@@ -166,7 +168,14 @@ def _row(thread: Thread, messages: list[Message], replies: list[Reply], policy: 
         "last_text": entries[-1][1][:LAST_TEXT_MAX] if entries else "",
         "draft": {"id": draft.pk, "subject": draft.subject} if draft else None,
         "waiting": _waiting(waiting, policy) if waiting else None,
+        **_reply_class(replies),
     }
+
+
+def _reply_class(replies: list[Reply]) -> dict:
+    """Class and review flag of the newest human reply (oldest first in `replies`)."""
+    human = next((reply for reply in reversed(replies) if reply.kind in HUMAN_KINDS), None)
+    return {"reply_intent": human.intent if human else "", "needs_review": bool(human and human.needs_review)}
 
 
 def _waiting(message: Message, policy: SendPolicy | None) -> dict:
@@ -202,6 +211,10 @@ def _message_entry(message: Message) -> dict:
         "body_text": message.body_text,
         "from_email": "",
         "reply_kind": "",
+        "intent": "",
+        "intent_confidence": None,
+        "intent_return_date": None,
+        "needs_review": False,
     }
 
 
@@ -216,16 +229,31 @@ def _reply_entry(reply: Reply) -> dict:
         "body_text": reply.body_text,
         "from_email": reply.from_email,
         "reply_kind": reply.kind,
+        "intent": reply.intent,
+        "intent_confidence": reply.intent_confidence,
+        "intent_return_date": reply.intent_return_date,
+        "needs_review": reply.needs_review,
     }
 
 
-def list_replies(channel: Channel, *, kind: str | None = None, thread_id: int | None = None) -> QuerySet[Reply]:
-    replies = Reply.objects.filter(thread__channel=channel)
-    if kind:
-        replies = replies.filter(kind=kind)
-    if thread_id is not None:
-        replies = replies.filter(thread_id=thread_id)
-    return replies.order_by("-received_at", "-pk")
+@dataclass(frozen=True)
+class ReplyFilter:
+    kind: str | None = None
+    thread_id: int | None = None
+    intent: str | None = None
+    needs_review: bool | None = None
+
+
+def list_replies(channel: Channel, filters: ReplyFilter | None = None) -> QuerySet[Reply]:
+    filters = filters or ReplyFilter()
+    lookups = {
+        "kind": filters.kind or None,
+        "thread_id": filters.thread_id,
+        "intent": filters.intent or None,
+        "needs_review": filters.needs_review,
+    }
+    chosen = {field: value for field, value in lookups.items() if value is not None}
+    return Reply.objects.filter(thread__channel=channel, **chosen).order_by("-received_at", "-pk")
 
 
 def get_reply(channel: Channel, pk: int) -> Reply:

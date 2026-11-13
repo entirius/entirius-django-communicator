@@ -24,6 +24,7 @@ from django_communicator.models import Sequence, Thread
 from django_communicator.schemas.requests import (
     DevClockRequest,
     DevCommunicateRequest,
+    DevIngestReplyRequest,
     DevResetCountersRequest,
     DevStartSequenceRequest,
     DevToolboxOutageRequest,
@@ -33,6 +34,7 @@ from django_communicator.schemas.responses import (
     CountersResetResponse,
     MessageDetailResponse,
     PollNowResponse,
+    ReplyResponse,
     RetryDraftsResponse,
     SendDueResponse,
     SequenceStateResponse,
@@ -42,10 +44,12 @@ from django_communicator.services import (
     clock_service,
     counter_service,
     draft_retry_service,
+    inbound_service,
     poll_service,
     sequence_service,
 )
 from django_communicator.services.communicate_service import LegalFooterRequiredError, communicate
+from django_communicator.services.reply_class_service import Classification
 from django_communicator.tasks import poll_inbox, retry_failed_drafts, schedule_follow_ups, send_due
 
 _TAGS = ["Communicator (development)"]
@@ -151,6 +155,27 @@ class DevStartSequenceView(DevelopmentView):
         except sequence_service.SequenceError as error:
             raise ValidationError({"sequence_key": [error.client_message]}) from None
         return Response(SequenceStateResponse.model_validate(state).model_dump(mode="json"), status=201)
+
+
+class DevIngestReplyView(DevelopmentView):
+    @extend_schema(
+        tags=_TAGS,
+        summary="Ingest a human reply with a given class (development only)",
+        description="Stores a reply to the thread through the normal write path (opt-out detection, plan of the class, "
+        "alert, signal) with this class instead of a toolbox call; no `intent` = an unclassified reply.",
+        request=DevIngestReplyRequest,
+        responses={201: ReplyResponse, **ERROR_RESPONSES},
+    )
+    def post(self, request: Request, channel_idx: str) -> Response:
+        body = parse(DevIngestReplyRequest, request.data)
+        channel = self.channel(channel_idx)
+        thread = Thread.objects.select_related("channel", "recipient_language").filter(channel=channel)
+        thread = thread.filter(pk=body.thread_id).first()
+        if thread is None:
+            raise NotFound("Thread not found.")
+        given = Classification(body.intent, body.confidence, body.return_date) if body.intent else None
+        reply = inbound_service.ingest_with_class(thread, body.body, given)
+        return Response(ReplyResponse.model_validate(reply).model_dump(mode="json"), status=201)
 
 
 class DevPollNowView(DevelopmentView):

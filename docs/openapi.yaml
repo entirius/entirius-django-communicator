@@ -971,6 +971,19 @@ paths:
           type: string
         required: true
       - in: query
+        name: intent
+        schema:
+          type: string
+          enum:
+          - interested
+          - not_interested
+          - not_now
+          - out_of_office
+          - unclear
+          - unsubscribe
+          - wrong_person
+        description: Only replies of this class.
+      - in: query
         name: kind
         schema:
           type: string
@@ -982,6 +995,11 @@ paths:
           - reply
           - suspected_optout
         description: Only replies of this kind.
+      - in: query
+        name: needs_review
+        schema:
+          type: boolean
+        description: Only replies flagged (true) or not (false).
       - in: query
         name: page
         schema:
@@ -1088,6 +1106,188 @@ paths:
         '404':
           description: No response body
         '409':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/reply-classes/plans/:
+    get:
+      operationId: api_communicator_v2_admin_reply_classes_plans_retrieve
+      description: 'One plan per class: the stored one, else the code default (`is_default`).'
+      summary: What a reply of each class does
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Reply classes
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplyClassPlanListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/reply-classes/plans/{intent}/:
+    put:
+      operationId: api_communicator_v2_admin_reply_classes_plans_update
+      description: 400 for an unknown class, `pause_until_return` outside out_of_office, or an unsubscribe plan that does
+        not pause (a person always decides an opt-out).
+      summary: Replace the plan of one class
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: intent
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Reply classes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplyClassPlanRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ReplyClassPlanRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReplyClassPlanRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplyClassPlanResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    delete:
+      operationId: api_communicator_v2_admin_reply_classes_plans_destroy
+      summary: Back to the code default
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: intent
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Reply classes
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplyClassPlanResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/reply-classes/profile/:
+    get:
+      operationId: api_communicator_v2_admin_reply_classes_profile_retrieve
+      description: Prompt and model that classify human replies; 404 while the channel has none (no classes).
+      summary: Reply class profile of the channel
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Reply classes
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplyClassProfileResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    put:
+      operationId: api_communicator_v2_admin_reply_classes_profile_update
+      description: Classification runs only with an active profile and the AI toolbox enabled.
+      summary: Replace the reply class profile
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Reply classes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplyClassProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ReplyClassProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReplyClassProfileRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplyClassProfileResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
           description: No response body
   /api/communicator/v2/admin/{channel_idx}/review/:
     get:
@@ -2508,6 +2708,13 @@ components:
       - verified_at
       title: AddressStatusResponse
       type: object
+    AlertSeverity:
+      enum:
+      - low
+      - medium
+      - high
+      title: AlertSeverity
+      type: string
     ApprovalCountsResponse:
       properties:
         total:
@@ -3102,6 +3309,18 @@ components:
           description: The first mail waiting to be sent in any thread of the conversation.
           examples:
           - null
+        reply_intent:
+          description: Class of the newest human reply; empty when none.
+          examples:
+          - not_now
+          title: Reply Intent
+          type: string
+        needs_review:
+          description: The newest human reply is flagged for a person.
+          examples:
+          - false
+          title: Needs Review
+          type: boolean
         thread_count:
           description: Threads of the conversation.
           examples:
@@ -3126,6 +3345,8 @@ components:
       - last_text
       - draft
       - waiting
+      - reply_intent
+      - needs_review
       - thread_count
       - replied
       title: ConversationRowResponse
@@ -3466,11 +3687,6 @@ components:
       - 7d
       title: HealthWindowsResponse
       type: object
-    KindEnum:
-      enum:
-      - email
-      - domain
-      type: string
     MailboxCreateRequest:
       additionalProperties: false
       properties:
@@ -5168,6 +5384,166 @@ components:
       - next_slot
       title: PolicyResponse
       type: object
+    ReplyClassPlanListResponse:
+      properties:
+        results:
+          description: One plan per class.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/ReplyClassPlanResponse'
+          title: Results
+          type: array
+      required:
+      - results
+      title: ReplyClassPlanListResponse
+      type: object
+    ReplyClassPlanRequest:
+      additionalProperties: false
+      properties:
+        sequence:
+          $ref: '#/components/schemas/ReplySequenceAction'
+          description: stop, pause or pause_until_return (out_of_office only).
+        notify:
+          $ref: '#/components/schemas/AlertSeverity'
+          description: Severity of the alert.
+          examples:
+          - medium
+        needs_review:
+          default: false
+          description: Flag the reply for a person.
+          examples:
+          - false
+          title: Needs Review
+          type: boolean
+      required:
+      - sequence
+      - notify
+      title: ReplyClassPlanRequest
+      type: object
+    ReplyClassPlanResponse:
+      properties:
+        intent:
+          description: Class.
+          examples:
+          - out_of_office
+          title: Intent
+          type: string
+        sequence:
+          description: stop, pause or pause_until_return.
+          examples:
+          - pause_until_return
+          title: Sequence
+          type: string
+        notify:
+          description: 'Alert severity: low, medium or high.'
+          examples:
+          - low
+          title: Notify
+          type: string
+        needs_review:
+          description: Flag the reply for a person.
+          examples:
+          - false
+          title: Needs Review
+          type: boolean
+        is_default:
+          description: The code default (no stored plan).
+          examples:
+          - true
+          title: Is Default
+          type: boolean
+      required:
+      - intent
+      - sequence
+      - notify
+      - needs_review
+      - is_default
+      title: ReplyClassPlanResponse
+      type: object
+    ReplyClassProfileRequest:
+      additionalProperties: false
+      properties:
+        prompt_text:
+          description: System prompt naming the classes.
+          maxLength: 20000
+          minLength: 1
+          title: Prompt Text
+          type: string
+        model:
+          description: Toolbox model id.
+          examples:
+          - fake-chat
+          maxLength: 128
+          minLength: 1
+          title: Model
+          type: string
+        min_confidence:
+          default: 0.7
+          description: Below it the class is unclear.
+          maximum: 1
+          minimum: 0
+          title: Min Confidence
+          type: number
+        max_chars:
+          default: 3000
+          description: Reply characters sent to the model.
+          maximum: 20000
+          minimum: 100
+          title: Max Chars
+          type: integer
+        is_active:
+          default: true
+          description: False switches classification off.
+          examples:
+          - true
+          title: Is Active
+          type: boolean
+      required:
+      - prompt_text
+      - model
+      title: ReplyClassProfileRequest
+      type: object
+    ReplyClassProfileResponse:
+      properties:
+        prompt_text:
+          description: System prompt naming the classes.
+          examples:
+          - Classify the reply ...
+          title: Prompt Text
+          type: string
+        model:
+          description: Toolbox model id.
+          examples:
+          - fake-chat
+          title: Model
+          type: string
+        min_confidence:
+          description: Below it the class is unclear.
+          examples:
+          - 0.7
+          title: Min Confidence
+          type: number
+        max_chars:
+          description: Reply characters sent to the model.
+          examples:
+          - 3000
+          title: Max Chars
+          type: integer
+        is_active:
+          description: Classification on.
+          examples:
+          - true
+          title: Is Active
+          type: boolean
+      required:
+      - prompt_text
+      - model
+      - min_confidence
+      - max_chars
+      - is_active
+      title: ReplyClassProfileResponse
+      type: object
     ReplyListResponse:
       properties:
         count:
@@ -5281,6 +5657,48 @@ components:
           examples:
           - null
           title: Optout Confirmed At
+        intent:
+          description: Class of the reply; empty = not classified.
+          examples:
+          - interested
+          title: Intent
+          type: string
+        intent_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Confidence of the class.
+          examples:
+          - 0.9
+          title: Intent Confidence
+        intent_source:
+          description: toolbox; empty = not classified.
+          examples:
+          - toolbox
+          title: Intent Source
+          type: string
+        intent_return_date:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          description: Return date of an out-of-office reply.
+          examples:
+          - null
+          title: Intent Return Date
+        needs_review:
+          description: The plan of the class asks a person to look.
+          examples:
+          - false
+          title: Needs Review
+          type: boolean
+        plan_applied:
+          additionalProperties: true
+          description: 'What the plan did: sequence, notify, needs_review, resume_at.'
+          examples:
+          - {}
+          title: Plan Applied
+          type: object
       required:
       - id
       - thread_id
@@ -5293,8 +5711,22 @@ components:
       - inbound_message_id
       - received_at
       - optout_confirmed_at
+      - intent
+      - intent_confidence
+      - intent_source
+      - intent_return_date
+      - needs_review
+      - plan_applied
       title: ReplyResponse
       type: object
+    ReplySequenceAction:
+      description: What a classified reply does to the thread's sequence.
+      enum:
+      - stop
+      - pause
+      - pause_until_return
+      title: ReplySequenceAction
+      type: string
     RewriteRequest:
       additionalProperties: false
       properties:
@@ -5578,7 +6010,7 @@ components:
       properties:
         kind:
           allOf:
-          - $ref: '#/components/schemas/KindEnum'
+          - $ref: '#/components/schemas/SuppressionRequestKindEnum'
           description: email or domain (`email_token` rows are written by erasure only).
           examples:
           - domain
@@ -5604,6 +6036,11 @@ components:
       - value
       title: SuppressionRequest
       type: object
+    SuppressionRequestKindEnum:
+      enum:
+      - email
+      - domain
+      type: string
     SuppressionResponse:
       properties:
         id:
@@ -6362,6 +6799,18 @@ components:
           description: The first mail waiting to be sent.
           examples:
           - null
+        reply_intent:
+          description: Class of the newest human reply; empty when none.
+          examples:
+          - not_now
+          title: Reply Intent
+          type: string
+        needs_review:
+          description: The newest human reply is flagged for a person.
+          examples:
+          - false
+          title: Needs Review
+          type: boolean
       required:
       - id
       - subject_ref
@@ -6374,6 +6823,8 @@ components:
       - last_text
       - draft
       - waiting
+      - reply_intent
+      - needs_review
       title: ThreadRowResponse
       type: object
     ThreadWaitingResponse:
@@ -6474,6 +6925,35 @@ components:
           - reply
           title: Reply Kind
           type: string
+        intent:
+          description: Class of a reply; empty when none or for a message.
+          examples:
+          - not_now
+          title: Intent
+          type: string
+        intent_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Confidence of the class.
+          examples:
+          - 0.85
+          title: Intent Confidence
+        intent_return_date:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          description: Return date of an out-of-office reply.
+          examples:
+          - null
+          title: Intent Return Date
+        needs_review:
+          description: A reply flagged for a person.
+          examples:
+          - false
+          title: Needs Review
+          type: boolean
       required:
       - kind
       - message_id
@@ -6484,6 +6964,10 @@ components:
       - body_text
       - from_email
       - reply_kind
+      - intent
+      - intent_confidence
+      - intent_return_date
+      - needs_review
       title: TimelineEntryResponse
       type: object
     WindowRequest:
@@ -6549,3 +7033,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-KEY

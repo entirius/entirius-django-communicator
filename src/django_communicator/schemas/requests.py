@@ -10,9 +10,12 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from django_communicator.enums import (
+    AlertSeverity,
     ChannelMode,
     MessageStatus,
+    ReplyIntent,
     ReplyKind,
+    ReplySequenceAction,
     SmtpSecurity,
     SuppressionScope,
     SuppressionSource,
@@ -287,6 +290,36 @@ class ReplyListQuery(BaseModel):
 
     kind: ReplyKind | None = Field(default=None, description="Only replies of this kind.")
     thread: int | None = Field(default=None, description="Only replies of this thread.")
+    intent: ReplyIntent | None = Field(default=None, description="Only replies of this class.")
+    needs_review: bool | None = Field(default=None, description="Only replies flagged (true) or not (false).")
+
+
+class ReplyClassProfileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prompt_text: str = Field(min_length=1, max_length=20000, description="System prompt naming the classes.")
+    model: str = Field(min_length=1, max_length=128, description="Toolbox model id.", examples=["fake-chat"])
+    min_confidence: float = Field(default=0.7, ge=0, le=1, description="Below it the class is unclear.")
+    max_chars: int = Field(default=3000, ge=100, le=20000, description="Reply characters sent to the model.")
+    is_active: bool = Field(default=True, description="False switches classification off.", examples=[True])
+
+
+class ReplyClassPlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sequence: ReplySequenceAction = Field(description="stop, pause or pause_until_return (out_of_office only).")
+    notify: AlertSeverity = Field(description="Severity of the alert.", examples=["medium"])
+    needs_review: bool = Field(default=False, description="Flag the reply for a person.", examples=[False])
+
+
+class DevIngestReplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    thread_id: int = Field(description="Thread of the channel.", examples=[3])
+    body: str = Field(min_length=1, max_length=20000, description="Reply text.", examples=["Chętnie, proszę o cennik."])
+    intent: ReplyIntent | None = Field(default=None, description="Class to store; omitted = no class.")
+    confidence: float = Field(default=1.0, ge=0, le=1, description="Confidence of the class.", examples=[0.9])
+    return_date: date | None = Field(default=None, description="Return date (out_of_office).", examples=[None])
 
 
 _MAILBOX_NULLABLE = frozenset({"user_id", "daily_cap", "warmup_start_cap", "warmup_started_on"})
