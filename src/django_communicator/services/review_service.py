@@ -11,7 +11,7 @@ from django_utils.toolbox import ToolboxDisabledError, ToolboxError, is_enabled
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import MessageStatus
 from django_communicator.models import Channel, Message
-from django_communicator.services import drafting_service, message_service, sequence_service
+from django_communicator.services import drafting_service, message_service, preflight_service, sequence_service
 from django_communicator.services.drafting_service import DraftOutputError
 from django_communicator.services.exceptions import ClientError
 from django_communicator.services.send_service import initial_slot
@@ -51,8 +51,10 @@ def get_message(channel: Channel, pk: int) -> Message:
 def accept(message: Message, *, user) -> Message:
     """`approved` with reviewer, timestamp and `scheduled_at` = next policy slot (none without a policy).
 
-    Signals once, on commit.
+    Signals once, on commit. Raises `ReviewError` when the preflight finds a problem (a missing legal footer).
     """
+    if blocker := preflight_service.problem(message):
+        raise ReviewError(blocker[1])
     with transaction.atomic():
         slot = initial_slot(message.thread.channel)
         message_service.transition(message, MessageStatus.APPROVED, user=user, fields={"scheduled_at": slot})

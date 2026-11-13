@@ -30,6 +30,7 @@ from django_communicator.services import (
     channel_service,
     mail_builder,
     message_service,
+    preflight_service,
     sequence_service,
     suppression_service,
 )
@@ -48,7 +49,7 @@ def deliver(message: Message, *, now: datetime) -> str:
     Suppression, follow-up blocker and mail build run before the claim; an error after the claim but before SMTP
     releases it. Raises `SmtpNotConfiguredError` (nothing claimed).
     """
-    current = Message.objects.select_related("thread__channel").get(pk=message.pk)
+    current = Message.objects.select_related("thread__channel", "template_version__template").get(pk=message.pk)
     if current.status not in (MessageStatus.APPROVED, MessageStatus.SCHEDULED):
         return DEFERRED
     refusal = _refusal(current)
@@ -87,10 +88,13 @@ def refuse_live(channel: Channel, now: datetime) -> None:
 
 
 def _refusal(message: Message) -> tuple[str, dict] | None:
-    """Suppressed since approval, or a follow-up whose thread got a reply or whose sequence no longer runs."""
+    """Suppressed since approval, a preflight problem (`failed/<code>`), or a follow-up whose thread got a reply or
+    whose sequence no longer runs."""
     thread = message.thread
     if suppression_service.is_suppressed(thread.channel, thread.recipient_email):
         return MessageStatus.SUPPRESSED, {}
+    if blocker := preflight_service.problem(message):
+        return MessageStatus.FAILED, {"failure_code": blocker[0], "failure_detail": blocker[1]}
     blocker = sequence_service.follow_up_blocker(message)
     return (MessageStatus.SKIPPED, {"failure_detail": blocker}) if blocker else None
 

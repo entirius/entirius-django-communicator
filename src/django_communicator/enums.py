@@ -58,6 +58,7 @@ class FailureCode(models.TextChoices):
     SMTP = "smtp", "SMTP"
     BOUNCE = "bounce", "Bounce"
     SEND_OUTCOME_UNKNOWN = "send_outcome_unknown", "Send outcome unknown"
+    LEGAL_FOOTER = "legal_footer", "Legal footer missing"
 
 
 class ReplyKind(models.TextChoices):
