@@ -230,12 +230,15 @@ class SequenceResponse(BaseModel):
     id: int = Field(description="Sequence id.", examples=[1])
     key: str = Field(description="Slug.", examples=["followup"])
     is_active: bool = Field(description="Schedules follow-ups.", examples=[True])
+    autostart: bool = Field(description="Starts by itself after the first delivery of a thread.", examples=[False])
     steps: list[SequenceStepResponse] = Field(description="Steps by number.", examples=[[]])
 
     @classmethod
     def of(cls, sequence) -> "SequenceResponse":
         steps = [SequenceStepResponse.model_validate(step) for step in sequence.steps.all()]
-        return cls(id=sequence.pk, key=sequence.key, is_active=sequence.is_active, steps=steps)
+        return cls(
+            id=sequence.pk, key=sequence.key, is_active=sequence.is_active, autostart=sequence.autostart, steps=steps
+        )
 
 
 class SequenceListResponse(BaseModel):

@@ -99,7 +99,25 @@ def on_follow_up_finished(message: Message, outcome: str) -> None:
 
 
 def on_delivered(message: Message) -> None:
+    if message.sequence_step is None and _autostart(message):
+        return
     _arm(message.thread, message.sent_at)
+
+
+def _autostart(message: Message) -> bool:
+    """The first templated delivery of an open thread that never had a sequence state starts the channel's active
+    autostart sequence. A thread that ever had a state (running, paused, stopped) is left alone, and a hand-written
+    message (no template version) never starts one."""
+    thread = message.thread
+    if message.template_version_id is None or thread.status != ThreadStatus.OPEN:
+        return False
+    if ThreadSequenceState.objects.filter(thread=thread).exists():
+        return False
+    sequence = Sequence.objects.filter(channel_id=thread.channel_id, autostart=True, is_active=True).first()
+    if sequence is None or not sequence.steps.exists():
+        return False
+    start_sequence(thread, sequence)
+    return True
 
 
 def _arm(thread: Thread, base: datetime) -> None:
