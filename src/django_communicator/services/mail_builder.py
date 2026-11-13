@@ -21,7 +21,7 @@ from django_email.domain import EmailDomain
 
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import ChannelMode, MessageStatus
-from django_communicator.models import Channel, Mailbox, Message, MessageTemplateVersion
+from django_communicator.models import Channel, Mailbox, Message, MessageTemplateVersion, Reply
 from django_communicator.services import footer_service, mailbox_service, unsubscribe_service
 
 FOOTER_SEPARATOR = "\n\n-- \n"
@@ -124,7 +124,8 @@ def _addressing(message: Message, channel: Channel) -> tuple[list[str], str, dic
 
 
 def _threading_headers(message: Message) -> dict[str, str]:
-    """`In-Reply-To` / `References` from the Message-IDs of earlier sent messages in the thread (C-28)."""
+    """`In-Reply-To` / `References` from the Message-IDs of earlier sent messages in the thread (C-28); a message
+    answering a reply points `In-Reply-To` at the reply and ends `References` with it."""
     earlier = (
         Message.objects.filter(thread_id=message.thread_id, status=MessageStatus.SENT)
         .exclude(pk=message.pk)
@@ -133,6 +134,8 @@ def _threading_headers(message: Message) -> dict[str, str]:
         .values_list("message_id", flat=True)
     )
     ids = list(earlier)
+    if message.in_reply_to_id:  # a hand-written answer threads under the reply it answers
+        ids.append(Reply.objects.values_list("inbound_message_id", flat=True).get(pk=message.in_reply_to_id))
     return {"In-Reply-To": ids[-1], "References": " ".join(ids)} if ids else {}
 
 

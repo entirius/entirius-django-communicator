@@ -99,6 +99,9 @@ def on_follow_up_finished(message: Message, outcome: str) -> None:
 
 
 def on_delivered(message: Message) -> None:
+    """A hand-written message (no template version) neither starts nor arms a sequence."""
+    if message.template_version_id is None:
+        return
     if message.sequence_step is None and _autostart(message):
         return
     _arm(message.thread, message.sent_at)
@@ -211,13 +214,19 @@ def pick_text(state: ThreadSequenceState, rng: random.Random) -> TextPool | None
     return rng.choice(fresh or texts)
 
 
+def _last_templated(thread: Thread) -> Message | None:
+    """The newest outbound message rendered from a template — a hand-written one has no context to carry on."""
+    messages = Message.objects.filter(thread=thread, direction=Direction.OUT, template_version__isnull=False)
+    return messages.order_by("-created_at", "-pk").first()
+
+
 def _previous_context(thread: Thread) -> dict:
-    last = Message.objects.filter(thread=thread, direction=Direction.OUT).order_by("-created_at", "-pk").first()
+    last = _last_templated(thread)
     return dict(last.render_context) if last else {}
 
 
 def _recipient(thread: Thread) -> RecipientData:
-    last = Message.objects.filter(thread=thread, direction=Direction.OUT).order_by("-created_at", "-pk").first()
+    last = _last_templated(thread)
     first_name, _, last_name = thread.recipient_name.partition(" ")
     language = thread.recipient_language.iso2.lower() if thread.recipient_language else ""
     footer = last.legal_footer if last else ""

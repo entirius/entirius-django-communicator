@@ -53,6 +53,14 @@ class Message(BaseModel):
     send_attempted_at = models.DateTimeField(null=True, blank=True, help_text="Wall clock of the `sending` claim.")
     sequence_step = models.PositiveSmallIntegerField(null=True, blank=True, help_text="Set on sequence follow-ups.")
     message_id = models.CharField(max_length=255, blank=True, default="")
+    in_reply_to = models.ForeignKey(
+        "django_communicator.Reply",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The inbound reply a hand-written message answers; its Message-ID goes into the threading headers.",
+    )
     failure_code = models.CharField(max_length=32, choices=FailureCode.choices, blank=True, default="")
     failure_detail = models.TextField(blank=True, default="")
     replied_at = models.DateTimeField(null=True, blank=True)

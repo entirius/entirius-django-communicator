@@ -65,10 +65,10 @@ def communicate(
     Raises `ToolboxDisabledError` for an AI template while the toolbox is switched off — nothing is written."""
     channel = channel_service.get_channel(channel_idx)
     if thread is not None:
-        _check_thread(thread, channel, recipient, subject_ref)
+        check_thread(thread, channel, recipient, subject_ref)
     base = {"render_context": context, "legal_footer": recipient.legal_footer, "requires_review": requires_review}
     base["mailbox_user_id"] = mailbox_user_id
-    if refusal := _refusal(channel, recipient.email):
+    if refusal := mail_refusal(channel, recipient.email):
         fields = {**base, "failure_detail": refusal}
         return _create(channel, recipient, subject_ref, thread, status=MessageStatus.SUPPRESSED, **fields)
     try:
@@ -91,7 +91,7 @@ def communicate(
     return _ai_draft(channel, recipient, subject_ref, thread, template, prompt, base)
 
 
-def _refusal(channel: Channel, email: str) -> str | None:
+def mail_refusal(channel: Channel, email: str) -> str | None:
     """`can_mail`; with `COMMUNICATOR_VERIFY_ENABLED` an unknown or stale address is checked first (DNS, no lock)."""
     if communicator_settings.COMMUNICATOR_VERIFY_ENABLED:
         address_service.verify_if_due(email, timezone.now())
@@ -142,22 +142,24 @@ def _fail(channel, recipient, subject_ref, thread, code: str, detail: str, base:
 
 
 def _create(channel, recipient: RecipientData, subject_ref: str, thread: Thread | None, **fields) -> Message:
-    thread = thread or _open_thread(channel, recipient, subject_ref)
+    thread = thread or thread_for(channel, recipient, subject_ref)
     mailbox_service.assign(thread, fields.pop("mailbox_user_id"))
     return message_service.create_message(thread=thread, **fields)
 
 
-def _check_thread(thread: Thread, channel: Channel, recipient: RecipientData, subject_ref: str) -> None:
+def check_thread(thread: Thread, channel: Channel, recipient: RecipientData, subject_ref: str) -> None:
     owner = (channel.pk, subject_ref, recipient.email.strip().lower())
     if (thread.channel_id, thread.subject_ref, thread.recipient_email) != owner:
         raise ThreadMismatchError(f"thread {thread.pk} belongs to another channel, subject or recipient")
 
 
-def _open_thread(channel: Channel, recipient: RecipientData, subject_ref: str) -> Thread:
-    """Newest open thread for (channel, subject_ref, email), else a new one."""
+def thread_for(
+    channel: Channel, recipient: RecipientData, subject_ref: str, statuses: tuple[str, ...] = (ThreadStatus.OPEN,)
+) -> Thread:
+    """Newest thread in one of `statuses` for (channel, subject_ref, email), else a new one."""
     email = recipient.email.strip().lower()
     lookup = {"channel": channel, "subject_ref": subject_ref, "recipient_email": email}
-    existing = Thread.objects.filter(status=ThreadStatus.OPEN, **lookup).order_by("-created_at").first()
+    existing = Thread.objects.filter(status__in=statuses, **lookup).order_by("-created_at").first()
     if existing:
         return existing
     name = f"{recipient.first_name} {recipient.last_name}".strip()

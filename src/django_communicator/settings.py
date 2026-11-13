@@ -114,3 +114,5 @@ COMMUNICATOR_DISPOSABLE_DOMAINS = getattr(
     ["mailinator.com", "guerrillamail.com", "10minutemail.com", "yopmail.com", "tempmail.com", "trashmail.com",
      "sharklasers.com", "getnada.com", "dispostable.com", "throwawaymail.com"],
 )  # fmt: skip
+# Hand-written messages (`compose_service.compose`): the longest body accepted, in characters.
+COMMUNICATOR_COMPOSE_MAX_CHARS = getattr(settings, "COMMUNICATOR_COMPOSE_MAX_CHARS", 20_000)
