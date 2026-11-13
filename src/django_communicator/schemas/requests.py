@@ -133,6 +133,18 @@ class DevCommunicateRequest(BaseModel):
     )
 
 
+class DevComposeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recipient: RecipientData = Field(description="Who the message is for; `legal_footer` is required.")
+    subject: str = Field(description="Subject as written (limits checked by the service).", examples=["Your offer"])
+    body_text: str = Field(description="Body as written, plain text.", examples=["Hello Jan,\n\nthanks for the call."])
+    subject_ref: str = Field(min_length=1, max_length=200, description="Opaque reference.", examples=["bdd:c-01"])
+    thread_id: int | None = Field(default=None, description="Thread to write in; null = the reuse rule.")
+    in_reply_to_id: int | None = Field(default=None, description="Reply of the thread being answered.")
+    mailbox_user_id: int | None = Field(default=None, description="Staff user whose mailbox a new thread uses.")
+
+
 class WindowRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -103,6 +103,7 @@ urlpatterns = [
 if is_development():
     urlpatterns += [
         path("test/communicate/", dev.DevCommunicateView.as_view(), name="admin-communicator-test-communicate"),
+        path("test/compose/", dev.DevComposeView.as_view(), name="admin-communicator-test-compose"),
         path("test/clock/", dev.DevClockView.as_view(), name="admin-communicator-test-clock"),
         path("test/send-due/", dev.DevSendDueView.as_view(), name="admin-communicator-test-send-due"),
         path("test/reset-counters/", dev.DevResetCountersView.as_view(), name="admin-communicator-test-reset-counters"),

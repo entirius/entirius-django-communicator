@@ -1,7 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
-"""Development-only endpoints for BDD: communicate(), channel clock, beat run, sequence start, IMAP poll, counters,
+"""Development-only endpoints for BDD: communicate(), compose(), channel clock, beat run, sequence start, IMAP poll, counters,
 draft retry run and the toolbox outage switch.
 
 404 outside `ENVIRONMENT == "development"`.
@@ -20,10 +20,11 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from django_communicator.api.admin.views._base import ERROR_RESPONSES, Conflict, DevelopmentView, parse
-from django_communicator.models import Sequence, Thread
+from django_communicator.models import Reply, Sequence, Thread
 from django_communicator.schemas.requests import (
     DevClockRequest,
     DevCommunicateRequest,
+    DevComposeRequest,
     DevIngestReplyRequest,
     DevResetCountersRequest,
     DevStartSequenceRequest,
@@ -48,7 +49,8 @@ from django_communicator.services import (
     poll_service,
     sequence_service,
 )
-from django_communicator.services.communicate_service import LegalFooterRequiredError, communicate
+from django_communicator.services.communicate_service import LegalFooterRequiredError, ThreadMismatchError, communicate
+from django_communicator.services.compose_service import ComposeError, compose
 from django_communicator.services.reply_class_service import Classification
 from django_communicator.tasks import poll_inbox, retry_failed_drafts, schedule_follow_ups, send_due
 
@@ -88,6 +90,48 @@ class DevCommunicateView(DevelopmentView):
         except ToolboxDisabledError as error:
             return handle_toolbox_error(error)
         return Response(MessageDetailResponse.of(message).model_dump(mode="json"), status=201)
+
+
+class DevComposeView(DevelopmentView):
+    @extend_schema(
+        tags=_TAGS,
+        summary="Call compose() (development only)",
+        description="A hand-written message by the requesting user: `approved` and due now, or `suppressed`. "
+        "A missing legal footer, a blank or too long subject or body, or a thread or reply of another subject answers "
+        "400 and creates nothing.",
+        request=DevComposeRequest,
+        responses={201: MessageDetailResponse, **ERROR_RESPONSES},
+    )
+    def post(self, request: Request, channel_idx: str) -> Response:
+        body = parse(DevComposeRequest, request.data)
+        channel = self.channel(channel_idx)
+        fields = body.model_dump(exclude={"thread_id", "in_reply_to_id", "recipient"})
+        thread = _channel_object(Thread, channel, body.thread_id)
+        reply = _channel_object(Reply, channel, body.in_reply_to_id)
+        try:
+            message = compose(
+                channel_idx=channel.idx,
+                recipient=body.recipient,
+                thread=thread,
+                in_reply_to=reply,
+                author=request.user,
+                **fields,
+            )
+        except LegalFooterRequiredError as error:
+            raise ValidationError({"recipient.legal_footer": [error.client_message]}) from None
+        except (ComposeError, ThreadMismatchError) as error:
+            raise ValidationError({"non_field_errors": [str(error)]}) from None
+        return Response(MessageDetailResponse.of(message).model_dump(mode="json"), status=201)
+
+
+def _channel_object(model, channel, pk: int | None):
+    """The thread or reply `pk` of this channel; None for no pk; 404 for another channel's."""
+    if pk is None:
+        return None
+    found = model.objects.filter(channel=channel, pk=pk).first()
+    if found is None:
+        raise NotFound(f"{model.__name__} not found.")
+    return found
 
 
 class DevClockView(DevelopmentView):
