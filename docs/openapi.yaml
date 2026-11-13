@@ -7,6 +7,43 @@ info:
   description: Templates, review, sending, sequences and inbound replies of a communicator channel; the approval inbox across
     channels and the public one-click unsubscribe.
 paths:
+  /api/communicator/v2/admin/{channel_idx}/addresses/status/:
+    get:
+      operationId: api_communicator_v2_admin_addresses_status_retrieve
+      description: '`refusal` is what `communicate()` and the delivery would answer (`address_invalid`, `suppressed`, null),
+        with the matching suppression rows and the address status.'
+      summary: Why an address may (not) be mailed in this channel
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: email
+        schema:
+          type: string
+        description: The address to explain.
+        required: true
+      tags:
+      - Communicator Suppressions
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddressExplainResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
   /api/communicator/v2/admin/{channel_idx}/channel/:
     get:
       operationId: api_communicator_v2_admin_channel_retrieve
@@ -1717,7 +1754,8 @@ paths:
   /api/communicator/v2/admin/{channel_idx}/suppressions/:
     get:
       operationId: communicator_suppressions_list
-      description: Includes the global `email_token` rows of erased or anonymised addresses (no plain address).
+      description: 'The channel''s rows and the global rows (`scope: install`: every channel, including the `email_token`
+        rows of erased or anonymised addresses — no plain address).'
       summary: List suppressions of the channel
       parameters:
       - in: path
@@ -1725,6 +1763,31 @@ paths:
         schema:
           type: string
         required: true
+      - in: query
+        name: scope
+        schema:
+          type: string
+          enum:
+          - channel
+          - install
+        description: channel or install (global).
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Part of the value, case-insensitive.
+      - in: query
+        name: source
+        schema:
+          type: string
+          enum:
+          - bounce
+          - complaint
+          - erased
+          - manual
+          - optout_confirmed
+          - unsubscribe_link
+        description: What wrote the row.
       - in: query
         name: value
         schema:
@@ -1751,7 +1814,8 @@ paths:
           description: No response body
     post:
       operationId: api_communicator_v2_admin_suppressions_create
-      description: Emails are lower-cased; a domain or host is stored as its registrable domain.
+      description: Emails are lower-cased; a domain or host is stored as its registrable domain. The row is a channel row,
+        or a global one (every channel) when the install runs `COMMUNICATOR_SUPPRESSION_SCOPE = "install"`; source `manual`.
       summary: Suppress an email or a registrable domain
       parameters:
       - in: path
@@ -1795,6 +1859,8 @@ paths:
   /api/communicator/v2/admin/{channel_idx}/suppressions/{id}/:
     delete:
       operationId: api_communicator_v2_admin_suppressions_destroy
+      description: A row of this channel or a global email / domain row (it stops holding in every channel); an `email_token`
+        row of an erased address cannot be removed (404).
       summary: Remove a suppression
       parameters:
       - in: path
@@ -2378,6 +2444,70 @@ paths:
           description: Throttled.
 components:
   schemas:
+    AddressExplainResponse:
+      properties:
+        email:
+          description: The normalised address.
+          examples:
+          - jan@shop.test
+          title: Email
+          type: string
+        refusal:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: 'address_invalid, suppressed, or null: the channel may mail the address.'
+          examples:
+          - suppressed
+          title: Refusal
+        suppressions:
+          description: Rows that match in this channel.
+          items:
+            $ref: '#/components/schemas/MatchingSuppressionResponse'
+          title: Suppressions
+          type: array
+        address_status:
+          anyOf:
+          - $ref: '#/components/schemas/AddressStatusResponse'
+          - type: 'null'
+          description: 'Null: nothing known about the address.'
+      required:
+      - email
+      - refusal
+      - suppressions
+      - address_status
+      title: AddressExplainResponse
+      type: object
+    AddressStatusResponse:
+      properties:
+        status:
+          description: unknown, valid, risky or invalid; only invalid blocks.
+          examples:
+          - invalid
+          title: Status
+          type: string
+        reason:
+          description: 'Code: syntax, disposable, domain_not_found, null_mx, no_mail_server, mx_ok, no_mx_address_fallback,
+            hard_bounce or dns_error.'
+          examples:
+          - hard_bounce
+          title: Reason
+          type: string
+        verified_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: When it was written.
+          examples:
+          - '2026-09-13T12:00:00Z'
+          title: Verified At
+      required:
+      - status
+      - reason
+      - verified_at
+      title: AddressStatusResponse
+      type: object
     ApprovalCountsResponse:
       properties:
         total:
@@ -3336,6 +3466,11 @@ components:
       - 7d
       title: HealthWindowsResponse
       type: object
+    KindEnum:
+      enum:
+      - email
+      - domain
+      type: string
     MailboxCreateRequest:
       additionalProperties: false
       properties:
@@ -3887,6 +4022,54 @@ components:
       - smtp
       - imap
       title: MailboxTestResponse
+      type: object
+    MatchingSuppressionResponse:
+      properties:
+        id:
+          description: Suppression id.
+          examples:
+          - 1
+          title: Id
+          type: integer
+        kind:
+          description: email, domain or email_token.
+          examples:
+          - email
+          title: Kind
+          type: string
+        scope:
+          description: channel or install.
+          examples:
+          - install
+          title: Scope
+          type: string
+        source:
+          description: What wrote the row.
+          examples:
+          - unsubscribe_link
+          title: Source
+          type: string
+        reason:
+          description: Free note.
+          examples:
+          - ''
+          title: Reason
+          type: string
+        created_at:
+          description: Created.
+          examples:
+          - '2026-09-13T12:00:00Z'
+          format: date-time
+          title: Created At
+          type: string
+      required:
+      - id
+      - kind
+      - scope
+      - source
+      - reason
+      - created_at
+      title: MatchingSuppressionResponse
       type: object
     MessageDetailResponse:
       properties:
@@ -5376,13 +5559,6 @@ components:
       - ssl
       title: SmtpSecurity
       type: string
-    SuppressionKind:
-      enum:
-      - email
-      - domain
-      - email_token
-      title: SuppressionKind
-      type: string
     SuppressionListResponse:
       properties:
         results:
@@ -5401,10 +5577,12 @@ components:
       additionalProperties: false
       properties:
         kind:
-          $ref: '#/components/schemas/SuppressionKind'
-          description: email or domain.
+          allOf:
+          - $ref: '#/components/schemas/KindEnum'
+          description: email or domain (`email_token` rows are written by erasure only).
           examples:
           - domain
+          title: Kind
         value:
           description: Email, or a domain / host.
           examples:
@@ -5435,7 +5613,7 @@ components:
           title: Id
           type: integer
         kind:
-          description: email, domain or email_token (global).
+          description: email, domain or email_token (always global).
           examples:
           - domain
           title: Kind
@@ -5446,8 +5624,20 @@ components:
           - shop.test
           title: Value
           type: string
+        scope:
+          description: 'channel: this channel only · install: every channel.'
+          examples:
+          - channel
+          title: Scope
+          type: string
+        source:
+          description: manual, optout_confirmed, unsubscribe_link, bounce, complaint or erased.
+          examples:
+          - manual
+          title: Source
+          type: string
         reason:
-          description: Why.
+          description: Free note.
           examples:
           - ''
           title: Reason
@@ -5463,6 +5653,8 @@ components:
       - id
       - kind
       - value
+      - scope
+      - source
       - reason
       - created_at
       title: SuppressionResponse

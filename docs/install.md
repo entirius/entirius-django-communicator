@@ -47,6 +47,11 @@ The only settings table. Defaults live in `django_communicator/settings.py` and 
 | `COMMUNICATOR_BULK_APPROVAL_MAX` | `100` | ids per bulk approve / reject request |
 | `DEFAULT_THROTTLE_RATES["communicator_unsubscribe"]` | `60/min` (fallback) | per client address on the public unsubscribe route |
 | `COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS` | out-of-office patterns (en, pl) | autoresponder subjects |
+| `COMMUNICATOR_SUPPRESSION_SCOPE` | `"channel"` | `channel`: a new email / domain suppression holds in its channel; `install`: in every channel (global row). Global rows hold under both; switching rewrites nothing (`communicator_suppressions --to-install`) |
+| `COMMUNICATOR_VERIFY_ENABLED` | `False` | address verification (syntax, disposable domain, DNS; needs the extra `verify`) before `communicate()` drafts, and in `reverify_addresses` |
+| `COMMUNICATOR_VERIFY_MAX_AGE_DAYS` | `30` | an address checked longer ago is checked again |
+| `COMMUNICATOR_VERIFY_BATCH` | `200` | addresses per `reverify_addresses` run |
+| `COMMUNICATOR_DISPOSABLE_DOMAINS` | 10 known throwaway domains | an address at one of them (or a subdomain) is `invalid / disposable` |
 | `LEADS_ANONYMISED_DOMAIN` | `anonymised.invalid` | domain of token addresses — keep equal to django_leads |
 
 ## Celery beat
@@ -61,6 +66,11 @@ app.conf.beat_schedule |= {
     "communicator-retry-drafts": {
         "task": "django_communicator.retry_failed_drafts",
         "schedule": crontab(minute="*/10"),
+    },
+    # only with COMMUNICATOR_VERIFY_ENABLED; a no-op otherwise
+    "communicator-reverify-addresses": {
+        "task": "django_communicator.reverify_addresses",
+        "schedule": crontab(minute=30, hour=3),
     },
 }
 ```

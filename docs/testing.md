@@ -30,11 +30,13 @@ C-01…C-33, all of the communicator edge cases.
 | `test_mailbox_sending.py` | From / CC / login per mailbox, sandbox CC header, channel without mailbox, unusable or refused login holds one message and alerts once, pause holds one mailbox, per-mailbox cap, warm-up arithmetic, release on failure, soft-bounce retry | — |
 | `test_health.py` | counts per mailbox, auto-pause live only and above the sample, manual pause / resume and log, `health/` with `sent_today` / `cap_today`, policy API, no password in responses, logs or notifications | — |
 | `test_mailbox_migration.py` | `MailboxConfig` → `Mailbox` forward and backward with one old row and with none, ciphertext kept | — |
+| `test_suppression_scope.py` | `COMMUNICATOR_SUPPRESSION_SCOPE`: channel scope isolates two channels, install scope blocks in both, rows keep working after a switch; sources of every writer; global-kind constraint; `communicator_suppressions --to-install` dry run and apply; list filters `scope` / `source` / `search`; global delete, token row kept; health opt-outs from global rows; the 0019 data migration | — |
+| `test_address_status.py` | every DNS verdict, syntax, disposable (stub resolver, no network); hard bounce final; stale re-check and the beat; `can_mail` reasons and query count; live SMTP and DSN hard bounces, sandbox none; delivery and `communicate()` refusals; verification on and off; `addresses/status/`; GDPR erase and anonymisation drop the row | — |
 | `test_gdpr.py` | `contact_anonymised` receiver, export / erase, global token suppression, token parity with django_leads (skipped without it) | — |
 | `test_inbox_list.py`, `test_inbox_conversations.py` | the inbox lists: `threads/` (state filter, counts, activity order, row fields) and `conversations/` (one row per `subject_ref`, state from any thread, counts, order, paging), query-count bounds | — |
 | `test_admin_api.py` | review / template / suppression endpoints, 401/403/404/409, `test/communicate/` | — |
 | `test_v2_error_exposure.py` | admin refusals answer `client_message`, never `str(exc)`; a lower-layer exception is a 500 `INTERNAL_ERROR` with no text of it | — |
-| `test_admin.py` | Django admin pages render, admin save versions, read-only messages | — |
+| `test_admin.py` | Django admin pages render (address status included), admin save versions, read-only messages | — |
 | `test_openapi.py` | the module schema validates | — |
 | `test_domains.py`, `test_smoke.py` | registrable domain rule; app installed | — |
 

@@ -40,6 +40,27 @@
   bounce, opt-out or complaint limit (minimum sample); `MailboxPauseLog` records every pause and resume; only a person
   resumes.
 - Approval inbox: filter `mailbox`, `counts.by_mailbox`.
+- **Suppression scope.** `COMMUNICATOR_SUPPRESSION_SCOPE = "channel"` (default) or `"install"`: under `install`
+  every new `email` / `domain` suppression (manual, opt-out confirm, unsubscribe link, bounce, complaint) is a global
+  row (`channel = NULL`) and holds in every channel; global rows are honoured under both settings and a switch
+  rewrites nothing. `suppression_service.scope()`; command `manage.py communicator_suppressions --to-install`
+  (dry run unless `--apply`, idempotent) copies channel rows to global rows. Check constraint: a global row only for
+  kinds `email_token`, `email`, `domain` (migration 0019).
+- **`Suppression.source`**: `manual`, `optout_confirmed`, `unsubscribe_link`, `bounce`, `complaint`, `erased`; the data
+  migration derives it from the old `reason` text where it is unambiguous, else `manual`; `reason` stays a free note.
+- **Address status.** `AddressStatus` (one row per address, install-wide: `unknown`, `valid`, `risky`, `invalid`, a
+  reason code, `verified_at`); a live hard bounce (DSN, SMTP 550/551/553/554 on RCPT) writes `invalid / hard_bounce`,
+  final. `address_service`: `status_of`, `verify` (syntax → disposable domain → DNS, injected resolver, no SMTP
+  probe), `mark_hard_bounce`, `stale`, `reverify_stale`. Off until `COMMUNICATOR_VERIFY_ENABLED`; then
+  `communicate()` verifies an unknown or stale address (`COMMUNICATOR_VERIFY_MAX_AGE_DAYS`, 30) before it drafts and
+  the daily task `django_communicator.reverify_addresses` re-checks up to `COMMUNICATOR_VERIFY_BATCH` (200).
+  `COMMUNICATOR_DISPOSABLE_DOMAINS`; optional extra `verify` (dnspython).
+- **One question: `suppression_service.can_mail(channel, email)`** → `address_invalid`, `suppressed` or None (at most
+  two queries), asked by `communicate()`, the delivery before its claim and the draft retry; a refusal is a
+  `suppressed` message with `failure_detail` = the code. `explain(channel, email)` adds the matching rows and the
+  address status.
+- Admin API: `GET addresses/status/?email=` (the `explain` answer); `GET suppressions/` filters `scope`, `source`,
+  `search` and every row carries `scope` and `source`.
 
 ### Changed
 
@@ -50,6 +71,12 @@
   run; a refused mailbox login holds that mailbox's mail (`needs_login`, `high` alert once a day).
 - The IMAP poll alert is per mailbox (`IMAP poll of mailbox <address> failed`), so a second broken mailbox is
   announced.
+- Suppression routes moved to area `communicator.settings` (was `communicator.conversations`); `POST suppressions/`
+  accepts kinds `email` and `domain` only (an `email_token` row could match nothing) and follows the scope;
+  `DELETE suppressions/<id>/` also removes a global `email` / `domain` row (a token row stays a 404).
+- Health opt-out counts read `Suppression.source` (`optout_confirmed`, `unsubscribe_link`), global rows included,
+  instead of the `reason` text.
+- GDPR erasure and the `contact_anonymised` receiver drop the address's `AddressStatus` row; the export lists it.
 - `docs/openapi.yaml` regenerated.
 
 ### Removed

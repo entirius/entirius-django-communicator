@@ -142,7 +142,12 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   leads/siteintel, django_leads and contact_forms) — never import them across modules.
   `test_token_parity_with_django_leads` guards the email token copy when leads is installed.
 - **Global suppression stores the token, never the plain address** (`Suppression(kind=email_token,
-  channel=None)`); a token address is always suppressed.
+  channel=None)`); a token address is always suppressed. Under `COMMUNICATOR_SUPPRESSION_SCOPE = "install"` global
+  `email` / `domain` rows do carry the address — they are the subject's data (export) like channel rows.
+- **Ask `suppression_service.can_mail`, never `is_suppressed` alone** — the address status (`invalid`) blocks too.
+  The scope comes from the setting only (`suppression_service.scope()`), never from the rows.
+- **`AddressStatus` is install-wide** and only a live bounce writes it — a sandbox or dry-run bounce says nothing
+  about the real address. Verification never runs inside a transaction or lock (DNS is slow).
 - **A subject's data is threads to the address and replies *sent by* it** — a colleague's reply in the
   same thread is neither exported nor rewritten.
 - **Alerts need a django_notifications channel with the communicator channel's `idx`** — otherwise they

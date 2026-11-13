@@ -35,7 +35,7 @@ src/django_communicator/
 ├── models/     channel  message_template  message_template_version  thread  message  suppression
 │               send_policy  send_window  sequence  sequence_step  text_pool  thread_pool_usage
 │               thread_sequence_state  mailbox  health (HealthPolicy, MailboxPauseLog)  mail_footer  reply
-│               inbound_quarantine  bulk_approval_log
+│               inbound_quarantine  bulk_approval_log  address_status
 ├── schemas/    requests.py  responses.py (Pydantic)
 ├── api/admin/  urls.py  views/ (review, template, suppression, sending, sequence, thread, reply, mailbox, health,
 │               footer, approval — mounted before the channel include in the root urls.py, test)
@@ -45,16 +45,18 @@ src/django_communicator/
 │               message_service (the only status writer)  review_service  preview_service
 │               send_service (send_due run)  delivery_service (deliver)  policy_service  counter_service
 │               clock_service  channel_service (live_allowed)  mail_builder  footer_service  alert_service
-│               sequence_service  sending_config_service  suppression_service
+│               sequence_service  sending_config_service
 │               poll_service  inbound_service (ingest)  mail_parser  dsn_service  optout_service  inbox_service
 │               anonymisation_service  draft_retry_service (transient failure retry)
 │               preflight_service (legal footer at accept and delivery)  approval_service (cross-channel inbox)
 │               unsubscribe_service (signed token, headers, public action)
 │               mailbox_service (mailboxes, resolution, state, logins, cap)  health_service (rates, pause)
+│               suppression_service (scope, can_mail, explain)  address_service (status, DNS verification)
 │               exceptions (ClientError: base of refusals shown to API clients)
 ├── signals/    __init__.py (message_approved, company_skipped, message_sent, sequence_finished,
 │               reply_received, optout_confirmed, message_bounced)  leads_receivers.py (contact_anonymised)
-├── tasks/      send_due  schedule_follow_ups  poll_inbox  record_objection  retry_failed_drafts
+├── tasks/      send_due  schedule_follow_ups  poll_inbox  record_objection  retry_failed_drafts  reverify_addresses
+├── management/ commands/communicator_suppressions (--to-install)
 └── utils/      domains  emails  encryption  encrypted_field (copies — never cross-imported)
 ```
 

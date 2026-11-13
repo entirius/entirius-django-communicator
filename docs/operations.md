@@ -13,6 +13,7 @@ Install-time facts (prerequisites, settings, beat schedule, bootstrap order) are
 | `django_communicator.schedule_follow_ups` | hourly | `communicator_default` | creates due sequence follow-ups; `QueueOnce`, graceful |
 | `django_communicator.poll_inbox` | `*/5` min | `communicator_inbound` | IMAP poll of every active mailbox; `QueueOnce`, graceful, retried ×3 on IMAP / socket errors |
 | `django_communicator.retry_failed_drafts` | `*/10` min | `communicator_default` | retries AI drafts that failed transiently (toolbox down, timeout, 5xx) once `status()` is `configured` — never while it is `disabled`, `unconfigured` or `unreachable`; `QueueOnce`, graceful |
+| `django_communicator.reverify_addresses` | daily | `communicator_default` | re-checks up to `COMMUNICATOR_VERIFY_BATCH` addresses older than `COMMUNICATOR_VERIFY_MAX_AGE_DAYS` or with a DNS error (never a hard bounce); nothing while `COMMUNICATOR_VERIFY_ENABLED` is off; `QueueOnce`, graceful |
 | `django_communicator.record_objection` | — | `communicator_default` | retry of a confirmed opt-out's agreements objection (×5, backoff) |
 
 **After a toolbox outage** drafts ended `failed/upstream`. `retry_failed_drafts` retries each first-version
@@ -105,6 +106,25 @@ resets today's count — the cap can be exceeded once on that day.
 - **Complaints.** Point the provider's feedback loop at a polled mailbox and set
   `COMMUNICATOR_COMPLAINT_FEEDBACK = True`.
 
+
+## Suppression scope and address verification
+
+- **Scope.** `COMMUNICATOR_SUPPRESSION_SCOPE = "channel"` (default): an opt-out, unsubscribe, bounce, complaint or
+  manual suppression holds in its channel. `"install"`: every new `email` / `domain` suppression is global and holds
+  in every channel. Decide it once per install; global rows are honoured under both settings and the switch rewrites
+  nothing. Moving to `install` with history: `manage.py communicator_suppressions --to-install` counts the channel
+  rows that would become global (dry run), `--apply` writes them (idempotent, the oldest channel row gives
+  `source` and `reason`). Going back to `channel` leaves the global rows in place: delete them in
+  `suppressions/` when they must stop holding everywhere.
+- **Why is an address refused?** `GET addresses/status/?email=` per channel: the refusal, the matching rows with
+  scope and source, the address status.
+- **Verification.** Off by default. To switch it on: install the extra `entirius-django-communicator[verify]`
+  (dnspython — without it every check ends `unknown / dns_error`), set `COMMUNICATOR_VERIFY_ENABLED = True` and
+  schedule `reverify_addresses` daily. `communicate()` then verifies an address never checked or stale before it
+  drafts — one DNS lookup (5 s timeout) on that call. Only `invalid` blocks; `risky` (no MX, A/AAAA only) and
+  `unknown` mail as before. A hard bounce is final: remove the `AddressStatus` row in Django admin only when the
+  mailbox truly exists again.
+- Logs carry reason codes, never addresses at info level.
 
 ## Mailboxes
 

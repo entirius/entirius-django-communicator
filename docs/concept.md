@@ -42,8 +42,12 @@ interprets (leads passes the lead type). Blank serves every audience. Unique `(c
 subject_ref, requires_review=True, thread=None, audience="", mailbox_user_id=None) -> Message` — the one entry point for other modules.
 Fixed order:
 
-1. **Suppression** — global `email_token`, channel email, channel registrable domain → `suppressed`,
-   no toolbox call (C-06).
+1. **Can mail** — `suppression_service.can_mail`: an `invalid` address status → `suppressed` with
+   `failure_detail = address_invalid`; a suppression (global `email_token`, email or registrable domain of the
+   channel or global) → `suppressed` with `failure_detail = suppressed`; no toolbox call (C-06). With
+   `COMMUNICATOR_VERIFY_ENABLED` an address never checked or checked longer ago than
+   `COMMUNICATOR_VERIFY_MAX_AGE_DAYS` is verified first (DNS, outside any lock). The delivery asks `can_mail`
+   again before it claims a message.
 2. **Template** — `template_service.resolve`, most specific active template first: (recipient language,
    audience) → (recipient language, blank) → (channel default language, audience) → (channel default, blank);
    none → `failed/no_template` (C-05). A blank audience asks for the blank-audience template only.
@@ -263,14 +267,29 @@ flagged.
 
 ## Suppression and GDPR
 
-`Suppression` rows are per channel (`email`, `domain` — registrable domain) or global
-(`email_token`, `channel = NULL`). The token is `utils/emails.anonymised_address` of an erased or
-retention-anonymised address; the plain address is never kept. A token address itself is always
-suppressed.
+`Suppression` is the one do-not-contact store. A row is a channel row or a global row (`channel = NULL`,
+every channel). Kind `email_token` is always global: the token is `utils/emails.anonymised_address` of an erased
+or retention-anonymised address; the plain address is never kept, and a token address itself is always
+suppressed. Kinds `email` and `domain` (registrable domain) follow `COMMUNICATOR_SUPPRESSION_SCOPE`: `channel`
+(default) writes channel rows, `install` global rows. The scope is an install fact, never a per-channel switch;
+the reader honours global rows under both settings, so a row written under `install` keeps protecting after a
+switch back, and switching never rewrites rows (`manage.py communicator_suppressions --to-install` copies channel
+rows to global ones). `source` says what wrote the row (`manual`, `optout_confirmed`, `unsubscribe_link`,
+`bounce`, `complaint`, `erased`); `reason` is a free note.
+
+`AddressStatus` (one row per address, install-wide) is what is known about an address: `unknown`, `valid`,
+`risky` or `invalid`, a reason code and `verified_at`. Only `invalid` blocks. A hard bounce on a live channel (a
+hard DSN, an SMTP 550/551/553/554 on RCPT) writes `invalid / hard_bounce`, final; a sandbox or dry-run bounce
+writes nothing. Verification (`address_service.verify`, off until `COMMUNICATOR_VERIFY_ENABLED`): syntax →
+disposable domain (`COMMUNICATOR_DISPOSABLE_DOMAINS`) → DNS: no domain `domain_not_found`, null MX `null_mx`, MX
+`mx_ok` (`valid`), no MX but A/AAAA `no_mx_address_fallback` (`risky`), nothing `no_mail_server`, a failed lookup
+`dns_error` (`unknown`). Never an SMTP probe or an external API. `suppression_service.can_mail(channel, email)`
+answers `address_invalid`, `suppressed` or None in at most two queries; `explain(channel, email)` adds the rows.
 
 With django_leads installed, `contact_anonymised(email_hash, anonymised_email, subject_ref)` suppresses
 the token globally and rewrites that subject's thread recipients and the subject's own reply senders.
-`gdpr.py` exports and erases a subject's threads, messages, replies and suppressions; erase scrubs
+Both drop the address status row. `gdpr.py` exports and erases a subject's threads, messages, replies,
+suppressions and address status; erase scrubs
 subjects, bodies, footers (`legal_footer`, `footer_html`), prompts and render contexts. A colleague's reply in the same thread is not
 the subject's data.
 
