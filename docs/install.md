@@ -18,8 +18,8 @@ Read this once before `migrate`. Day-2 work, alerts and the live checklist: `ope
 | celery-once backend on the Celery app (`app.conf.ONCE`) | `send_due`, `poll_inbox`, `schedule_follow_ups` run at most once at a time (C-18) | `AppConfig.ready()` raises `ImproperlyConfigured` without it — in every process that loads the app, web included |
 | Workers consuming `communicator_default`, `communicator_send`, `communicator_inbound` | every task routes to one of them | `celery inspect active_queues` |
 | An AI toolbox (`AI_TOOLBOX_*`, django_utils) | `ai_prompt` templates, rewrites, `models/`, `test-generate/` | `GET models/` lists the catalogue |
-| `EMAIL_SMTP_CONFIGURATION_CHANNELS[<channel idx>]` (django_email) | the SMTP connection and `DEFAULT_FROM_EMAIL` of a sending channel | `manage.py check --database default --tag communicator.smtp`; missing → messages stay, `high` alert once a day |
-| A stable `SECRET_KEY` | the IMAP password is encrypted with a key derived from it | rotating it empties stored passwords |
+| `EMAIL_SMTP_CONFIGURATION_CHANNELS[<channel idx>]` (django_email), or a sending default mailbox | the SMTP connection and `DEFAULT_FROM_EMAIL` of threads without a mailbox | `manage.py check --database default --tag communicator.smtp` (quiet for a channel with a sending default mailbox); missing → those messages stay, `high` alert once a day |
+| A stable `SECRET_KEY` | mailbox passwords are encrypted with a key derived from it | rotating it makes stored passwords unreadable (`needs_login`) |
 
 ## Settings
 
@@ -76,8 +76,8 @@ manage.py migrate
 #   MessageTemplate(s) — static and/or ai_prompt
 #   SendPolicy + SendWindow(s)          PUT policy/        (no policy = the channel never sends)
 #   Suppressions                        POST suppressions/
-#   MailboxConfig                       PUT mailbox/       (before sandbox, and for replies)
-#   EMAIL_SMTP_CONFIGURATION_CHANNELS[<idx>] in settings
+#   Mailbox(es)                         POST mailboxes/    (replies; sending from a person's address)
+#   EMAIL_SMTP_CONFIGURATION_CHANNELS[<idx>] in settings (threads without a mailbox)
 #   django_notifications Channel with the same idx (alerts are lost without it)
 # then PATCH channel/ {"mode": "sandbox", "sandbox_mailbox": "..."}
 ```

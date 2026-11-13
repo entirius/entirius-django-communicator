@@ -62,7 +62,9 @@ installed, only log lines remain.
 | high | Reply from `<sender>` | a human reply matched to a thread | per reply |
 | high | Spam complaint | an ARF `abuse`/`fraud` report on a live channel (`COMMUNICATOR_COMPLAINT_FEEDBACK`) | per complaint |
 | medium | Possible opt-out | opt-out phrase detected | per reply |
-| medium | IMAP poll failed | a mailbox poll failed | once per channel day |
+| medium | IMAP poll of mailbox `<address>` failed | a mailbox poll failed | once per mailbox and channel day |
+| high | Mailbox `<address>` needs a new login: its mail waits | a sending mailbox without SMTP host or password, or SMTP refused its login | once per mailbox and channel day |
+| high | Sending paused on mailbox `<address>`: `<reason>` | the health policy paused a mailbox (live only) | once per pause |
 | low | Bounce | hard bounce | per bounce |
 
 Escalation to email / Google Chat is configured in django_notifications (`DeliveryChannelConfig`,
@@ -76,14 +78,17 @@ Escalation to email / Google Chat is configured in django_notifications (`Delive
 | `failed/smtp` with `failure_detail` 5xx | permanent refusal | recipient suppressed in live when RCPT was refused |
 | `approved`/`scheduled` piling up | cap reached, window closed, no policy, SMTP missing, live refused | `GET policy/` (`sent_today`, `next_slot`), `GET messages/` (`next_slot`) |
 | `InboundQuarantine` rows (Django admin) | mail the poll could never ingest: `oversized`, `unparseable`, `data_error` — no body stored | read the mail in the mailbox by UID |
-| `MailboxConfig.last_polled_at` stale | poll not running or failing | worker `-Q communicator_inbound`, "IMAP poll failed" alerts |
+| `Mailbox.last_polled_at` stale | poll not running or failing | worker `-Q communicator_inbound`, "IMAP poll of mailbox … failed" alerts |
+| `GET mailboxes/` `state` not `active` | `paused`, `needs_login` or `disabled`: the mailbox holds its mail | see Mailboxes below |
+| `GET health/` rates, `GET health/log/` | bounce / opt-out / complaint rates per mailbox; who paused and resumed | resume only after the cause is fixed |
 | `Message.delivery_note` | the last DSN that changed nothing (`delayed`, …) | informational |
 | `failed/legal_footer` | an approved message reached the delivery without the legal footer its template (or the missing template) requires | fix the caller's footer; the message stays failed |
 | `Reply(kind=complaint)` | a recipient marked our mail as spam | live: already suppressed and stopped; check the template and the list |
 | `BulkApprovalLog` (`GET approvals/log/`) | who approved or rejected drafts in bulk, which ids failed and why | audit |
 | `Suppression.reason = "unsubscribe link"` | a recipient used the one-click unsubscribe | none — final |
 
-The daily counter lives in Redis (`communicator:sent:<idx>:<channel day>`, 48 h TTL). Losing Redis
+The daily counters live in Redis (`communicator:sent:<idx>:<channel day>` and
+`communicator:mailbox:<mailbox id>:<channel day>`, 48 h TTL). Losing Redis
 resets today's count — the cap can be exceeded once on that day.
 
 ## Outbound
@@ -101,12 +106,43 @@ resets today's count — the cap can be exceeded once on that day.
   `COMMUNICATOR_COMPLAINT_FEEDBACK = True`.
 
 
-## Inbound mailbox
+## Mailboxes
 
-`PUT mailbox/` (or Django admin) stores host, port, TLS, user, folder and an encrypted password.
-The poll never deletes or flags mail; it moves a UID cursor. A changed host, user, folder or
-UIDVALIDITY resets the cursor to 0, and per-channel dedup by Message-ID skips already known mail.
-Rotating `SECRET_KEY` empties the stored password — set it again.
+**Add one.** `POST mailboxes/` with `address`, `display_name`, the SMTP login (`smtp_host`, `smtp_port`,
+`smtp_security` `starttls` | `ssl`, `smtp_user` — empty = the address — `smtp_password`) and, for replies, the IMAP
+login (`imap_host`, `imap_port`, `imap_use_ssl`, `imap_user`, `imap_password`, `folder`). `user_id` ties it to a
+staff member (their mail leaves from it), `is_default` makes it the channel's fallback. Then `POST
+mailboxes/<id>/test/` (`{smtp, imap}`: `ok`, `not_configured`, `no_password`, `auth_failed`, `unreachable`) and only
+then `PATCH {"send_enabled": true}` / `{"receive_enabled": true}`. A new mailbox: start a warm-up (`daily_cap` as the
+ceiling, `warmup_start_cap`, `warmup_step`; `GET health/` shows `cap_today`).
+
+**App passwords.** A provider with two-step sign-in refuses the account password over SMTP/IMAP: create an app
+password for the account and store that. IMAP access may have to be switched on in the account first.
+
+**`needs_login`** means the mailbox cannot log in: no SMTP host or password while sending, SMTP refused the login
+(535), or no IMAP host or password while receiving. Its mail waits (nothing fails, other mailboxes keep sending) and
+a `high` alert goes out once a day. Fix the login, `PATCH` the new password (clears it) or run `test/` (a working
+SMTP login clears it); the waiting mail leaves on the next run.
+
+**Pause.** `POST mailboxes/<id>/pause/` and `resume/` (`{reason}`, logged with the user). The health policy
+(`GET/PUT health/policy/`, off by default) pauses on live channels only and never resumes.
+
+**Key rotation.** Passwords are encrypted with a key derived from `SECRET_KEY`. After a change every stored password
+reads as empty: mailboxes show `needs_login` and hold their mail; the ciphertext stays untouched (no save writes it
+unless a new password is sent), so restoring the old key brings it back. Otherwise set each password again.
+
+**Delete.** Refused (409 `MAILBOX_IN_USE`) for the default or while a thread sends from it — disable it instead.
+A disabled mailbox holds the mail of its threads for good (a thread never changes its mailbox, and new drafts on
+those threads cannot be approved): reject or wait them out, or enable it again. New threads no longer pick it.
+
+**Passwords** are ASCII only (SMTP and IMAP logins send ASCII); another character answers 400.
+
+**Receiving.** The poll never deletes or flags mail; it moves a UID cursor per mailbox. A changed host, user, folder
+or UIDVALIDITY resets the cursor to 0, and per-channel dedup by Message-ID skips already known mail, also a reply
+that reached two mailboxes of the channel.
+
+**Upgrade.** Migration 0017 turns the old single IMAP config of a channel into its default mailbox, receiving as
+before and not sending (`send_enabled = false`) — the channel SMTP entry keeps sending until a person enables it.
 
 ## Go/no-go: switching a channel to live
 
@@ -133,8 +169,10 @@ Channel: `________` · Date: `________` · Operator: `________` · Sales owner: 
       owner reviewed them.
 - [ ] **SMTP and sender.** `EMAIL_SMTP_CONFIGURATION_CHANNELS[<idx>]` points at the production mail
       account with the intended `DEFAULT_FROM_EMAIL`; SPF/DKIM/DMARC for that domain pass.
-- [ ] **Mailbox.** `GET mailbox/` has the production reply mailbox (`is_active`, `has_password`), and
-      `poll_inbox` runs (`last_polled_at` recent), so replies, opt-outs and bounces stop the sequences.
+- [ ] **Mailboxes.** `GET mailboxes/` lists every sending and reply mailbox `active` (`receive_enabled`,
+      `imap_password_set`), `test/` answers `ok` for both logins, and `poll_inbox` runs (`last_polled_at`
+      recent), so replies, opt-outs and bounces stop the sequences. A new address runs a warm-up; the health
+      policy (`GET health/policy/`) is reviewed and enabled.
 - [ ] **Sandbox canary accepted.** The same templates (same keys and current versions), sequences and
       policy ran in `sandbox` on staging with a real model and a real sandbox mailbox; the canary report
       has zero blockers and the sales owner signed off the generated copy.

@@ -28,13 +28,33 @@
   `COMMUNICATOR_BULK_APPROVAL_MAX` = 100 ids, each id on its own, `done` / `failed`), `GET admin/approvals/log/`;
   model `BulkApprovalLog` (migration 0015). Area `communicator.review`. System check `communicator.reserved_idx`
   refuses a channel idx `approvals`.
+- **Mailboxes.** `Mailbox` replaces `MailboxConfig` (migrations 0016–0018; the old row becomes the channel's default
+  mailbox, receiving as before, `send_enabled = false`): several per channel, each with its From address, display
+  name, optional CC, its own SMTP and IMAP login (encrypted, write-only), daily cap with warm-up and pause.
+  `communicate(..., mailbox_user_id=None)` picks a new thread's mailbox (the user's, else the default, else none =
+  the channel SMTP entry); `Thread.mailbox` keeps it. A mailbox that is paused, disabled or `needs_login` holds its
+  own mail; the others keep sending. Per-mailbox Redis counter `communicator:mailbox:<id>:<day>`. Approval of a
+  draft whose mailbox cannot send is refused (new `FailureCode.MAILBOX`). Admin API `mailboxes/` (CRUD, `test/`,
+  `pause/`, `resume/`), `health/`, `health/policy/`, `health/log/`.
+- **Sending health.** `HealthPolicy` (per channel, off by default) pauses a mailbox of a live channel over the
+  bounce, opt-out or complaint limit (minimum sample); `MailboxPauseLog` records every pause and resume; only a person
+  resumes.
+- Approval inbox: filter `mailbox`, `counts.by_mailbox`.
 
 ### Changed
 
 - **Opt-out phrases match on folded text** (lower case, no diacritics, `ł` → `l`, other characters → one space), so a
   phrase is a stem; wider default `pl` and `en` lists. A hit is still a suspicion a person confirms or dismisses.
 - `suppression_service.suppress_email` returns whether it wrote a row; `optout_service.record_objection` is public.
+- A missing channel SMTP entry defers each message on its own (alert once a day) instead of stopping the channel's
+  run; a refused mailbox login holds that mailbox's mail (`needs_login`, `high` alert once a day).
+- The IMAP poll alert is per mailbox (`IMAP poll of mailbox <address> failed`), so a second broken mailbox is
+  announced.
 - `docs/openapi.yaml` regenerated.
+
+### Removed
+
+- `MailboxConfig` and the singular `GET/PUT <channel_idx>/mailbox/` routes — use `mailboxes/`.
 
 ## 0.4.1 — 2026-11-04
 

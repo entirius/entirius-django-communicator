@@ -25,7 +25,11 @@ C-01…C-33, all of the communicator edge cases.
 | `test_sequences.py` | follow-ups, pool exhaustion, step compare-and-set, References, autostart (never for a template-less message, never twice in a thread, one per channel via the API) | C-27, C-28 |
 | `test_text_pool.py` | pool text PATCH / DELETE (delete vs deactivate), 404 across sequence and channel, inactive texts never picked | — |
 | `test_footer.py` | HTML footer API, `{{ legal }}` rule, sanitising, language cascade, text part, sent `footer_html` snapshot, GDPR export / erase | — |
-| `test_inbound.py` | poll cursor, quarantine, UIDVALIDITY, thread matching, autoresponders, opt-out (folded phrases, pl and en refusals), DSN, ARF complaints, `message_bounced`, idempotency — on `tests/fixtures/mail/*.eml` (copies of the emporium fixtures) | C-20…C-26 |
+| `test_inbound.py` | poll cursor per mailbox (two mailboxes, each failure announced), quarantine, UIDVALIDITY, thread matching, autoresponders, opt-out (folded phrases, pl and en refusals), DSN, ARF complaints, `message_bounced`, idempotency — on `tests/fixtures/mail/*.eml` (copies of the emporium fixtures) | C-20…C-26 |
+| `test_mailboxes.py` | mailbox resolution (user → default → none), `Thread.mailbox` set once, CRUD API, write-only encrypted passwords, an undecryptable password never overwritten, states, login test, approval filter / counts / blocker | — |
+| `test_mailbox_sending.py` | From / CC / login per mailbox, sandbox CC header, channel without mailbox, unusable or refused login holds one message and alerts once, pause holds one mailbox, per-mailbox cap, warm-up arithmetic, release on failure, soft-bounce retry | — |
+| `test_health.py` | counts per mailbox, auto-pause live only and above the sample, manual pause / resume and log, `health/` with `sent_today` / `cap_today`, policy API, no password in responses, logs or notifications | — |
+| `test_mailbox_migration.py` | `MailboxConfig` → `Mailbox` forward and backward with one old row and with none, ciphertext kept | — |
 | `test_gdpr.py` | `contact_anonymised` receiver, export / erase, global token suppression, token parity with django_leads (skipped without it) | — |
 | `test_inbox_list.py`, `test_inbox_conversations.py` | the inbox lists: `threads/` (state filter, counts, activity order, row fields) and `conversations/` (one row per `subject_ref`, state from any thread, counts, order, paging), query-count bounds | — |
 | `test_admin_api.py` | review / template / suppression endpoints, 401/403/404/409, `test/communicate/` | — |

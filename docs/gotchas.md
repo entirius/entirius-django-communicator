@@ -58,6 +58,14 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   shortcut only. No setting may relax `ENVIRONMENT == "production"` (a test asserts it).
 - **Only RCPT refusals (550/551/553/554) suppress, and only in live.** `SMTPSenderRefused` /
   `SMTPDataError` are our problem, not the recipient's.
+- **A mailbox holds its own mail; it never stops the run.** Paused, disabled or `needs_login` → `deferred`; a missing
+  or refused login (and a channel without its SMTP entry) is an outcome of that one message. Never turn it back into
+  a channel-wide abort: one broken mailbox would stop the others.
+- **`Thread.mailbox` is chosen once**, before the thread's first message, and never changes — a thread keeps its
+  From. A thread without one sends through the channel SMTP entry. The FK is `PROTECT`: delete refuses a used one.
+- **Mailbox writes name their columns.** `mailbox_service.update_mailbox` (and the Django admin through it) never
+  writes a password column unless a new password is sent: an undecryptable password reads as `""`, and a full
+  `save()` would destroy the ciphertext.
 - **A channel without a `SendPolicy` never sends** — `run_send_due` iterates policies, not channels.
 - **`COMMUNICATOR_SEND_INTERVAL_MIN` must match the beat crontab** — the spread quota counts runs from it.
 - **A bad stored `country` / `timezone` answers 409 `CHANNEL_CONFIG_INVALID`** from every admin view that
@@ -107,6 +115,8 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   suspicion keeps the sequence paused until `threads/<id>/resume-sequence/`.
 - **The cursor moves only past ingested, dropped or quarantined mail.** Transient failures leave it; a
   poll that swallowed them would lose mail.
+- **Each mailbox is polled and announced on its own** (alert kind `imap:<mailbox id>`); dedup, own-mail check and
+  thread matching stay per channel, so a reply that reached two mailboxes is ingested once.
 - **Credentials and bodies are never logged; `Reply.raw_headers` holds headers only; attachments are
   never stored.**
 

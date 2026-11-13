@@ -45,7 +45,12 @@ generated document is `docs/openapi.yaml`. Views are thin: parse, call a service
 | `GET replies/?kind=&thread=` | replies, newest first |
 | `POST replies/<id>/confirm-optout/` · `dismiss-optout/` | decide a `suspected_optout` |
 | `GET footers/` · `GET/PUT/DELETE footers/<language>/` (`{html}`) | HTML mail footer per ISO 639-1 language; PUT sanitises to an allowlist and needs `{{ legal }}` exactly once, as text — not in an attribute (else 400 on `html`); unknown language → 404; GET 404 when none |
-| `GET/PUT mailbox/` | IMAP config; `imap_password` is write-only (`has_password` on read), omitted on PUT = kept; GET 404 when none |
+| `GET/POST mailboxes/` · `GET/PATCH/DELETE mailboxes/<id>/` | the channel's mailboxes (replace the removed singular `mailbox/`); passwords write-only (`smtp_password_set`, `imap_password_set` on read; omitted or null = kept); PATCH changes only the fields sent; a new default takes the flag from the old one; `state` = `active` · `paused` · `needs_login` · `disabled`; a taken address or user, a non-staff `user_id` or a warm-up without `daily_cap` → 400; DELETE of the default or of a mailbox threads send from → 409 `MAILBOX_IN_USE` |
+| `POST mailboxes/<id>/test/` | SMTP and IMAP login, nothing sent → `{smtp, imap}`: `ok` · `not_configured` · `no_password` · `auth_failed` · `unreachable` |
+| `POST mailboxes/<id>/pause/` · `resume/` (`{reason}`) | hold or release the mailbox's mail, logged with the user; 409 `MAILBOX_STATE` when already in that state |
+| `GET health/` | channel and each mailbox: counts and rates for `24h` and `7d`, per mailbox `state`, `sent_today`, `cap_today` |
+| `GET/PUT health/policy/` | auto-pause policy (`enabled`, `window_hours`, `min_sample`, `max_bounce_pct`, `max_optout_pct`, `max_complaint_pct`) |
+| `GET health/log/` | pauses and resumes, newest first |
 
 ## Approval inbox (all channels)
 
@@ -53,7 +58,7 @@ Under `/api/communicator/v2/admin/approvals/`, area `communicator.review`, same 
 
 | Endpoint | Meaning |
 |---|---|
-| `GET approvals/?channel=&template_key=&search=&min_age_hours=` | outbound `review_required` messages of every channel, oldest first; `search` matches the subject reference, the recipient address or name and the subject; each row carries `blocker` (the preflight detail, null when it may be approved); `counts {total, by_channel}` cover the whole filtered set |
+| `GET approvals/?channel=&template_key=&search=&min_age_hours=&mailbox=` | outbound `review_required` messages of every channel, oldest first; `search` matches the subject reference, the recipient address or name and the subject; `mailbox` = a mailbox id; each row carries `blocker` (the preflight detail — legal footer, or a mailbox that is paused, disabled or needs a login — null when it may be approved); `counts {total, by_channel, by_mailbox}` cover the whole filtered set (`by_mailbox` key `none` = the channel SMTP entry) |
 | `POST approvals/bulk/` (`{action: approve \| reject, ids, reason}`) | each id handled on its own through `review_service.accept` / `skip`; answer `{id, action, done, failed: {id: reason}}`; more than `COMMUNICATOR_BULK_APPROVAL_MAX` (100) ids → 400 and nothing changes; every call writes a `BulkApprovalLog` (user, action, reason, ids) |
 | `GET approvals/log/` | the bulk log, newest first |
 
@@ -72,7 +77,7 @@ without an area.
 
 The page speaks Polish for a channel whose default language is `pl`, English otherwise.
 
-List endpoints `review/`, `messages/`, `threads/`, `conversations/`, `replies/`, `approvals/` and `approvals/log/` are paginated (`page`, `page_size`
+List endpoints `review/`, `messages/`, `threads/`, `conversations/`, `replies/`, `health/log/`, `approvals/` and `approvals/log/` are paginated (`page`, `page_size`
 ≤ 100, default 20) with `count`, `next`, `previous`, `results`.
 
 ## Errors
@@ -81,7 +86,7 @@ List endpoints `review/`, `messages/`, `threads/`, `conversations/`, `replies/`,
 |---|---|
 | 400 | `approvals/bulk/` over the limit; `PATCH channel/` with `mode=live` or `live_enabled` (field named in `details`); Pydantic validation (v2 error shape via `raise_pydantic_as_drf`); template model validation; unrenderable `test-generate` context; invalid suppression value |
 | 401 / 403 | no or invalid JWT / not staff |
-| 404 | unknown channel or object; empty review queue; no policy (`GET policy/`); no mailbox (`GET mailbox/`); no footer or unknown language (`footers/<language>/`) |
+| 404 | unknown channel or object; empty review queue; no policy (`GET policy/`); no footer or unknown language (`footers/<language>/`) |
 | 409 | a conflict; `error` names its kind — see the table below |
 | 402 / 403 / 502 / 503 / 504 | `test-generate/` and `models/` only: toolbox budget, `MODEL_NOT_ALLOWED`, provider error or invalid draft output, toolbox not configured, timeout (`django_utils.toolbox.views.handle_toolbox_error`) |
 | 503 `AI_TOOLBOX_DISABLED` | `review/<id>/rewrite/`, `test/communicate/` (AI template), `test-generate/` and `models/` while `AI_TOOLBOX_ENABLED` is `False`; body `{error, message}`, nothing is written |
@@ -92,7 +97,9 @@ Every 409 uses the v2 error shape; `error` tells the kinds apart, `message` expl
 | `error` | When |
 |---|---|
 | `ALREADY_REVIEWED` | a review action (accept, skip, skip-company, rewrite, edit) on a message no longer waiting for review |
-| `REVIEW_REFUSED` | rewrite of a message that is not an AI draft; accept of a message the preflight refuses (legal footer) |
+| `REVIEW_REFUSED` | rewrite of a message that is not an AI draft; accept of a message the preflight refuses (legal footer, mailbox that cannot send) |
+| `MAILBOX_IN_USE` | delete of the default mailbox or of one a thread sends from |
+| `MAILBOX_STATE` | pause of a paused mailbox, resume of one that is not paused |
 | `NOT_WAITING` | `send-now/` of a message that is not `approved` / `scheduled` |
 | `CHANNEL_MODE_INVALID` | `PATCH channel/` `sandbox` without a mailbox (C-30) |
 | `CHANNEL_CONFIG_INVALID` | the stored channel country or timezone cannot drive a policy |
@@ -114,8 +121,8 @@ They exist for BDD and e2e and are not part of `openapi.yaml`.
 | `POST test/clock/` (`{iso_datetime}` or null) | freeze / clear the channel clock |
 | `POST test/send-due/` | `schedule_follow_ups` then `send_due` in-process under the beat's celery-once lock (409 while held) |
 | `POST test/start-sequence/` (`{thread_id, sequence_key}`) | start a sequence in a thread |
-| `POST test/poll-now/` | poll this channel's mailbox under the `poll_inbox` lock (409 while held) |
-| `POST test/reset-counters/` (`{days}`) | clear the daily send counters |
+| `POST test/poll-now/` | poll this channel's receiving mailboxes under the `poll_inbox` lock (409 while held) |
+| `POST test/reset-counters/` (`{days}`) | clear the daily send counters of the channel and its mailboxes |
 | `POST test/retry-drafts/` | `retry_failed_drafts` in-process under its celery-once lock (409 while held) → `{recovered, failed}` |
 | `POST test/toolbox-outage/` (`{down}`) | turn the `django_utils.toolbox.outage` switch on / off; 404 where the switch is not allowed (no `DEBUG` and no `AI_TOOLBOX_TEST_SWITCH`, or production) |
 

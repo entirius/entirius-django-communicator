@@ -39,7 +39,7 @@ interprets (leads passes the lead type). Blank serves every audience. Unique `(c
 ## communicate()
 
 `services/communicate_service.communicate(*, channel_idx, template_key, recipient, context,
-subject_ref, requires_review=True, thread=None, audience="") -> Message` — the one entry point for other modules.
+subject_ref, requires_review=True, thread=None, audience="", mailbox_user_id=None) -> Message` — the one entry point for other modules.
 Fixed order:
 
 1. **Suppression** — global `email_token`, channel email, channel registrable domain → `suppressed`,
@@ -54,7 +54,39 @@ Fixed order:
    `review_required` (C-01), or `failed` with `budget` (C-10) · `schema` (C-11) · `upstream` (C-12) ·
    `model` (C-33) and a notification. `complete()` is never retried.
 
-The thread is the newest open `Thread(channel, subject_ref, recipient_email)`, or a new one.
+The thread is the newest open `Thread(channel, subject_ref, recipient_email)`, or a new one. Before the thread's
+first message is created its mailbox is chosen and stored in `Thread.mailbox` for good: the mailbox of
+`mailbox_user_id` in the channel when it sends (`send_enabled`), else the channel's default mailbox when it sends,
+else none — the thread then sends through the channel SMTP entry, as before mailboxes existed.
+
+## Mailboxes
+
+A channel has any number of `Mailbox` rows. Each is one From address (`address`, `display_name`, optional
+`cc_address` copied on every mail) with its own SMTP login (`smtp_*`, `send_enabled`), its own IMAP login
+(`imap_*`, `receive_enabled`, cursor `last_uid` / `uidvalidity`), its own daily cap with an optional warm-up and its
+own pause. `user` (a staff member, at most one mailbox per user and channel) makes a person's mail leave from their
+mailbox; `is_default` (one per channel) serves everyone else. `auth_method` is `password`, the only method; the
+logins sit behind `mailbox_service.smtp_connection` and `imap_login`, so another method is one more branch there.
+
+| State | When | Sending |
+|---|---|---|
+| `paused` | `paused_at` set — by a person or by the health policy | its mail waits (`deferred`) |
+| `needs_login` | sending without an SMTP host or password, SMTP refused the login (`smtp_login_failed_at`), or receiving without an IMAP host or password | its mail waits; one `high` alert per mailbox and day |
+| `disabled` | neither sending nor receiving | its mail waits |
+| `active` | none of the above | sends |
+
+A mailbox that cannot send holds its own mail only; the other mailboxes of the channel keep sending. Approval of a
+draft whose mailbox cannot send is refused (preflight). Passwords are encrypted (`EncryptedTextField`) and never
+returned, logged or notified. A stored password the current `SECRET_KEY` cannot decrypt reads as empty: every write
+names its columns and writes a password column only when a new password is sent, so an unrelated save never wipes
+the stored ciphertext; the mailbox shows `needs_login` until a password is set again.
+
+**Health.** `HealthPolicy` (one per channel, off by default; window 168 h, sample 50, hard bounces 2 %, opt-outs
+3 %, complaints 0.1 % of sent) is judged by `health_service.evaluate` at the start of every send run of a live
+channel. Counts are per mailbox by `Thread.mailbox`: sent, hard and soft bounces, complaints, replies and opt-outs
+(confirmed opt-outs and unsubscribe links, on the mailbox of the address's newest sent mail). A mailbox with at least
+`min_sample` sent mails over a limit is paused, `MailboxPauseLog` records the measured rates and a `high` alert goes
+out. Only a person resumes it (`resume/`, logged); the policy then counts events after the resume only.
 
 ## Message lifecycle
 
@@ -116,7 +148,10 @@ with a `SendPolicy` are visited.
 Redis per channel day (C-16, C-17). With `spread` the cap is released as a running quota across the
 day's beat runs: `floor(daily_cap × runs elapsed / runs today) − sent today`. Each delivery reserves
 its place (`INCR`, `DECR` when over) before it is attempted, so overlapping runs cannot exceed the cap.
-A soft-bounce retry takes no new place.
+A soft-bounce retry takes no new place. A thread with a mailbox also reserves a place under the mailbox's
+`effective_cap(mailbox, day)`: `daily_cap`, or with a warm-up `warmup_start_cap + warmup_step × days since
+warmup_started_on` (calendar days), never above `daily_cap`; no `daily_cap` = only the channel cap. Redis key
+`communicator:mailbox:<mailbox id>:<channel day>`; a place that did not end in `sent` is given back.
 
 **Modes** (C-13, C-14, C-15):
 
@@ -127,7 +162,8 @@ A soft-bounce retry takes no new place.
 | `live` | the recipient — only while `ENVIRONMENT == "production"` **and** `live_enabled` **and** `mode == live` | `sent`; otherwise the message waits and a `critical` alert goes out once per channel day |
 
 No setting relaxes the live gate. It is checked per message on the channel re-read with the claim; a
-mode or sandbox mailbox changed between mail build and claim defers the message.
+mode or sandbox mailbox changed between mail build and claim, or a mailbox paused or disabled meanwhile, defers the
+message.
 
 **Send-once** (C-18): suppression, follow-up blocker and the mail are checked and built first; the claim
 `approved|scheduled → sending` commits on its own; SMTP runs outside any transaction; a second short
@@ -136,7 +172,11 @@ never re-sent — it becomes `failed/send_outcome_unknown` for a human. At most 
 
 **Mail** (C-32): multipart/alternative, footer after `-- `, `Message-ID:
 <communicator-<id>-<hex8>@<from domain>>`, `In-Reply-To`/`References` from the thread's earlier sent
-messages, SMTP connection from `EMAIL_SMTP_CONFIGURATION_CHANNELS[<channel idx>]` (django_email).
+messages. With a mailbox: From `display_name <address>`, CC `cc_address` (a sandbox only names it in
+`X-Original-Cc`) and the mailbox's SMTP login. Without one: From `DEFAULT_FROM_EMAIL` and the SMTP connection of
+`EMAIL_SMTP_CONFIGURATION_CHANNELS[<channel idx>]` (django_email). A missing or refused login is an outcome of that
+message, not of the run: it waits and the run goes on with the others; a channel without its SMTP entry likewise
+(`SMTP not configured`, once a day).
 
 **Footer.** One HTML footer per (channel, language) — `MailFooter`, `footers/<language>/` — is the layout around
 the legal text: signature, logo, company data, links. It carries `{{ legal }}` exactly once, as text (never inside an attribute); the caller's
@@ -187,8 +227,8 @@ a hand-written message never starts one.
 
 ## Inbound
 
-Beat `poll_inbox` reads each active `MailboxConfig` read-only (`EXAMINE`, UID cursor, UIDVALIDITY
-tracked) and hands each mail to `inbound_service.ingest`, in fixed order:
+Beat `poll_inbox` reads each `Mailbox` with `receive_enabled` read-only (`EXAMINE`, UID cursor, UIDVALIDITY
+tracked per mailbox; each mailbox fails and is announced on its own) and hands each mail to `inbound_service.ingest`, in fixed order:
 
 1. **Duplicate** inbound Message-ID in the channel → the existing `Reply` (C-26). Our own outbound
    Message-ID (the sandbox copy) → dropped.

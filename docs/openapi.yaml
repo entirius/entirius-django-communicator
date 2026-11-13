@@ -266,10 +266,12 @@ paths:
           description: No response body
         '404':
           description: No response body
-  /api/communicator/v2/admin/{channel_idx}/mailbox/:
+  /api/communicator/v2/admin/{channel_idx}/health/:
     get:
-      operationId: api_communicator_v2_admin_mailbox_retrieve
-      summary: IMAP mailbox of the channel
+      operationId: api_communicator_v2_admin_health_retrieve
+      description: Counts and percent rates for the last 24 h and 7 d; per mailbox also its state and today's use of its cap
+        (`sent_today` / `cap_today`, the warm-up included).
+      summary: Sending health of the channel and each mailbox
       parameters:
       - in: path
         name: channel_idx
@@ -277,7 +279,221 @@ paths:
           type: string
         required: true
       tags:
-      - Communicator Inbox
+      - Communicator Health
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthReportResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/health/log/:
+    get:
+      operationId: communicator_health_log_list
+      description: 'Newest first, paginated: automatic pauses carry the measured rates, manual ones the user.'
+      summary: Pauses and resumes of the channel's mailboxes
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: page
+        schema:
+          type: integer
+      - in: query
+        name: page_size
+        schema:
+          type: integer
+      tags:
+      - Communicator Health
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PauseLogListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/health/policy/:
+    get:
+      operationId: api_communicator_v2_admin_health_policy_retrieve
+      description: Off by default. Judged at the start of every send run of a live channel.
+      summary: Auto-pause policy of the channel
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Health
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthPolicyResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    put:
+      operationId: api_communicator_v2_admin_health_policy_update
+      description: A mailbox that sent at least `min_sample` mails within `window_hours` and is above a limit is paused; only
+        a person resumes it.
+      summary: Replace the auto-pause policy
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Health
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HealthPolicyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/HealthPolicyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/HealthPolicyRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthPolicyResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/mailboxes/:
+    get:
+      operationId: communicator_mailboxes_list
+      summary: Mailboxes of the channel
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Mailboxes
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailboxListResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    post:
+      operationId: api_communicator_v2_admin_mailboxes_create
+      description: Passwords are stored encrypted and never returned. A new default takes the flag from the old one. A taken
+        address or user, an unknown user or a warm-up without `daily_cap` answers 400.
+      summary: Add a mailbox
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      tags:
+      - Communicator Mailboxes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MailboxCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MailboxCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MailboxCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailboxResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/mailboxes/{id}/:
+    get:
+      operationId: api_communicator_v2_admin_mailboxes_retrieve
+      summary: One mailbox
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator Mailboxes
       security:
       - jwtAuth: []
       responses:
@@ -295,29 +511,113 @@ paths:
           description: No response body
         '404':
           description: No response body
-    put:
-      operationId: api_communicator_v2_admin_mailbox_update
-      description: The password is stored encrypted and never returned; omit it to keep the stored one.
-      summary: Create or replace the IMAP mailbox
+    patch:
+      operationId: api_communicator_v2_admin_mailboxes_partial_update
+      description: Only the fields sent change; an omitted or null password keeps the stored one. A new IMAP host, user or
+        folder restarts the poll cursor; a new SMTP password clears `needs_login`.
+      summary: Change a mailbox
       parameters:
       - in: path
         name: channel_idx
         schema:
           type: string
         required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
       tags:
-      - Communicator Inbox
+      - Communicator Mailboxes
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/MailboxRequest'
+              $ref: '#/components/schemas/PatchedMailboxUpdateRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/MailboxRequest'
+              $ref: '#/components/schemas/PatchedMailboxUpdateRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/MailboxRequest'
+              $ref: '#/components/schemas/PatchedMailboxUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailboxResponse'
+          description: ''
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+    delete:
+      operationId: api_communicator_v2_admin_mailboxes_destroy
+      description: 409 while it is the default or a thread sends from it (disable it instead).
+      summary: Delete a mailbox
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator Mailboxes
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+        '409':
+          description: No response body
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/mailboxes/{id}/pause/:
+    post:
+      operationId: api_communicator_v2_admin_mailboxes_pause_create
+      description: Its mail waits; the other mailboxes keep sending. Logged with the user. 409 when already paused.
+      summary: Pause a mailbox
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator Mailboxes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MailboxPauseRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MailboxPauseRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MailboxPauseRequest'
         required: true
       security:
       - jwtAuth: []
@@ -327,6 +627,93 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MailboxResponse'
+          description: ''
+        '409':
+          description: No response body
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/mailboxes/{id}/resume/:
+    post:
+      operationId: api_communicator_v2_admin_mailboxes_resume_create
+      description: The only way back from a pause, automatic or manual; the health policy then counts newer events only. Logged
+        with the user. 409 when not paused.
+      summary: Resume a paused mailbox
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator Mailboxes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MailboxPauseRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MailboxPauseRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MailboxPauseRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailboxResponse'
+          description: ''
+        '409':
+          description: No response body
+        '400':
+          description: No response body
+        '401':
+          description: No response body
+        '403':
+          description: No response body
+        '404':
+          description: No response body
+  /api/communicator/v2/admin/{channel_idx}/mailboxes/{id}/test/:
+    post:
+      operationId: api_communicator_v2_admin_mailboxes_test_create
+      description: Nothing is sent or read. A working SMTP login clears `needs_login`.
+      summary: Log in to SMTP and IMAP
+      parameters:
+      - in: path
+        name: channel_idx
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Communicator Mailboxes
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MailboxTestResponse'
           description: ''
         '400':
           description: No response body
@@ -1809,13 +2196,18 @@ paths:
     get:
       operationId: communicator_approvals_list
       description: 'Oldest first, paginated (`page`, `page_size` ≤ 100). `counts` covers the whole filtered set. `blocker`
-        says why approving a row would be refused (null: it may be approved).'
+        says why approving a row would be refused (null: it may be approved): a missing legal footer or a mailbox that is
+        paused, disabled or needs a login.'
       summary: Every outbound draft waiting for approval, all channels
       parameters:
       - in: query
         name: channel
         schema:
           type: string
+      - in: query
+        name: mailbox
+        schema:
+          type: integer
       - in: query
         name: min_age_hours
         schema:
@@ -2002,9 +2394,19 @@ components:
           - default-europe: 3
           title: By Channel
           type: object
+        by_mailbox:
+          additionalProperties:
+            type: integer
+          description: Matching drafts per mailbox id; "none" = the channel SMTP entry.
+          examples:
+          - '2': 1
+            none: 2
+          title: By Mailbox
+          type: object
       required:
       - total
       - by_channel
+      - by_mailbox
       title: ApprovalCountsResponse
       type: object
     ApprovalListResponse:
@@ -2379,6 +2781,15 @@ components:
       - country
       title: ChannelConfigResponse
       type: object
+    ChannelHealthResponse:
+      properties:
+        windows:
+          $ref: '#/components/schemas/HealthWindowsResponse'
+          description: Every mailbox and the channel SMTP entry together.
+      required:
+      - windows
+      title: ChannelHealthResponse
+      type: object
     ChannelMode:
       enum:
       - dry_run
@@ -2709,72 +3120,609 @@ components:
       - modified_at
       title: FooterResponse
       type: object
-    MailboxRequest:
+    HealthMetricsResponse:
+      properties:
+        sent:
+          description: Mails sent in the window.
+          examples:
+          - 120
+          title: Sent
+          type: integer
+        hard_bounces:
+          description: Hard bounces.
+          examples:
+          - 2
+          title: Hard Bounces
+          type: integer
+        soft_bounces:
+          description: Soft bounces waiting for a retry.
+          examples:
+          - 1
+          title: Soft Bounces
+          type: integer
+        complaints:
+          description: Spam complaints.
+          examples:
+          - 0
+          title: Complaints
+          type: integer
+        optouts:
+          description: Confirmed opt-outs and unsubscribe links.
+          examples:
+          - 3
+          title: Optouts
+          type: integer
+        replies:
+          description: Human replies.
+          examples:
+          - 9
+          title: Replies
+          type: integer
+        hard_bounces_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Percent of sent; null while nothing was sent.
+          examples:
+          - 1.67
+          title: Hard Bounces Pct
+        soft_bounces_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Percent of sent.
+          examples:
+          - 0.83
+          title: Soft Bounces Pct
+        complaints_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Percent of sent.
+          examples:
+          - 0.0
+          title: Complaints Pct
+        optouts_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Percent of sent.
+          examples:
+          - 2.5
+          title: Optouts Pct
+        replies_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Percent of sent.
+          examples:
+          - 7.5
+          title: Replies Pct
+      required:
+      - sent
+      - hard_bounces
+      - soft_bounces
+      - complaints
+      - optouts
+      - replies
+      - hard_bounces_pct
+      - soft_bounces_pct
+      - complaints_pct
+      - optouts_pct
+      - replies_pct
+      title: HealthMetricsResponse
+      type: object
+    HealthPolicyRequest:
       additionalProperties: false
       properties:
-        imap_host:
-          description: IMAP host.
-          examples:
-          - imap.mail.test
-          maxLength: 255
-          minLength: 1
-          title: Imap Host
-          type: string
-        imap_port:
-          default: 993
-          description: IMAP port.
-          examples:
-          - 993
-          maximum: 65535
-          minimum: 1
-          title: Imap Port
-          type: integer
-        imap_use_ssl:
-          default: true
-          description: IMAP over TLS.
+        enabled:
+          default: false
+          description: Auto-pause on live channels.
           examples:
           - true
-          title: Imap Use Ssl
+          title: Enabled
           type: boolean
-        imap_user:
-          description: IMAP login.
+        window_hours:
+          default: 168
+          description: Counting window.
           examples:
-          - outreach
-          maxLength: 255
-          minLength: 1
-          title: Imap User
+          - 168
+          maximum: 2160
+          minimum: 1
+          title: Window Hours
+          type: integer
+        min_sample:
+          default: 50
+          description: Sent mails before a mailbox is judged.
+          maximum: 100000
+          minimum: 1
+          title: Min Sample
+          type: integer
+        max_bounce_pct:
+          default: '2'
+          description: Hard bounces %.
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d{0,2}0*$
+          title: Max Bounce Pct
           type: string
-        imap_password:
+        max_optout_pct:
+          default: '3'
+          description: Opt-outs %.
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d{0,2}0*$
+          title: Max Optout Pct
+          type: string
+        max_complaint_pct:
+          default: '0.1'
+          description: Spam complaints %.
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d{0,2}0*$
+          title: Max Complaint Pct
+          type: string
+      title: HealthPolicyRequest
+      type: object
+    HealthPolicyResponse:
+      properties:
+        enabled:
+          description: Auto-pause on live channels.
+          examples:
+          - false
+          title: Enabled
+          type: boolean
+        window_hours:
+          description: Counting window.
+          examples:
+          - 168
+          title: Window Hours
+          type: integer
+        min_sample:
+          description: Sent mails before a mailbox is judged.
+          examples:
+          - 50
+          title: Min Sample
+          type: integer
+        max_bounce_pct:
+          description: Hard bounces %.
+          examples:
+          - 2.0
+          title: Max Bounce Pct
+          type: number
+        max_optout_pct:
+          description: Opt-outs %.
+          examples:
+          - 3.0
+          title: Max Optout Pct
+          type: number
+        max_complaint_pct:
+          description: Spam complaints %.
+          examples:
+          - 0.1
+          title: Max Complaint Pct
+          type: number
+      required:
+      - enabled
+      - window_hours
+      - min_sample
+      - max_bounce_pct
+      - max_optout_pct
+      - max_complaint_pct
+      title: HealthPolicyResponse
+      type: object
+    HealthReportResponse:
+      properties:
+        channel:
+          $ref: '#/components/schemas/ChannelHealthResponse'
+          description: The whole channel.
+        mailboxes:
+          description: Each mailbox by address.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/MailboxHealthResponse'
+          title: Mailboxes
+          type: array
+      required:
+      - channel
+      - mailboxes
+      title: HealthReportResponse
+      type: object
+    HealthWindowsResponse:
+      properties:
+        24h:
+          $ref: '#/components/schemas/HealthMetricsResponse'
+          description: The last 24 hours.
+        7d:
+          $ref: '#/components/schemas/HealthMetricsResponse'
+          description: The last 7 days.
+      required:
+      - 24h
+      - 7d
+      title: HealthWindowsResponse
+      type: object
+    MailboxCreateRequest:
+      additionalProperties: false
+      properties:
+        address:
+          description: From address.
+          examples:
+          - anna@mail.test
+          maxLength: 254
+          pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+          title: Address
+          type: string
+        display_name:
           anyOf:
-          - maxLength: 1024
+          - maxLength: 128
             type: string
           - type: 'null'
           default: null
-          description: Write-only; omitted or null keeps the stored one.
-          title: Imap Password
-        folder:
-          default: INBOX
-          description: Folder polled.
+          description: From name.
           examples:
-          - INBOX
-          maxLength: 64
-          minLength: 1
-          title: Folder
-          type: string
-        is_active:
-          default: true
-          description: Polled by the beat.
+          - Anna Nowak
+          title: Display Name
+        cc_address:
+          anyOf:
+          - maxLength: 254
+            pattern: ^([^@\s]+@[^@\s]+\.[^@\s]+)?$
+            type: string
+          - type: 'null'
+          default: null
+          description: 'Copy of every mail; empty: none.'
+          title: Cc Address
+        user_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          description: 'Staff member whose mailbox this is; null: nobody.'
+          title: User Id
+        is_default:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: Used when the caller names no user with a mailbox.
+          title: Is Default
+        smtp_host:
+          anyOf:
+          - maxLength: 255
+            type: string
+          - type: 'null'
+          default: null
+          description: SMTP host.
+          examples:
+          - smtp.mail.test
+          title: Smtp Host
+        smtp_port:
+          anyOf:
+          - maximum: 65535
+            minimum: 1
+            type: integer
+          - type: 'null'
+          default: null
+          description: SMTP port.
+          examples:
+          - 587
+          title: Smtp Port
+        smtp_security:
+          anyOf:
+          - $ref: '#/components/schemas/SmtpSecurity'
+          - type: 'null'
+          default: null
+          description: starttls or ssl.
+          examples:
+          - starttls
+        smtp_user:
+          anyOf:
+          - maxLength: 255
+            type: string
+          - type: 'null'
+          default: null
+          description: 'SMTP login; empty: the address.'
+          title: Smtp User
+        smtp_password:
+          anyOf:
+          - maxLength: 1024
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          description: Write-only.
+          title: Smtp Password
+        send_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: Mail of new threads may leave from it.
+          title: Send Enabled
+        imap_host:
+          anyOf:
+          - maxLength: 255
+            type: string
+          - type: 'null'
+          default: null
+          description: IMAP host.
+          examples:
+          - imap.mail.test
+          title: Imap Host
+        imap_port:
+          anyOf:
+          - maximum: 65535
+            minimum: 1
+            type: integer
+          - type: 'null'
+          default: null
+          description: IMAP port.
+          examples:
+          - 993
+          title: Imap Port
+        imap_use_ssl:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: IMAP over TLS.
           examples:
           - true
-          title: Is Active
-          type: boolean
+          title: Imap Use Ssl
+        imap_user:
+          anyOf:
+          - maxLength: 255
+            type: string
+          - type: 'null'
+          default: null
+          description: 'IMAP login; empty: the address.'
+          title: Imap User
+        imap_password:
+          anyOf:
+          - maxLength: 1024
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          description: Write-only.
+          title: Imap Password
+        folder:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          description: Folder polled.
+          title: Folder
+        receive_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: Polled by the beat.
+          title: Receive Enabled
+        daily_cap:
+          anyOf:
+          - maximum: 100000
+            minimum: 0
+            type: integer
+          - type: 'null'
+          default: null
+          description: 'Mails a day; null: only the channel cap.'
+          title: Daily Cap
+        warmup_start_cap:
+          anyOf:
+          - maximum: 100000
+            minimum: 0
+            type: integer
+          - type: 'null'
+          default: null
+          description: 'Warm-up: cap of day 0.'
+          title: Warmup Start Cap
+        warmup_step:
+          anyOf:
+          - maximum: 100000
+            minimum: 0
+            type: integer
+          - type: 'null'
+          default: null
+          description: 'Warm-up: added per day.'
+          title: Warmup Step
+        warmup_started_on:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          default: null
+          description: 'Warm-up day 0; empty with a warm-up: today.'
+          title: Warmup Started On
       required:
-      - imap_host
-      - imap_user
-      title: MailboxRequest
+      - address
+      title: MailboxCreateRequest
+      type: object
+    MailboxHealthResponse:
+      properties:
+        id:
+          description: Mailbox id.
+          examples:
+          - 2
+          title: Id
+          type: integer
+        address:
+          description: From address.
+          examples:
+          - anna@mail.test
+          title: Address
+          type: string
+        state:
+          description: active, paused, needs_login or disabled.
+          examples:
+          - active
+          title: State
+          type: string
+        paused_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Paused since.
+          examples:
+          - null
+          title: Paused At
+        pause_reason:
+          description: Why it is paused.
+          examples:
+          - ''
+          title: Pause Reason
+          type: string
+        sent_today:
+          description: Deliveries counted today (channel day).
+          examples:
+          - 12
+          title: Sent Today
+          type: integer
+        cap_today:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: 'Today''s cap with the warm-up; null: only the channel cap.'
+          title: Cap Today
+        windows:
+          $ref: '#/components/schemas/HealthWindowsResponse'
+          description: Counts and rates of this mailbox.
+      required:
+      - id
+      - address
+      - state
+      - paused_at
+      - pause_reason
+      - sent_today
+      - cap_today
+      - windows
+      title: MailboxHealthResponse
+      type: object
+    MailboxListResponse:
+      properties:
+        results:
+          description: Mailboxes of the channel by address.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/MailboxResponse'
+          title: Results
+          type: array
+      required:
+      - results
+      title: MailboxListResponse
+      type: object
+    MailboxPauseRequest:
+      additionalProperties: false
+      properties:
+        reason:
+          description: Why; logged.
+          examples:
+          - Bounces after a list import
+          maxLength: 255
+          minLength: 1
+          title: Reason
+          type: string
+      required:
+      - reason
+      title: MailboxPauseRequest
       type: object
     MailboxResponse:
+      description: 'Passwords are never returned: `smtp_password_set` / `imap_password_set` only.'
       properties:
+        id:
+          description: Mailbox id.
+          examples:
+          - 2
+          title: Id
+          type: integer
+        address:
+          description: From address.
+          examples:
+          - anna@mail.test
+          title: Address
+          type: string
+        display_name:
+          description: From name.
+          examples:
+          - Anna Nowak
+          title: Display Name
+          type: string
+        cc_address:
+          description: 'Copy of every mail; empty: none.'
+          examples:
+          - ''
+          title: Cc Address
+          type: string
+        user_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Staff member whose mailbox this is.
+          examples:
+          - 7
+          title: User Id
+        is_default:
+          description: The channel default.
+          examples:
+          - true
+          title: Is Default
+          type: boolean
+        auth_method:
+          description: password (the only method).
+          examples:
+          - password
+          title: Auth Method
+          type: string
+        state:
+          description: active, paused, needs_login or disabled.
+          examples:
+          - active
+          title: State
+          type: string
+        smtp_host:
+          description: SMTP host.
+          examples:
+          - smtp.mail.test
+          title: Smtp Host
+          type: string
+        smtp_port:
+          description: SMTP port.
+          examples:
+          - 587
+          title: Smtp Port
+          type: integer
+        smtp_security:
+          description: starttls or ssl.
+          examples:
+          - starttls
+          title: Smtp Security
+          type: string
+        smtp_user:
+          description: 'SMTP login; empty: the address.'
+          examples:
+          - ''
+          title: Smtp User
+          type: string
+        smtp_password_set:
+          description: An SMTP password is stored.
+          examples:
+          - true
+          title: Smtp Password Set
+          type: boolean
+        smtp_login_failed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: SMTP refused the login.
+          examples:
+          - null
+          title: Smtp Login Failed At
+        send_enabled:
+          description: Mail of new threads may leave from it.
+          examples:
+          - true
+          title: Send Enabled
+          type: boolean
         imap_host:
           description: IMAP host.
           examples:
@@ -2794,16 +3742,16 @@ components:
           title: Imap Use Ssl
           type: boolean
         imap_user:
-          description: IMAP login.
+          description: 'IMAP login; empty: the address.'
           examples:
-          - outreach
+          - ''
           title: Imap User
           type: string
-        has_password:
-          description: A password is stored (never returned).
+        imap_password_set:
+          description: An IMAP password is stored.
           examples:
           - true
-          title: Has Password
+          title: Imap Password Set
           type: boolean
         folder:
           description: Folder polled.
@@ -2817,11 +3765,11 @@ components:
           - 0
           title: Last Uid
           type: integer
-        is_active:
+        receive_enabled:
           description: Polled by the beat.
           examples:
           - true
-          title: Is Active
+          title: Receive Enabled
           type: boolean
         last_polled_at:
           anyOf:
@@ -2832,17 +3780,113 @@ components:
           examples:
           - null
           title: Last Polled At
+        daily_cap:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: 'Mails a day; null: only the channel cap.'
+          examples:
+          - 40
+          title: Daily Cap
+        warmup_start_cap:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: 'Warm-up: cap of day 0.'
+          examples:
+          - null
+          title: Warmup Start Cap
+        warmup_step:
+          description: 'Warm-up: added per day.'
+          examples:
+          - 0
+          title: Warmup Step
+          type: integer
+        warmup_started_on:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          description: Warm-up day 0.
+          examples:
+          - null
+          title: Warmup Started On
+        paused_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Paused since.
+          examples:
+          - null
+          title: Paused At
+        pause_reason:
+          description: Why it is paused.
+          examples:
+          - ''
+          title: Pause Reason
+          type: string
+        health_reset_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          description: Health counts start here after a resume.
+          examples:
+          - null
+          title: Health Reset At
       required:
+      - id
+      - address
+      - display_name
+      - cc_address
+      - user_id
+      - is_default
+      - auth_method
+      - state
+      - smtp_host
+      - smtp_port
+      - smtp_security
+      - smtp_user
+      - smtp_password_set
+      - smtp_login_failed_at
+      - send_enabled
       - imap_host
       - imap_port
       - imap_use_ssl
       - imap_user
-      - has_password
+      - imap_password_set
       - folder
       - last_uid
-      - is_active
+      - receive_enabled
       - last_polled_at
+      - daily_cap
+      - warmup_start_cap
+      - warmup_step
+      - warmup_started_on
+      - paused_at
+      - pause_reason
+      - health_reset_at
       title: MailboxResponse
+      type: object
+    MailboxTestResponse:
+      properties:
+        smtp:
+          description: ok, not_configured, no_password, auth_failed or unreachable.
+          examples:
+          - ok
+          title: Smtp
+          type: string
+        imap:
+          description: Same codes for the IMAP login.
+          examples:
+          - auth_failed
+          title: Imap
+          type: string
+      required:
+      - smtp
+      - imap
+      title: MailboxTestResponse
       type: object
     MessageDetailResponse:
       properties:
@@ -3486,6 +4530,207 @@ components:
           title: Sandbox Mailbox
       title: ChannelConfigRequest
       type: object
+    PatchedMailboxUpdateRequest:
+      additionalProperties: false
+      description: 'Every field optional: only the fields sent change. A password is write-only; omitted or null keeps it.'
+      properties:
+        address:
+          anyOf:
+          - maxLength: 254
+            pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+            type: string
+          - type: 'null'
+          default: null
+          description: From address.
+          examples:
+          - anna@mail.test
+          title: Address
+        display_name:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          default: null
+          description: From name.
+          examples:
+          - Anna Nowak
+          title: Display Name
+        cc_address:
+          anyOf:
+          - maxLength: 254
+            pattern: ^([^@\s]+@[^@\s]+\.[^@\s]+)?$
+            type: string
+          - type: 'null'
+          default: null
+          description: 'Copy of every mail; empty: none.'
+          title: Cc Address
+        user_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          description: 'Staff member whose mailbox this is; null: nobody.'
+          title: User Id
+        is_default:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: Used when the caller names no user with a mailbox.
+          title: Is Default
+        smtp_host:
+          anyOf:
+          - maxLength: 255
+            type: string
+          - type: 'null'
+          default: null
+          description: SMTP host.
+          examples:
+          - smtp.mail.test
+          title: Smtp Host
+        smtp_port:
+          anyOf:
+          - maximum: 65535
+            minimum: 1
+            type: integer
+          - type: 'null'
+          default: null
+          description: SMTP port.
+          examples:
+          - 587
+          title: Smtp Port
+        smtp_security:
+          anyOf:
+          - $ref: '#/components/schemas/SmtpSecurity'
+          - type: 'null'
+          default: null
+          description: starttls or ssl.
+          examples:
+          - starttls
+        smtp_user:
+          anyOf:
+          - maxLength: 255
+            type: string
+          - type: 'null'
+          default: null
+          description: 'SMTP login; empty: the address.'
+          title: Smtp User
+        smtp_password:
+          anyOf:
+          - maxLength: 1024
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          description: Write-only.
+          title: Smtp Password
+        send_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: Mail of new threads may leave from it.
+          title: Send Enabled
+        imap_host:
+          anyOf:
+          - maxLength: 255
+            type: string
+          - type: 'null'
+          default: null
+          description: IMAP host.
+          examples:
+          - imap.mail.test
+          title: Imap Host
+        imap_port:
+          anyOf:
+          - maximum: 65535
+            minimum: 1
+            type: integer
+          - type: 'null'
+          default: null
+          description: IMAP port.
+          examples:
+          - 993
+          title: Imap Port
+        imap_use_ssl:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: IMAP over TLS.
+          examples:
+          - true
+          title: Imap Use Ssl
+        imap_user:
+          anyOf:
+          - maxLength: 255
+            type: string
+          - type: 'null'
+          default: null
+          description: 'IMAP login; empty: the address.'
+          title: Imap User
+        imap_password:
+          anyOf:
+          - maxLength: 1024
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          description: Write-only.
+          title: Imap Password
+        folder:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          description: Folder polled.
+          title: Folder
+        receive_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: Polled by the beat.
+          title: Receive Enabled
+        daily_cap:
+          anyOf:
+          - maximum: 100000
+            minimum: 0
+            type: integer
+          - type: 'null'
+          default: null
+          description: 'Mails a day; null: only the channel cap.'
+          title: Daily Cap
+        warmup_start_cap:
+          anyOf:
+          - maximum: 100000
+            minimum: 0
+            type: integer
+          - type: 'null'
+          default: null
+          description: 'Warm-up: cap of day 0.'
+          title: Warmup Start Cap
+        warmup_step:
+          anyOf:
+          - maximum: 100000
+            minimum: 0
+            type: integer
+          - type: 'null'
+          default: null
+          description: 'Warm-up: added per day.'
+          title: Warmup Step
+        warmup_started_on:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          default: null
+          description: 'Warm-up day 0; empty with a warm-up: today.'
+          title: Warmup Started On
+      title: MailboxUpdateRequest
+      type: object
     PatchedSequenceUpdateRequest:
       additionalProperties: false
       properties:
@@ -3533,6 +4778,110 @@ components:
           - true
           title: Is Active
       title: TextUpdateRequest
+      type: object
+    PauseLogListResponse:
+      properties:
+        count:
+          description: Total log entries.
+          examples:
+          - 1
+          title: Count
+          type: integer
+        next:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Next page URL.
+          examples:
+          - null
+          title: Next
+        previous:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Previous page URL.
+          examples:
+          - null
+          title: Previous
+        results:
+          description: Newest first.
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/PauseLogResponse'
+          title: Results
+          type: array
+      required:
+      - count
+      - next
+      - previous
+      - results
+      title: PauseLogListResponse
+      type: object
+    PauseLogResponse:
+      properties:
+        id:
+          description: Log entry id.
+          examples:
+          - 1
+          title: Id
+          type: integer
+        mailbox_id:
+          description: Mailbox.
+          examples:
+          - 2
+          title: Mailbox Id
+          type: integer
+        action:
+          description: pause or resume.
+          examples:
+          - pause
+          title: Action
+          type: string
+        trigger:
+          description: bounce, optout, complaint or manual.
+          examples:
+          - bounce
+          title: Trigger
+          type: string
+        reason:
+          description: Readable reason.
+          examples:
+          - hard bounces 4.0% of 50 sent in 168 h, limit 2%
+          title: Reason
+          type: string
+        metrics:
+          additionalProperties: true
+          description: Counts and rates measured at that moment.
+          examples:
+          - {}
+          title: Metrics
+          type: object
+        user_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Who; null for the automatic pause.
+          examples:
+          - null
+          title: User Id
+        created_at:
+          description: When.
+          examples:
+          - '2026-09-14T10:00:00Z'
+          format: date-time
+          title: Created At
+          type: string
+      required:
+      - id
+      - mailbox_id
+      - action
+      - trigger
+      - reason
+      - metrics
+      - user_id
+      - created_at
+      title: PauseLogResponse
       type: object
     PolicyRequest:
       additionalProperties: false
@@ -4021,6 +5370,12 @@ components:
           type: string
       title: SkipRequest
       type: object
+    SmtpSecurity:
+      enum:
+      - starttls
+      - ssl
+      title: SmtpSecurity
+      type: string
     SuppressionKind:
       enum:
       - email
