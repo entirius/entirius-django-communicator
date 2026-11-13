@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+from django_communicator.models.bulk_approval_log import BulkApprovalLog
 from django_communicator.models.channel import Channel
 from django_communicator.models.inbound_quarantine import InboundQuarantine
 from django_communicator.models.mail_footer import MailFooter
@@ -21,6 +22,7 @@ from django_communicator.models.thread_pool_usage import ThreadPoolUsage
 from django_communicator.models.thread_sequence_state import ThreadSequenceState
 
 __all__ = [
+    "BulkApprovalLog",
     "Channel",
     "InboundQuarantine",
     "MailFooter",

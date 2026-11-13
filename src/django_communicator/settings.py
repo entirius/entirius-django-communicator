@@ -97,3 +97,5 @@ COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS = getattr(
 # One-click unsubscribe (RFC 8058): public base URL of the service ("https://api.example.com"). Empty = off: no
 # List-Unsubscribe headers and no link in the mail.
 COMMUNICATOR_UNSUBSCRIBE_BASE_URL = getattr(settings, "COMMUNICATOR_UNSUBSCRIBE_BASE_URL", "")
+# Approval inbox: at most this many message ids per bulk approve / reject request.
+COMMUNICATOR_BULK_APPROVAL_MAX = getattr(settings, "COMMUNICATOR_BULK_APPROVAL_MAX", 100)

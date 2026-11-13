@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 from django.core import checks
 
-from django_communicator.checks import sending_channels_have_smtp
+from django_communicator.checks import no_channel_shadows_the_approvals_route, sending_channels_have_smtp
 from django_communicator.enums import ChannelMode
 from tests.factories import ChannelFactory
 
@@ -61,3 +61,22 @@ class TestSendingChannelsHaveSmtp:
     def test_registered_under_config_tag(self):
         assert sending_channels_have_smtp in checks.registry.registry.get_checks()
         assert {"entirius_config", "communicator.smtp"} <= set(sending_channels_have_smtp.tags)
+
+
+@pytest.mark.django_db
+class TestNoChannelShadowsTheApprovalsRoute:
+    def test_channel_named_approvals_is_an_error(self):
+        ChannelFactory(idx="approvals")
+
+        [message] = no_channel_shadows_the_approvals_route(databases=DB)
+
+        assert (message.level, message.id) == (checks.ERROR, "communicator.reserved_idx")
+
+    def test_other_channels_pass(self):
+        ChannelFactory()
+
+        assert no_channel_shadows_the_approvals_route(databases=DB) == []
+
+    def test_without_databases_no_query_runs(self, django_assert_num_queries):
+        with django_assert_num_queries(0):
+            assert no_channel_shadows_the_approvals_route() == []

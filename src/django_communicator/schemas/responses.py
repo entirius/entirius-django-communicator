@@ -475,3 +475,58 @@ class PollNowResponse(BaseModel):
     ingested: int = Field(description="Mail that produced or matched a reply.", examples=[1])
     skipped: int = Field(description="Mail dropped (unmatched, own, expunged).", examples=[0])
     quarantined: int = Field(description="Mail recorded in the quarantine (oversized, unreadable).", examples=[0])
+
+
+class ApprovalRowResponse(BaseModel):
+    id: int = Field(description="Message id.", examples=[12])
+    channel: str = Field(description="Channel idx.", examples=["default-europe"])
+    thread_id: int = Field(description="Thread id.", examples=[3])
+    subject_ref: str = Field(description="Caller's reference of the thread.", examples=["leads.Company:42"])
+    recipient_email: str = Field(description="Recipient.", examples=["jan@shop.test"])
+    recipient_name: str = Field(description="Recipient name.", examples=["Jan Kowalski"])
+    template_key: str = Field(description="Template key; empty without a template version.", examples=["lead.cold"])
+    subject: str = Field(description="Subject.", examples=["A question about your shop"])
+    body_preview: str = Field(description="First characters of the text body.", examples=["Hello Jan,"])
+    created_at: datetime = Field(description="Created.", examples=["2026-09-14T10:00:00Z"])
+    age_hours: float = Field(description="Hours since it was created.", examples=[5.5])
+    blocker: str | None = Field(description="Why approving would be refused; null when it may be approved.")
+
+
+class ApprovalCountsResponse(BaseModel):
+    total: int = Field(description="Drafts matching the filters.", examples=[3])
+    by_channel: dict[str, int] = Field(description="Matching drafts per channel idx.", examples=[{"default-europe": 3}])
+
+
+class ApprovalListResponse(BaseModel):
+    count: int = Field(description="Total matching drafts.", examples=[1])
+    next: str | None = Field(description="Next page URL.", examples=[None])
+    previous: str | None = Field(description="Previous page URL.", examples=[None])
+    results: list[ApprovalRowResponse] = Field(description="Oldest first.", examples=[[]])
+    counts: ApprovalCountsResponse = Field(description="Counts of the whole filtered set.")
+
+
+class BulkApprovalResponse(BaseModel):
+    id: int = Field(description="Log entry id.", examples=[1])
+    action: str = Field(description="approve or reject.", examples=["approve"])
+    done: list[int] = Field(description="Ids approved or rejected.", examples=[[12]])
+    failed: dict[str, str] = Field(description="Id → why it was not changed.", examples=[{"13": "message not found"}])
+
+
+class BulkApprovalLogResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Log entry id.", examples=[1])
+    user_id: int | None = Field(description="Who did it.", examples=[7])
+    action: str = Field(description="approve or reject.", examples=["approve"])
+    reason: str = Field(description="Rejection reason.", examples=[""])
+    ids: list[int] = Field(description="Requested ids.", examples=[[12, 13]])
+    done: list[int] = Field(description="Ids approved or rejected.", examples=[[12]])
+    failed: dict[str, str] = Field(description="Id → why it was not changed.", examples=[{}])
+    created_at: datetime = Field(description="When.", examples=["2026-09-14T10:00:00Z"])
+
+
+class BulkApprovalLogListResponse(BaseModel):
+    count: int = Field(description="Total log entries.", examples=[1])
+    next: str | None = Field(description="Next page URL.", examples=[None])
+    previous: str | None = Field(description="Previous page URL.", examples=[None])
+    results: list[BulkApprovalLogResponse] = Field(description="Newest first.", examples=[[]])

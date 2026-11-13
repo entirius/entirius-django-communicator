@@ -284,3 +284,24 @@ class FooterRequest(BaseModel):
         description="Footer HTML with `{{ legal }}` exactly once; sanitised to an allowlist on save.",
         examples=["<p><strong>Jan Kowalski</strong><br>Example sp. z o.o.</p><div>{{ legal }}</div>"],
     )
+
+
+class ApprovalQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    channel: str = Field(default="", max_length=128, description="Only drafts of this channel idx.")
+    template_key: str = Field(default="", max_length=128, description="Only drafts of this template key.")
+    search: str = Field(
+        default="", max_length=200, description="Substring of the subject reference, recipient or subject."
+    )
+    min_age_hours: float | None = Field(default=None, ge=0, le=24 * 365, description="Drafts at least this old.")
+
+
+class BulkApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["approve", "reject"] = Field(description="What to do with every id.", examples=["approve"])
+    ids: list[int] = Field(
+        min_length=1, description="Message ids; at most COMMUNICATOR_BULK_APPROVAL_MAX (100).", examples=[[12, 13]]
+    )
+    reason: str = Field(default="", max_length=255, description="Rejection reason, logged.", examples=[""])
