@@ -221,7 +221,7 @@ Follow-ups ride the same send path, policy and cap (C-28).
 The next due date counts from the delivery. Terminal outcomes go through
 `sequence_service.on_follow_up_finished`: delivered → next due date or `finished`
 (`sequence_finished`); failed / suppressed → stopped; rejected / skipped → re-armed from the last
-delivery. A reply stops the sequence; a suspected opt-out pauses it.
+delivery. A reply stops or pauses the sequence by the plan of its class; a suspected opt-out pauses it.
 
 **Autostart.** A sequence with `autostart` (at most one per channel, a partial unique constraint) starts by itself:
 the first delivered message of an open thread that never had a sequence state starts the channel's active
@@ -251,15 +251,55 @@ tracked per mailbox; each mailbox fails and is announced on its own) and hands e
 3. **Thread match** — our Message-ID in `In-Reply-To`/`References` (`header`, C-20), else the newest open
    thread of the sender whose last outbound predates the mail (`sender`, C-21); no match → dropped.
 4. **Autoresponder** headers or subject patterns → `auto`, nothing else (C-22).
-5. **Opt-out phrase** of the recipient language above the quote → `suspected_optout`, sequence paused,
-   thread `replied`, `medium` alert — no suppression until a human confirms (C-23). Matching runs on folded text
-   (lower case, no diacritics, `ł` → `l`, any other run of characters → one space), so a phrase is a stem:
-   "rezygnuj" covers "Rezygnujemy", "prosze nie pisac" covers "Proszę nie pisać".
-6. **Reply** → thread `replied`, `Message.replied_at`, sequence stopped, `reply_received`, `high` alert.
+5. **Class** (only with an active reply class profile and the toolbox enabled, see Reply classes) — one toolbox
+   call, outside any transaction; every write that follows is one transaction.
+6. **Opt-out** → `suspected_optout`, sequence paused, thread `replied`, `medium` alert — no suppression until a
+   human confirms (C-23). The class `unsubscribe` always is one; without a usable class (or `unclear`) the opt-out
+   phrase of the recipient language above the quote decides; a confident other class with a phrase hit is one too,
+   except `not_interested`, whose refusal wins over the phrase. Phrase matching runs on folded text (lower case, no
+   diacritics, `ł` → `l`, any other run of characters → one space), so a phrase is a stem: "rezygnuj" covers
+   "Rezygnujemy", "prosze nie pisac" covers "Proszę nie pisać".
+7. **Reply** → thread `replied`, `Message.replied_at`, the plan of the class (sequence, alert, review flag),
+   `reply_received`. Without a class: sequence stopped, `high` alert.
 
 Confirm opt-out → suppression of the thread recipient, sequence `optout`, `optout_confirmed`, and a
 `django_agreements` objection when installed (retried by task `record_objection`). Dismiss → kind
 `reply`, sequence stays paused until `threads/<id>/resume-sequence/`.
+
+### Reply classes
+
+A human reply may get one of seven classes: `interested`, `not_now`, `not_interested`, `out_of_office`,
+`wrong_person`, `unsubscribe`, `unclear`. The class is advice. It runs only when the channel has an active
+`ReplyClassProfile` (prompt, model, `min_confidence` 0.7, `max_chars` 3000) and the toolbox is enabled; a
+starting prompt ships in `fixtures/reply_class_profile.json` (the body of `PUT reply-classes/profile/`), never in
+code. One completion per reply, temperature 0, a closed JSON schema (`intent`, `confidence`, `return_date`); the
+reply's own text (quote removed, cut to `max_chars`) reaches the model only as data inside `<reply>…</reply>`.
+Below `min_confidence` the class is `unclear` (confidence kept); `return_date` is kept only for `out_of_office`,
+after today and at most a year away. Any failure — no profile, toolbox off, transport error, output outside the
+schema — gives no class, and the reply is handled exactly as without classes. Stored on `Reply`: `intent` (blank
+= none), `intent_confidence`, `intent_source` (`toolbox`), `intent_return_date`, `needs_review`, `plan_applied`.
+
+The plan of a class (`ReplyClassPlan(channel, intent)`, no row = the default):
+
+| Class | Sequence | Alert | Needs review |
+|---|---|---|---|
+| `interested` | stop | high | no |
+| `not_now` | pause | medium | no |
+| `not_interested` | stop | medium | no |
+| `out_of_office` | pause_until_return | low | no |
+| `wrong_person` | stop | medium | yes |
+| `unsubscribe` | pause (the suspected opt-out path, always) | medium | yes |
+| `unclear` | stop | high | yes |
+| no class | stop | high | no |
+
+`pause_until_return` (only for `out_of_office`): with a return date the sequence resumes the day after it at 00:00
+in the channel timezone (`ThreadSequenceState.resume_at`, beat `resume_paused_sequences`, hourly), when it is still
+paused, the thread is not closed, no suspected opt-out waits for a person and the address may be mailed; any
+newer reply drops `resume_at`. Without a date
+it is a plain pause. `plan_applied` is the snapshot of what ran (`sequence`, `notify`, `needs_review`,
+`is_default`, `resume_at`); `reply_received` receivers read `reply.intent`, `reply.intent_return_date`,
+`reply.needs_review` and `reply.plan_applied["notify"]`. Nothing here suppresses, reminds or moves a stage — no
+plan can confirm an opt-out.
 
 Unreadable mail (oversized, unparseable, data error) is recorded in `InboundQuarantine` (no body) and
 the cursor moves on; transient failures leave the cursor for the next beat. Mail is never deleted or

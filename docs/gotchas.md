@@ -125,6 +125,15 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
 - **Complaints need `COMMUNICATOR_COMPLAINT_FEEDBACK`**; off, an ARF report goes down the normal path and is usually
   dropped as unmatched. A sandbox or dry-run complaint is stored and changes nothing.
 - **`message_bounced` is live-only** — a sandbox bounce or complaint says nothing about the real recipient.
+- **`ingest` is not one transaction.** The reply class toolbox call runs before the writes and outside any
+  transaction; the writes of one reply (`_store_human_reply`), a DSN and a complaint are atomic each. Never wrap
+  `ingest` in `atomic` — a slow toolbox would hold the transaction open. A poll that stored the same mail meanwhile
+  wins (re-checked inside the write).
+- **A reply class is advice.** Every failure ends in the unclassified behaviour (sequence stopped, `high` alert),
+  never in an exception or a lost reply. The prompt lives in `ReplyClassProfile`, never in code; prompts and reply
+  text are never logged. No plan suppresses: the class `unsubscribe` is a suspected opt-out a person confirms.
+- **`stop_sequence` drops `resume_at`.** That is how a newer reply cancels the resume of an out-of-office pause;
+  `resume_paused_sequences` resumes only a state still paused with `resume_at` due.
 
 ## Admin API errors
 

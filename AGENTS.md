@@ -35,7 +35,7 @@ src/django_communicator/
 ├── models/     channel  message_template  message_template_version  thread  message  suppression
 │               send_policy  send_window  sequence  sequence_step  text_pool  thread_pool_usage
 │               thread_sequence_state  mailbox  health (HealthPolicy, MailboxPauseLog)  mail_footer  reply
-│               inbound_quarantine  bulk_approval_log  address_status
+│               inbound_quarantine  bulk_approval_log  address_status  reply_class_profile  reply_class_plan
 ├── schemas/    requests.py  responses.py (Pydantic)
 ├── api/admin/  urls.py  views/ (review, template, suppression, sending, sequence, thread, reply, mailbox, health,
 │               footer, approval — mounted before the channel include in the root urls.py, test)
@@ -52,10 +52,14 @@ src/django_communicator/
 │               unsubscribe_service (signed token, headers, public action)
 │               mailbox_service (mailboxes, resolution, state, logins, cap)  health_service (rates, pause)
 │               suppression_service (scope, can_mail, explain)  address_service (status, DNS verification)
+│               reply_class_service (class of a reply, profile)  reply_plan_service (plan per class)
+│               resume_service (out-of-office resume)
 │               exceptions (ClientError: base of refusals shown to API clients)
 ├── signals/    __init__.py (message_approved, company_skipped, message_sent, sequence_finished,
 │               reply_received, optout_confirmed, message_bounced)  leads_receivers.py (contact_anonymised)
 ├── tasks/      send_due  schedule_follow_ups  poll_inbox  record_objection  retry_failed_drafts  reverify_addresses
+│               resume_paused_sequences
+├── fixtures/   reply_class_profile.json (default reply class prompt — documentation, never loaded by code)
 ├── management/ commands/communicator_suppressions (--to-install)
 └── utils/      domains  emails  encryption  encrypted_field (copies — never cross-imported)
 ```
@@ -63,7 +67,7 @@ src/django_communicator/
 Flow: caller `communicate()` → `Message` (`review_required` | `approved` | `failed` | `suppressed`) → review
 (accept / rewrite / edit / skip) → beat `send_due` → `delivery_service.deliver` (mode, policy, cap, send-once)
 → SMTP of the thread's mailbox (or the channel entry of django_email) → IMAP `poll_inbox` per mailbox
-→ `inbound_service.ingest` → `Reply` + signals + alerts.
+→ `inbound_service.ingest` → class (toolbox, optional) → `Reply` + plan of the class + signals + alerts.
 
 | Topic | Where |
 |---|---|
@@ -73,7 +77,7 @@ Flow: caller `communicate()` → `Message` (`review_required` | `approved` | `fa
 | The live double gate | `channel_service.live_allowed`; `docs/concept.md` § Sending |
 | Cap, spread quota, next slot | `policy_service.py`, `counter_service.py`; per mailbox `mailbox_service.effective_cap` |
 | Mailboxes, needs_login, pause, health | `docs/concept.md` § Mailboxes; `docs/operations.md` § Mailboxes |
-| Inbound order (duplicate → DSN → complaint → thread → auto → opt-out → reply) | `inbound_service.ingest`; `docs/concept.md` § Inbound |
+| Inbound order (duplicate → DSN → complaint → thread → auto → class → opt-out → reply) | `inbound_service.ingest`; `docs/concept.md` § Inbound |
 | Request / response shape, auth, errors | `docs/api.md`; `schemas/`; `docs/openapi.yaml` |
 | Tasks, queues, alerts, what to watch, live checklist | `docs/operations.md` |
 | Which test file covers what; BDD and e2e in the entirius-zeno harness | `docs/testing.md` |

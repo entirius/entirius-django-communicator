@@ -61,8 +61,30 @@
   address status.
 - Admin API: `GET addresses/status/?email=` (the `explain` answer); `GET suppressions/` filters `scope`, `source`,
   `search` and every row carries `scope` and `source`.
+- **Reply classes.** A human reply may get one of seven classes (`interested`, `not_now`, `not_interested`,
+  `out_of_office`, `wrong_person`, `unsubscribe`, `unclear`) from one toolbox completion (tags
+  `communicator.reply_class`, `channel:<idx>`, temperature 0, closed JSON schema, reply text only as data). It runs
+  only with an active per-channel `ReplyClassProfile` (prompt, model, `min_confidence` 0.7, `max_chars` 3000) and the
+  toolbox enabled; a starting prompt ships in `fixtures/reply_class_profile.json`, never in code. Any failure means
+  no class and the behaviour as before. Stored on `Reply`: `intent`, `intent_confidence`, `intent_source`,
+  `intent_return_date`, `needs_review`, `plan_applied` (migration 0020).
+- **Plan per class.** `ReplyClassPlan(channel, intent)`: sequence `stop` / `pause` / `pause_until_return`, alert
+  severity, `needs_review`; no row = the code default (migration 0021). `unsubscribe` is always a suspected opt-out a
+  person confirms; a confident `not_interested` wins over an opt-out phrase, any other confident class with a phrase
+  hit is a suspected opt-out. No plan suppresses, reminds or moves a stage.
+- **Resume after an out-of-office reply.** `ThreadSequenceState.resume_at` (the day after the return date, channel
+  timezone) and beat task `django_communicator.resume_paused_sequences` (hourly, see `docs/install.md`): resumes a
+  due state still paused, in a thread not closed, to an address that may be mailed.
+- Admin API: `GET/PUT reply-classes/profile/` (area `communicator.content`), `GET reply-classes/plans/`,
+  `PUT/DELETE reply-classes/plans/<intent>/` (area `communicator.settings`); `GET replies/` filters `intent` and
+  `needs_review`; replies, thread rows (`reply_intent`, `needs_review`) and timeline entries carry the class.
+  Development only: `POST test/ingest-reply/` ingests a reply with a given class.
 
 ### Changed
+
+- **`inbound_service.ingest` is no longer one transaction:** the reply class call runs first, outside any
+  transaction; the writes of one reply, a DSN and a complaint stay atomic each. A plain reply's alert severity comes
+  from the plan of its class (`high` without one, as before).
 
 - **Opt-out phrases match on folded text** (lower case, no diacritics, `ł` → `l`, other characters → one space), so a
   phrase is a stem; wider default `pl` and `en` lists. A hit is still a suspicion a person confirms or dismisses.

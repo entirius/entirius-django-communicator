@@ -72,6 +72,11 @@ app.conf.beat_schedule |= {
         "task": "django_communicator.reverify_addresses",
         "schedule": crontab(minute=30, hour=3),
     },
+    # sequences paused until an out-of-office recipient is back
+    "communicator-resume-sequences": {
+        "task": "django_communicator.resume_paused_sequences",
+        "schedule": crontab(minute=15),
+    },
 }
 ```
 
@@ -87,6 +92,7 @@ manage.py migrate
 #   SendPolicy + SendWindow(s)          PUT policy/        (no policy = the channel never sends)
 #   Suppressions                        POST suppressions/
 #   Mailbox(es)                         POST mailboxes/    (replies; sending from a person's address)
+#   Reply class profile (optional)      PUT reply-classes/profile/  (body: fixtures/reply_class_profile.json)
 #   EMAIL_SMTP_CONFIGURATION_CHANNELS[<idx>] in settings (threads without a mailbox)
 #   django_notifications Channel with the same idx (alerts are lost without it)
 # then PATCH channel/ {"mode": "sandbox", "sandbox_mailbox": "..."}

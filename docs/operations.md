@@ -14,6 +14,7 @@ Install-time facts (prerequisites, settings, beat schedule, bootstrap order) are
 | `django_communicator.poll_inbox` | `*/5` min | `communicator_inbound` | IMAP poll of every active mailbox; `QueueOnce`, graceful, retried ×3 on IMAP / socket errors |
 | `django_communicator.retry_failed_drafts` | `*/10` min | `communicator_default` | retries AI drafts that failed transiently (toolbox down, timeout, 5xx) once `status()` is `configured` — never while it is `disabled`, `unconfigured` or `unreachable`; `QueueOnce`, graceful |
 | `django_communicator.reverify_addresses` | daily | `communicator_default` | re-checks up to `COMMUNICATOR_VERIFY_BATCH` addresses older than `COMMUNICATOR_VERIFY_MAX_AGE_DAYS` or with a DNS error (never a hard bounce); nothing while `COMMUNICATOR_VERIFY_ENABLED` is off; `QueueOnce`, graceful |
+| `django_communicator.resume_paused_sequences` | hourly | `communicator_default` | resumes a sequence paused by an out-of-office reply once its `resume_at` (the day after the return date, channel timezone) is due — only when it is still paused, the thread is not closed, no suspected opt-out waits for a person and the address may be mailed; `QueueOnce`, graceful |
 | `django_communicator.record_objection` | — | `communicator_default` | retry of a confirmed opt-out's agreements objection (×5, backoff) |
 
 **After a toolbox outage** drafts ended `failed/upstream`. `retry_failed_drafts` retries each first-version
@@ -60,9 +61,9 @@ installed, only log lines remain.
 | high | SMTP not configured | no `EMAIL_SMTP_CONFIGURATION_CHANNELS[<idx>]` | once per channel day |
 | high | SMTP refused the sender or the message | `SMTPSenderRefused` / `SMTPDataError` | once per channel day |
 | high (`budget`, `model`) / medium | Message draft failed: `<code>` (`<template key>`) | toolbox failure on draft or rewrite | per message |
-| high | Reply from `<sender>` | a human reply matched to a thread | per reply |
+| plan of the class (high without a class) | Reply from `<sender>` (`<class>`) | a human reply matched to a thread; the severity comes from the reply class plan | per reply |
 | high | Spam complaint | an ARF `abuse`/`fraud` report on a live channel (`COMMUNICATOR_COMPLAINT_FEEDBACK`) | per complaint |
-| medium | Possible opt-out | opt-out phrase detected | per reply |
+| medium (the `unsubscribe` plan for that class) | Possible opt-out | opt-out phrase detected, or the class `unsubscribe` | per reply |
 | medium | IMAP poll of mailbox `<address>` failed | a mailbox poll failed | once per mailbox and channel day |
 | high | Mailbox `<address>` needs a new login: its mail waits | a sending mailbox without SMTP host or password, or SMTP refused its login | once per mailbox and channel day |
 | high | Sending paused on mailbox `<address>`: `<reason>` | the health policy paused a mailbox (live only) | once per pause |
@@ -70,6 +71,14 @@ installed, only log lines remain.
 
 Escalation to email / Google Chat is configured in django_notifications (`DeliveryChannelConfig`,
 `EscalationRule`), not here.
+
+## Reply classes
+
+With an active `ReplyClassProfile` and the toolbox enabled every human reply costs one toolbox completion (tag
+`communicator.reply_class`). A failed call is logged as `communicator reply class in channel <idx> not given:
+<error class>` (warning) and the reply is handled as without classes — watch that line after a toolbox change.
+Switch classification off with `is_active = false` on the profile; nothing else changes. Replies flagged for a
+person: `GET replies/?needs_review=true`.
 
 ## What to watch
 
