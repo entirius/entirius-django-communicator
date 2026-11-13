@@ -8,6 +8,7 @@ The SMTP connection is the channel's one from django_email; this module never re
 """
 
 import secrets
+from email.headerregistry import BaseHeader, HeaderRegistry
 from email.utils import parseaddr
 
 from django.conf import settings
@@ -18,9 +19,44 @@ from django_email.domain import EmailDomain
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import ChannelMode, MessageStatus
 from django_communicator.models import Channel, Message, MessageTemplateVersion
-from django_communicator.services import footer_service
+from django_communicator.services import footer_service, unsubscribe_service
 
 FOOTER_SEPARATOR = "\n\n-- \n"
+UNSUBSCRIBE_LABELS = {"pl": "Wypisz się z listy"}
+UNSUBSCRIBE_LABEL = "Unsubscribe"
+
+
+class _UnfoldedHeader(BaseHeader):
+    """A header written as one line. Python's SMTP policy turns a header with a word longer than 78 characters (the
+    signed unsubscribe URL) into RFC 2047 encoded words, which no mail client reads as a `List-Unsubscribe` URL."""
+
+    max_count = None
+
+    @classmethod
+    def parse(cls, value, kwds):
+        kwds["decoded"] = str(value)
+        kwds["parse_tree"] = None
+
+    def fold(self, *, policy):
+        return f"{self.name}: {self}{policy.linesep}"
+
+
+class _UnsubscribeMail(EmailMultiAlternatives):
+    """Writes `List-Unsubscribe` unfolded; every other header keeps the default policy."""
+
+    def message(self, *args, **kwargs):
+        message = super().message(*args, **kwargs)
+        value = message["List-Unsubscribe"]
+        if value is None:
+            return message
+        registry = HeaderRegistry()
+        registry.map_to_type("list-unsubscribe", _UnfoldedHeader)
+        policy = message.policy
+        del message["List-Unsubscribe"]
+        message.policy = policy.clone(header_factory=registry)
+        message["List-Unsubscribe"] = str(value)
+        message.policy = policy
+        return message
 
 
 class SmtpNotConfiguredError(Exception):
@@ -28,7 +64,8 @@ class SmtpNotConfiguredError(Exception):
 
 
 def build(message: Message) -> EmailMultiAlternatives:
-    """Also fills `message.footer_html` (unsaved) — the delivery stores it with the sent status."""
+    """Also fills `message.footer_html` (unsaved) — the delivery stores it with the sent status. With
+    `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` set the mail carries the RFC 8058 headers and a link in both parts."""
     channel = message.thread.channel
     connection = EmailDomain(channel_idx=channel.idx).get_channel_smtp_connection_if_exists()
     if connection is None:
@@ -40,8 +77,10 @@ def build(message: Message) -> EmailMultiAlternatives:
         f"<communicator-{message.pk}-{secrets.token_hex(4)}@{parseaddr(sender)[1].rpartition('@')[2]}>"
     )
     message.footer_html = message.footer_html or footer_html(message)
-    mail = EmailMultiAlternatives(subject, _text(message), sender, to, headers=headers, connection=connection)
-    mail.attach_alternative(_html(message), "text/html")
+    link = unsubscribe_service.url_for(channel.idx, message.thread.recipient_email)
+    headers.update(unsubscribe_service.headers_for(link))
+    mail = _UnsubscribeMail(subject, _text(message, link), sender, to, headers=headers, connection=connection)
+    mail.attach_alternative(_html(message, link), "text/html")
     return mail
 
 
@@ -89,17 +128,24 @@ def _body_language(message: Message) -> str:
     return thread.recipient_language.iso2 if thread.recipient_language else ""
 
 
-def _text(message: Message) -> str:
+def _text(message: Message, link: str) -> str:
     if message.footer_html:
         footer = footer_service.to_text(message.footer_html)
     else:
         footer = message.legal_footer.strip()
+    if link:
+        footer = (footer + "\n\n" if footer else "") + f"{_unsubscribe_label(message)}: {link}"
     return message.body_text + (FOOTER_SEPARATOR + footer if footer else "")
 
 
-def _html(message: Message) -> str:
+def _html(message: Message, link: str) -> str:
     body = message.body_html or footer_service.paragraphs(message.body_text)
+    unsubscribe = f'<p><a href="{escape(link)}">{escape(_unsubscribe_label(message))}</a></p>' if link else ""
     if message.footer_html:
-        return body + message.footer_html
+        return body + message.footer_html + unsubscribe
     footer = message.legal_footer.strip()
-    return body + (f"<p>{escape(footer)}</p>" if footer else "")
+    return body + (f"<p>{escape(footer)}</p>" if footer else "") + unsubscribe
+
+
+def _unsubscribe_label(message: Message) -> str:
+    return UNSUBSCRIBE_LABELS.get(_body_language(message).lower(), UNSUBSCRIBE_LABEL)

@@ -93,3 +93,7 @@ COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS = getattr(
     "COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS",
     ["out of office", "auto-reply", "automatic reply", "autoreply", "poza biurem", "nieobecn"],
 )
+
+# One-click unsubscribe (RFC 8058): public base URL of the service ("https://api.example.com"). Empty = off: no
+# List-Unsubscribe headers and no link in the mail.
+COMMUNICATOR_UNSUBSCRIBE_BASE_URL = getattr(settings, "COMMUNICATOR_UNSUBSCRIBE_BASE_URL", "")

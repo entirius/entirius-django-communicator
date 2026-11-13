@@ -90,14 +90,17 @@ def create_suppression(channel: Channel, *, kind: str, value: str, reason: str =
         raise DuplicateSuppressionError(f"{kind} {normalised} is already suppressed") from None
 
 
-def suppress_email(channel: Channel, email: str, *, reason: str, user=None) -> None:
-    """Idempotent: an address already listed keeps its row; an unusable address is only logged."""
+def suppress_email(channel: Channel, email: str, *, reason: str, user=None) -> bool:
+    """Idempotent: an address already listed keeps its row; an unusable address is only logged. True when a row
+    was written."""
     try:
         create_suppression(channel, kind=SuppressionKind.EMAIL, value=email, reason=reason, user=user)
     except DuplicateSuppressionError:
-        return
+        return False
     except ValueError:
         logger.warning("communicator cannot suppress an unusable address in channel %s", channel.idx)
+        return False
+    return True
 
 
 def delete_suppression(channel: Channel, pk: int) -> None:
