@@ -36,12 +36,15 @@ class _Subject(dict):
 
 @checks.register("entirius_config", SMTP_CODE)
 def sending_channels_have_smtp(app_configs=None, databases=None, **kwargs) -> list[checks.CheckMessage]:
-    """A sending channel needs a complete SMTP entry: without one `mail_builder.build` sends nothing (no global fallback)."""
+    """A sending channel without a sending default mailbox needs a complete SMTP entry: without one `mail_builder.build`
+    sends nothing for threads without a mailbox (no global fallback)."""
     from django_communicator.models import Channel
 
     if not _channels_readable(databases):
         return []
-    sending = Channel.objects.exclude(mode=ChannelMode.DRY_RUN).values_list("idx", flat=True)
+    channels = Channel.objects.exclude(mode=ChannelMode.DRY_RUN)
+    with_default = channels.filter(mailboxes__is_default=True, mailboxes__send_enabled=True)
+    sending = channels.exclude(pk__in=with_default.values("pk")).values_list("idx", flat=True)
     return [_smtp_missing(idx) for idx in sending if EmailDomain(channel_idx=idx).channel_smtp_connection is None]
 
 
@@ -49,7 +52,8 @@ def _smtp_missing(idx: str) -> checks.Warning:
     return checks.Warning(
         f"SMTP not configured for channel {idx}",
         hint=f"Add a complete EMAIL_SMTP_CONFIGURATION_CHANNELS['{idx}'] entry; until then no message of this "
-        "channel is sent (the global EMAIL_HOST is not a fallback here).",
+        "channel without a mailbox is sent (the global EMAIL_HOST is not a fallback here); or add a sending default "
+        "mailbox to the channel.",
         id=SMTP_CODE,
         obj=_Subject(scope=idx, state="unconfigured", severity="high", fix_url=SMTP_FIX_URL),
     )

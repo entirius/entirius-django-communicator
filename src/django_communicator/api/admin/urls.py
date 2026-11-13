@@ -6,6 +6,7 @@
 from django.urls import path
 
 from django_communicator.api.admin.views import footer_views as footer
+from django_communicator.api.admin.views import health_views as health
 from django_communicator.api.admin.views import mailbox_views as mailbox
 from django_communicator.api.admin.views import reply_views as reply
 from django_communicator.api.admin.views import review_views as review
@@ -77,7 +78,14 @@ urlpatterns = [
         reply.DismissOptoutView.as_view(),
         name="admin-communicator-reply-dismiss-optout",
     ),
-    path("mailbox/", mailbox.MailboxView.as_view(), name="admin-communicator-mailbox"),
+    path("mailboxes/", mailbox.MailboxListView.as_view(), name="admin-communicator-mailboxes"),
+    path("mailboxes/<int:pk>/", mailbox.MailboxDetailView.as_view(), name="admin-communicator-mailbox"),
+    path("mailboxes/<int:pk>/test/", mailbox.MailboxTestView.as_view(), name="admin-communicator-mailbox-test"),
+    path("mailboxes/<int:pk>/pause/", mailbox.MailboxPauseView.as_view(), name="admin-communicator-mailbox-pause"),
+    path("mailboxes/<int:pk>/resume/", mailbox.MailboxResumeView.as_view(), name="admin-communicator-mailbox-resume"),
+    path("health/", health.HealthView.as_view(), name="admin-communicator-health"),
+    path("health/policy/", health.HealthPolicyView.as_view(), name="admin-communicator-health-policy"),
+    path("health/log/", health.HealthLogView.as_view(), name="admin-communicator-health-log"),
     path("footers/", footer.FooterListView.as_view(), name="admin-communicator-footers"),
     path("footers/<str:language>/", footer.FooterDetailView.as_view(), name="admin-communicator-footer"),
 ]

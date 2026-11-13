@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Read side of the inbound flow for the admin API: threads with their timeline, replies, mailbox config."""
+"""Read side of the inbound flow for the admin API: threads with their timeline, replies."""
 
 from collections import defaultdict
 from itertools import chain
@@ -11,11 +11,10 @@ from django.db.models import Count, Exists, OuterRef, Q, QuerySet, Subquery
 from django.db.models.functions import Coalesce, Greatest
 
 from django_communicator.enums import Direction, MessageStatus, ThreadStatus
-from django_communicator.models import Channel, MailboxConfig, Message, Reply, SendPolicy, Thread
+from django_communicator.models import Channel, Message, Reply, SendPolicy, Thread
 from django_communicator.services.send_service import DUE_STATUSES, next_slot_for
 
 TIMELINE_HIDDEN_STATUSES = (MessageStatus.SUPERSEDED, MessageStatus.REJECTED)
-MAILBOX_IDENTITY = ("imap_host", "imap_user", "folder")
 # What an inbox list filters on: a draft waiting for review, a mail waiting for the send beat, a reply.
 THREAD_STATES = ("draft", "waiting", "replied")
 THREAD_SORTS = ("created", "activity")
@@ -232,24 +231,3 @@ def list_replies(channel: Channel, *, kind: str | None = None, thread_id: int | 
 def get_reply(channel: Channel, pk: int) -> Reply:
     """Raises `Reply.DoesNotExist` when the reply is not in this channel."""
     return Reply.objects.get(thread__channel=channel, pk=pk)
-
-
-def get_mailbox(channel: Channel) -> MailboxConfig | None:
-    return MailboxConfig.objects.filter(channel=channel).first()
-
-
-def save_mailbox(channel: Channel, *, imap_password: str | None = None, **fields) -> MailboxConfig:
-    """Create or update the channel's mailbox; a missing password keeps the stored one.
-
-    Another host, user or folder is another mailbox: the cursor and its UIDVALIDITY start over.
-    """
-    config = get_mailbox(channel) or MailboxConfig(channel=channel)
-    identity = [getattr(config, name) for name in MAILBOX_IDENTITY]
-    for name, value in fields.items():
-        setattr(config, name, value)
-    if config.pk and identity != [getattr(config, name) for name in MAILBOX_IDENTITY]:
-        config.last_uid, config.uid_validity = 0, None
-    if imap_password is not None:
-        config.imap_password = imap_password
-    config.save()
-    return config

@@ -56,12 +56,14 @@ class ApprovalListView(AdminView):
         operation_id="communicator_approvals_list",
         summary="Every outbound draft waiting for approval, all channels",
         description="Oldest first, paginated (`page`, `page_size` ≤ 100). `counts` covers the whole filtered set. "
-        "`blocker` says why approving a row would be refused (null: it may be approved).",
+        "`blocker` says why approving a row would be refused (null: it may be approved): a missing legal footer or a "
+        "mailbox that is paused, disabled or needs a login.",
         parameters=[
             OpenApiParameter("channel", str),
             OpenApiParameter("template_key", str),
             OpenApiParameter("search", str),
             OpenApiParameter("min_age_hours", float),
+            OpenApiParameter("mailbox", int),
             OpenApiParameter("page", int),
             OpenApiParameter("page_size", int),
         ],
@@ -69,14 +71,18 @@ class ApprovalListView(AdminView):
     )
     def get(self, request: Request) -> Response:
         query = parse(ApprovalQuery, request.query_params.dict())
-        filters = approval_service.Filters(query.channel, query.template_key, query.search, query.min_age_hours)
+        filters = approval_service.Filters(
+            query.channel, query.template_key, query.search, query.min_age_hours, query.mailbox
+        )
         now = timezone.now()
         rows = approval_service.pending(filters, now)
         paginator = AdminPagination()
         page = paginator.paginate_queryset(rows, request, view=self)
         response = paginator.get_paginated_response([_row(message, now) for message in page])
         counts = ApprovalCountsResponse(
-            total=paginator.page.paginator.count, by_channel=approval_service.counts_by_channel(rows)
+            total=paginator.page.paginator.count,
+            by_channel=approval_service.counts_by_channel(rows),
+            by_mailbox=approval_service.counts_by_mailbox(rows),
         )
         response.data["counts"] = counts.model_dump()
         return response

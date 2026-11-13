@@ -14,6 +14,7 @@ from django_communicator.models import Channel, Message, MessageTemplate, Thread
 from django_communicator.services import (
     channel_service,
     drafting_service,
+    mailbox_service,
     message_service,
     suppression_service,
     template_service,
@@ -51,15 +52,19 @@ def communicate(
     requires_review: bool = True,
     thread: Thread | None = None,
     audience: str = "",
+    mailbox_user_id: int | None = None,
 ) -> Message:
     """Suppression → template → legal footer → render → static body or AI draft. Raises `Channel.DoesNotExist`.
 
     `audience` is the caller's opaque code (leads: the lead type); it picks the template variant, blank = default.
+    `mailbox_user_id` picks the mailbox of a new thread: that user's sending mailbox in the channel, else the
+    channel's default, else none (the channel SMTP entry); a thread keeps the mailbox of its first message.
     Raises `ToolboxDisabledError` for an AI template while the toolbox is switched off — nothing is written."""
     channel = channel_service.get_channel(channel_idx)
     if thread is not None:
         _check_thread(thread, channel, recipient, subject_ref)
     base = {"render_context": context, "legal_footer": recipient.legal_footer, "requires_review": requires_review}
+    base["mailbox_user_id"] = mailbox_user_id
     if suppression_service.is_suppressed(channel, recipient.email):
         return _create(channel, recipient, subject_ref, thread, status=MessageStatus.SUPPRESSED, **base)
     try:
@@ -127,6 +132,7 @@ def _fail(channel, recipient, subject_ref, thread, code: str, detail: str, base:
 
 def _create(channel, recipient: RecipientData, subject_ref: str, thread: Thread | None, **fields) -> Message:
     thread = thread or _open_thread(channel, recipient, subject_ref)
+    mailbox_service.assign(thread, fields.pop("mailbox_user_id"))
     return message_service.create_message(thread=thread, **fields)
 
 

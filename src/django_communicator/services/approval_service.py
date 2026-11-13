@@ -18,6 +18,7 @@ from django_communicator.services.exceptions import ClientError
 
 APPROVE, REJECT = "approve", "reject"
 NOT_FOUND = "message not found"
+NO_MAILBOX = "none"
 
 
 class BulkLimitError(ClientError):
@@ -30,14 +31,17 @@ class Filters:
     template_key: str = ""
     search: str = ""
     min_age_hours: float | None = None
+    mailbox: int | None = None
 
 
 def pending(filters: Filters, now: datetime) -> QuerySet[Message]:
     """Outbound drafts in `review_required`, oldest first. `search` matches the subject reference, the recipient
     address or name and the subject."""
-    rows = Message.objects.select_related("thread__channel", "template_version__template").filter(
+    rows = Message.objects.select_related("thread__channel", "thread__mailbox", "template_version__template").filter(
         status=MessageStatus.REVIEW_REQUIRED, direction=Direction.OUT
     )
+    if filters.mailbox is not None:
+        rows = rows.filter(thread__mailbox_id=filters.mailbox)
     if filters.channel_idx:
         rows = rows.filter(thread__channel__idx=filters.channel_idx)
     if filters.template_key:
@@ -63,6 +67,12 @@ def counts_by_channel(rows: QuerySet[Message]) -> dict[str, int]:
     return {row["thread__channel__idx"]: row["n"] for row in grouped}
 
 
+def counts_by_mailbox(rows: QuerySet[Message]) -> dict[str, int]:
+    """Mailbox id (as text) → drafts; "none" for threads that send through the channel SMTP entry."""
+    grouped = rows.order_by().values("thread__mailbox").annotate(n=Count("pk"))
+    return {str(row["thread__mailbox"] or NO_MAILBOX): row["n"] for row in grouped}
+
+
 def bulk(*, user, action: str, ids: list[int], reason: str = "") -> BulkApprovalLog:
     """Approve or reject each id on its own (a failing draft never blocks the others) and log the batch.
 
@@ -73,7 +83,8 @@ def bulk(*, user, action: str, ids: list[int], reason: str = "") -> BulkApproval
     limit = communicator_settings.COMMUNICATOR_BULK_APPROVAL_MAX
     if len(ids) > limit:
         raise BulkLimitError(f"at most {limit} drafts per request")
-    found = Message.objects.select_related("thread__channel", "template_version__template").in_bulk(ids)
+    related = ("thread__channel", "thread__mailbox", "template_version__template")
+    found = Message.objects.select_related(*related).in_bulk(ids)
     done, failed = [], {}
     try:  # an unexpected error still logs the ids already changed
         for pk in ids:

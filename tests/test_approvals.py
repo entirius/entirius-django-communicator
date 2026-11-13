@@ -43,7 +43,7 @@ def test_list_returns_drafts_of_both_channels_with_a_blocker_on_the_one_without_
     assert [row["id"] for row in body["results"]] == [message.pk for message in drafts]
     assert rows[drafts[0].pk]["blocker"] is None and rows[drafts[0].pk]["channel"] == "default-europe"
     assert "legal footer" in rows[drafts[1].pk]["blocker"] and rows[drafts[1].pk]["channel"] == OTHER
-    assert body["counts"] == {"total": 2, "by_channel": {"default-europe": 1, OTHER: 1}}
+    assert body["counts"] == {"total": 2, "by_channel": {"default-europe": 1, OTHER: 1}, "by_mailbox": {"none": 2}}
 
 
 @pytest.mark.parametrize(

@@ -4,7 +4,8 @@
 
 """Outgoing mail of a message: multipart/alternative, our Message-ID, threading headers, channel mode addressing.
 
-The SMTP connection is the channel's one from django_email; this module never reads SMTP credentials itself.
+A thread with a mailbox leaves from that mailbox (its From, CC and SMTP login, from `mailbox_service`); without one
+the channel's SMTP entry of django_email and its `DEFAULT_FROM_EMAIL` are used, as before mailboxes existed.
 """
 
 import secrets
@@ -14,13 +15,14 @@ from email.utils import parseaddr
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
+from django.core.mail.backends.base import BaseEmailBackend
 from django.utils.html import escape
 from django_email.domain import EmailDomain
 
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import ChannelMode, MessageStatus
-from django_communicator.models import Channel, Message, MessageTemplateVersion
-from django_communicator.services import footer_service, unsubscribe_service
+from django_communicator.models import Channel, Mailbox, Message, MessageTemplateVersion
+from django_communicator.services import footer_service, mailbox_service, unsubscribe_service
 
 FOOTER_SEPARATOR = "\n\n-- \n"
 UNSUBSCRIBE_LABELS = {"pl": "Wypisz się z listy"}
@@ -67,13 +69,14 @@ class SmtpNotConfiguredError(Exception):
 
 def build(message: Message) -> EmailMultiAlternatives:
     """Also fills `message.footer_html` (unsaved) — the delivery stores it with the sent status. With
-    `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` set the mail carries the RFC 8058 headers and a link in both parts."""
+    `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` set the mail carries the RFC 8058 headers and a link in both parts.
+
+    Raises `SmtpNotConfiguredError` (no mailbox, no channel entry) or `mailbox_service.MailboxLoginError`."""
     channel = message.thread.channel
-    connection = EmailDomain(channel_idx=channel.idx).get_channel_smtp_connection_if_exists()
-    if connection is None:
-        raise SmtpNotConfiguredError(f"no SMTP configuration for channel {channel.idx}")
-    sender = from_email(channel)
+    mailbox = mailbox_service.for_message(message)
+    connection, sender = _transport(channel, mailbox)
     to, subject, headers = _addressing(message, channel)
+    cc = _cc(mailbox, channel, headers)
     headers.update(_threading_headers(message))
     headers["Message-ID"] = message.message_id or (  # a soft-bounce retry keeps the Message-ID it was sent with
         f"<communicator-{message.pk}-{secrets.token_hex(4)}@{parseaddr(sender)[1].rpartition('@')[2]}>"
@@ -81,9 +84,30 @@ def build(message: Message) -> EmailMultiAlternatives:
     message.footer_html = message.footer_html or footer_html(message)
     link = unsubscribe_service.url_for(channel.idx, message.thread.recipient_email)
     headers.update(unsubscribe_service.headers_for(link))
-    mail = _UnsubscribeMail(subject, _text(message, link), sender, to, headers=headers, connection=connection)
+    text = _text(message, link)
+    mail = _UnsubscribeMail(subject, text, sender, to, cc=cc, headers=headers, connection=connection)
     mail.attach_alternative(_html(message, link), "text/html")
     return mail
+
+
+def _transport(channel: Channel, mailbox: Mailbox | None) -> tuple[BaseEmailBackend, str]:
+    """(SMTP connection, From) of the mailbox, else of the channel's django_email entry."""
+    if mailbox is not None:
+        return mailbox_service.smtp_connection(mailbox), mailbox_service.sender(mailbox)
+    connection = EmailDomain(channel_idx=channel.idx).get_channel_smtp_connection_if_exists()
+    if connection is None:
+        raise SmtpNotConfiguredError(f"no SMTP configuration for channel {channel.idx}")
+    return connection, from_email(channel)
+
+
+def _cc(mailbox: Mailbox | None, channel: Channel, headers: dict[str, str]) -> list[str]:
+    """The mailbox copy address; a sandbox only names it in `X-Original-Cc`, nothing leaves for it."""
+    if mailbox is None or not mailbox.cc_address:
+        return []
+    if channel.mode == ChannelMode.SANDBOX:
+        headers["X-Original-Cc"] = mailbox.cc_address
+        return []
+    return [mailbox.cc_address]
 
 
 def from_email(channel: Channel) -> str:

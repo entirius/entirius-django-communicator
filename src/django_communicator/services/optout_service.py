@@ -22,6 +22,7 @@ from django_communicator.signals import optout_confirmed, reply_received
 logger = logging.getLogger(__name__)
 
 OBJECTION_RETRY_COUNTDOWN_S = 60
+OPTOUT_REASON = "optout confirmed"
 
 
 class OptoutStateError(ClientError):
@@ -33,7 +34,7 @@ def confirm(reply: Reply, *, user) -> Reply:
     reply = _locked_suspicion(reply)
     thread = reply.thread
     email = thread.recipient_email
-    suppression_service.suppress_email(thread.channel, email, reason="optout confirmed", user=user)
+    suppression_service.suppress_email(thread.channel, email, reason=OPTOUT_REASON, user=user)
     sequence_service.stop_sequence(thread, SequenceStopReason.OPTOUT)
     reply.optout_confirmed_at, reply.optout_confirmed_by = timezone.now(), user
     reply.save(update_fields=["optout_confirmed_at", "optout_confirmed_by", "modified_at"])

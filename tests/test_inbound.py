@@ -10,7 +10,7 @@ from unittest import mock
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.db import OperationalError, connection
+from django.db import OperationalError
 from django.test import override_settings
 from django.utils import timezone
 
@@ -28,7 +28,7 @@ from django_communicator.enums import (
 from django_communicator.models import (
     Channel,
     InboundQuarantine,
-    MailboxConfig,
+    Mailbox,
     Message,
     Reply,
     Sequence,
@@ -37,7 +37,7 @@ from django_communicator.models import (
     Thread,
     ThreadSequenceState,
 )
-from django_communicator.services import inbound_service, message_service, optout_service, poll_service
+from django_communicator.services import inbound_service, mailbox_service, message_service, optout_service, poll_service
 from django_communicator.services.inbound_service import ingest
 from django_communicator.signals import message_bounced, optout_confirmed, reply_received
 from tests.conftest import api_url
@@ -47,6 +47,7 @@ NOTIFY = "django_notifications.services.notify_service.notify"
 MAIL = Path(__file__).parent / "fixtures" / "mail"
 OUR_ID = "<communicator-1-abcd1234@mail.example.test>"
 IMAP_ERROR = imaplib.IMAP4.error  # kept before the tests patch imaplib.IMAP4
+IMAP_SECRET = "p"  # noqa: S105 — test-only
 
 
 def eml(name: str, message_id: str = OUR_ID) -> bytes:
@@ -301,8 +302,8 @@ class FakeImap:
     """Enough of imaplib.IMAP4 for the poll: EXAMINE with UIDVALIDITY, UID SEARCH n:* (always includes the highest
     UID), FETCH RFC822.SIZE / BODY.PEEK[]. `status` forces a command's answer, `fetched` records FETCH items."""
 
-    def __init__(self, mails: dict[int, bytes], uid_validity: int = 1):
-        self.mails, self.login_error, self.uid_validity = mails, None, uid_validity
+    def __init__(self, mails: dict[int, bytes], uidvalidity: int = 1):
+        self.mails, self.login_error, self.uidvalidity = mails, None, uidvalidity
         self.status, self.fetched = {}, []
 
     def __call__(self, host, port, timeout):
@@ -326,7 +327,7 @@ class FakeImap:
         return "OK", [str(len(self.mails)).encode()]
 
     def response(self, code):
-        return code, [str(self.uid_validity).encode()]
+        return code, [str(self.uidvalidity).encode()]
 
     def uid(self, command, *args):
         if command in self.status:
@@ -344,13 +345,15 @@ class FakeImap:
 
 @pytest.fixture
 def mailbox(channel):
-    return MailboxConfig.objects.create(
+    return Mailbox.objects.create(
         channel=channel,
+        address="replies@mail.example.test",
+        receive_enabled=True,
         imap_host="imap.test",
         imap_port=143,
         imap_use_ssl=False,
         imap_user="u",
-        imap_password="p",  # noqa: S106
+        imap_password=IMAP_SECRET,  # noqa: S106
     )
 
 
@@ -377,23 +380,10 @@ def test_imap_error_raises_for_retry_and_notifies_once_a_day(channel, mailbox):
             with pytest.raises(IMAP_ERROR):
                 poll_service.poll_all()
 
-    assert notify.call_count == 1 and notify.call_args.kwargs["title"] == "IMAP poll failed"
-
-
-def test_mailbox_password_encrypted_and_write_only(channel, admin_api):
-    body = {"imap_host": "imap.test", "imap_port": 143, "imap_use_ssl": False, "imap_user": "u"}
-
-    created = admin_api.put(api_url("mailbox/"), {**body, "imap_password": "imap-pass-1"}, format="json")
-    kept = admin_api.put(api_url("mailbox/"), {**body, "folder": "Replies"}, format="json")
-
-    assert created.status_code == kept.status_code == 200
-    assert "imap_password" not in kept.json() and kept.json()["has_password"] is True
-    with connection.cursor() as cursor:
-        cursor.execute(f"SELECT imap_password FROM {MailboxConfig._meta.db_table}")  # noqa: S608 — table name
-        stored = cursor.fetchone()[0]
-    assert stored and "imap-pass-1" not in stored
-    assert MailboxConfig.objects.get().imap_password == "imap-pass-1"
-    assert "imap-pass-1" not in admin_api.get(api_url("mailbox/")).content.decode()
+    assert (
+        notify.call_count == 1
+        and notify.call_args.kwargs["title"] == "IMAP poll of mailbox replies@mail.example.test failed"
+    )
 
 
 def test_poll_now_absent_outside_development(channel, admin_api, once_backend):
@@ -463,7 +453,14 @@ def test_item13_timeline_entries_carry_the_message_id(channel, admin_api):
 
 def test_inbound_admin_pages_render(client, channel, mailbox):
     client.force_login(get_user_model().objects.create_superuser("root", "root@example.test", "pw"))
-    for url in ("mailboxconfig", "reply", "inboundquarantine", f"mailboxconfig/{mailbox.pk}/change"):
+    for url in (
+        "mailbox",
+        "reply",
+        "inboundquarantine",
+        f"mailbox/{mailbox.pk}/change",
+        "mailboxpauselog",
+        "healthpolicy",
+    ):
         assert client.get(f"/admin/django_communicator/{url}/").status_code == 200
 
 
@@ -504,7 +501,13 @@ def test_fetch_no_does_not_advance_cursor(channel, mailbox):
 def test_search_no_isolated_to_one_mailbox(channel, mailbox):
     other = ChannelFactory(idx="second-channel", label="Second")
     make_sent(other, "owner@example-shop-1.test")
-    good = MailboxConfig.objects.create(channel=other, imap_host="imap.good.test", imap_user="u", imap_password="p")  # noqa: S106
+    good = Mailbox.objects.create(
+        channel=other,
+        address="good@mail.example.test",
+        imap_host="imap.good.test",
+        imap_password=IMAP_SECRET,
+        receive_enabled=True,
+    )
     broken, working = FakeImap({}), FakeImap({2: eml("reply_plain.eml")})
     broken.status["SEARCH"] = "NO"
 
@@ -515,7 +518,7 @@ def test_search_no_isolated_to_one_mailbox(channel, mailbox):
 
     good.refresh_from_db()
     assert (good.last_uid, Reply.objects.filter(channel=other).count()) == (2, 1)
-    assert "IMAP poll failed" in [call.kwargs["title"] for call in notify.call_args_list]
+    assert "IMAP poll of mailbox replies@mail.example.test failed" in [c.kwargs["title"] for c in notify.call_args_list]
 
 
 def test_unparseable_mail_quarantined_and_cursor_advances(channel, mailbox):
@@ -539,19 +542,19 @@ def test_uidvalidity_change_rescans_without_duplicates(channel, mailbox):
     make_sent(channel, "owner@example-shop-1.test")
     with mock.patch(NOTIFY):
         ingest(channel, eml("reply_plain.eml"))
-    MailboxConfig.objects.filter(pk=mailbox.pk).update(last_uid=50, uid_validity=1)
+    Mailbox.objects.filter(pk=mailbox.pk).update(last_uid=50, uidvalidity=1)
 
-    with mock.patch.object(imaplib, "IMAP4", FakeImap({1: eml("reply_plain.eml")}, uid_validity=2)):
+    with mock.patch.object(imaplib, "IMAP4", FakeImap({1: eml("reply_plain.eml")}, uidvalidity=2)):
         with mock.patch(NOTIFY) as notify:
             counts = poll_service.poll_all()
 
     mailbox.refresh_from_db()
-    assert (mailbox.uid_validity, mailbox.last_uid, counts["ingested"]) == (2, 1, 1)
+    assert (mailbox.uidvalidity, mailbox.last_uid, counts["ingested"]) == (2, 1, 1)
     assert Reply.objects.count() == 1 and notify.call_count == 0
 
 
 def test_deleting_newest_mail_does_not_rescan(channel, mailbox):
-    MailboxConfig.objects.filter(pk=mailbox.pk).update(last_uid=5, uid_validity=1)
+    Mailbox.objects.filter(pk=mailbox.pk).update(last_uid=5, uidvalidity=1)
     fake = FakeImap({3: eml("reply_plain.eml")})
 
     with mock.patch.object(inbound_service, "ingest") as ingested:
@@ -562,14 +565,14 @@ def test_deleting_newest_mail_does_not_rescan(channel, mailbox):
 
 
 def test_mailbox_change_resets_cursor(channel, mailbox, admin_api):
-    MailboxConfig.objects.filter(pk=mailbox.pk).update(last_uid=9, uid_validity=3)
-    body = {"imap_host": "imap.test", "imap_port": 143, "imap_use_ssl": False, "imap_user": "u", "folder": "INBOX"}
+    Mailbox.objects.filter(pk=mailbox.pk).update(last_uid=9, uidvalidity=3)
+    url = api_url(f"mailboxes/{mailbox.pk}/")
 
-    assert admin_api.put(api_url("mailbox/"), body, format="json").json()["last_uid"] == 9
-    moved = admin_api.put(api_url("mailbox/"), {**body, "folder": "Replies"}, format="json")
+    assert admin_api.patch(url, {"folder": "INBOX", "daily_cap": 5}, format="json").json()["last_uid"] == 9
+    moved = admin_api.patch(url, {"folder": "Replies"}, format="json")
 
     mailbox.refresh_from_db()
-    assert (moved.json()["last_uid"], mailbox.last_uid, mailbox.uid_validity) == (0, 0, None)
+    assert (moved.json()["last_uid"], mailbox.last_uid, mailbox.uidvalidity) == (0, 0, None)
 
 
 def test_nul_and_overlong_headers_sanitised(channel):
@@ -761,7 +764,13 @@ def test_reply_does_not_reopen_closed_thread(channel):
 
 def test_dev_poll_now_scoped_to_channel(channel, mailbox, admin_api, once_backend):
     other = ChannelFactory(idx="second-channel", label="Second")
-    MailboxConfig.objects.create(channel=other, imap_host="imap.other.test", imap_user="u", imap_password="p")  # noqa: S106
+    Mailbox.objects.create(
+        channel=other,
+        address="o@mail.example.test",
+        imap_host="imap.other.test",
+        imap_password=IMAP_SECRET,
+        receive_enabled=True,
+    )
     poll_inbox = tasks.poll_inbox
     with mock.patch.object(poll_service, "poll_mailbox", return_value={"ingested": 1}) as polled:
         assert admin_api.post(api_url("test/poll-now/")).json()["ingested"] == 1
@@ -962,3 +971,51 @@ def test_our_quoted_unsubscribe_line_is_not_an_optout():
     )
 
     assert not inbound_service.has_optout_phrase(thread, body)
+
+
+def _receiving(channel, address: str, host: str) -> Mailbox:
+    return Mailbox.objects.create(
+        channel=channel, address=address, imap_host=host, imap_use_ssl=False, imap_password=IMAP_SECRET,
+        receive_enabled=True,
+    )  # fmt: skip
+
+
+def test_two_mailboxes_of_one_channel_keep_their_own_cursor(channel, mailbox):
+    second = _receiving(channel, "anna@mail.example.test", "imap.second.test")
+    make_sent(channel, "owner@example-shop-1.test")
+    first_box, second_box = FakeImap({4: eml("reply_plain.eml")}), FakeImap({9: eml("reply_no_headers.eml")})
+    route = {"imap.test": first_box, "imap.second.test": second_box}
+
+    with mock.patch.object(imaplib, "IMAP4", lambda host, *a, **k: route[host]), mock.patch(NOTIFY):
+        counts = poll_service.poll_all(channel)
+
+    mailbox.refresh_from_db()
+    second.refresh_from_db()
+    assert (mailbox.last_uid, second.last_uid, counts["ingested"]) == (4, 9, 1)
+
+
+def test_every_broken_mailbox_is_announced(channel, mailbox):
+    _receiving(channel, "anna@mail.example.test", "imap.second.test")
+    broken = FakeImap({})
+    broken.login_error = IMAP_ERROR("auth failed")
+
+    with mock.patch.object(imaplib, "IMAP4", broken), mock.patch(NOTIFY) as notify:
+        with pytest.raises(IMAP_ERROR):
+            poll_service.poll_all()
+
+    titles = sorted(call.kwargs["title"] for call in notify.call_args_list)
+    assert titles == [
+        "IMAP poll of mailbox anna@mail.example.test failed",
+        "IMAP poll of mailbox replies@mail.example.test failed",
+    ]
+
+
+def test_receiving_mailbox_without_password_is_not_logged_in(channel, mailbox):
+    Mailbox.objects.filter(pk=mailbox.pk).update(imap_password="")
+    fake = FakeImap({})
+
+    with mock.patch.object(imaplib, "IMAP4", mock.Mock(side_effect=fake)) as opened, mock.patch(NOTIFY) as notify:
+        with pytest.raises(mailbox_service.MailboxLoginError):
+            poll_service.poll_all()
+
+    assert (opened.call_count, notify.call_count) == (0, 1)

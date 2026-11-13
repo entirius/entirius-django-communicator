@@ -20,6 +20,14 @@ class Thread(BaseModel):
     )
     status = models.CharField(max_length=16, choices=ThreadStatus.choices, default=ThreadStatus.OPEN)
     last_message_at = models.DateTimeField(null=True, blank=True)
+    mailbox = models.ForeignKey(
+        "django_communicator.Mailbox",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="threads",
+        help_text="Set when the first message is created, never changed; empty = the channel SMTP entry.",
+    )
 
     class Meta:
         indexes = [

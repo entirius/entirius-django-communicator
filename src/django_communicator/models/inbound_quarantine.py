@@ -11,7 +11,7 @@ from django_communicator.enums import QuarantineReason
 class InboundQuarantine(BaseModel):
     """A mail the poll could never ingest; the cursor moved past it. No body, no headers."""
 
-    mailbox = models.ForeignKey("django_communicator.MailboxConfig", on_delete=models.CASCADE, related_name="+")
+    mailbox = models.ForeignKey("django_communicator.Mailbox", on_delete=models.CASCADE, related_name="+")
     uid = models.PositiveBigIntegerField()
     reason = models.CharField(max_length=16, choices=QuarantineReason.choices)
     size = models.PositiveBigIntegerField(default=0)

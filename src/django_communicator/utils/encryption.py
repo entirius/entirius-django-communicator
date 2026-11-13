@@ -5,7 +5,7 @@
 """Fernet encryption with key derived from Django SECRET_KEY.
 
 Copy of the django_contact_forms pattern (never imported across modules). Stores the IMAP password of
-`MailboxConfig` at rest. Back up SECRET_KEY safely — losing it means losing the stored passwords.
+`Mailbox` at rest. Back up SECRET_KEY safely — losing it means losing the stored passwords.
 """
 
 import base64

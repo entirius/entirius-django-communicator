@@ -3,7 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Response schemas of the communicator admin API v2."""
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import Any
 
 from django_utils.toolbox import ModelInfo
@@ -430,22 +430,136 @@ class ReplyListResponse(BaseModel):
 
 
 class MailboxResponse(BaseModel):
+    """Passwords are never returned: `smtp_password_set` / `imap_password_set` only."""
+
     model_config = ConfigDict(from_attributes=True)
 
+    id: int = Field(description="Mailbox id.", examples=[2])
+    address: str = Field(description="From address.", examples=["anna@mail.test"])
+    display_name: str = Field(description="From name.", examples=["Anna Nowak"])
+    cc_address: str = Field(description="Copy of every mail; empty: none.", examples=[""])
+    user_id: int | None = Field(description="Staff member whose mailbox this is.", examples=[7])
+    is_default: bool = Field(description="The channel default.", examples=[True])
+    auth_method: str = Field(description="password (the only method).", examples=["password"])
+    state: str = Field(description="active, paused, needs_login or disabled.", examples=["active"])
+    smtp_host: str = Field(description="SMTP host.", examples=["smtp.mail.test"])
+    smtp_port: int = Field(description="SMTP port.", examples=[587])
+    smtp_security: str = Field(description="starttls or ssl.", examples=["starttls"])
+    smtp_user: str = Field(description="SMTP login; empty: the address.", examples=[""])
+    smtp_password_set: bool = Field(description="An SMTP password is stored.", examples=[True])
+    smtp_login_failed_at: datetime | None = Field(description="SMTP refused the login.", examples=[None])
+    send_enabled: bool = Field(description="Mail of new threads may leave from it.", examples=[True])
     imap_host: str = Field(description="IMAP host.", examples=["imap.mail.test"])
     imap_port: int = Field(description="IMAP port.", examples=[993])
     imap_use_ssl: bool = Field(description="IMAP over TLS.", examples=[True])
-    imap_user: str = Field(description="IMAP login.", examples=["outreach"])
-    has_password: bool = Field(description="A password is stored (never returned).", examples=[True])
+    imap_user: str = Field(description="IMAP login; empty: the address.", examples=[""])
+    imap_password_set: bool = Field(description="An IMAP password is stored.", examples=[True])
     folder: str = Field(description="Folder polled.", examples=["INBOX"])
     last_uid: int = Field(description="Poll cursor.", examples=[0])
-    is_active: bool = Field(description="Polled by the beat.", examples=[True])
+    receive_enabled: bool = Field(description="Polled by the beat.", examples=[True])
     last_polled_at: datetime | None = Field(description="Last successful poll.", examples=[None])
+    daily_cap: int | None = Field(description="Mails a day; null: only the channel cap.", examples=[40])
+    warmup_start_cap: int | None = Field(description="Warm-up: cap of day 0.", examples=[None])
+    warmup_step: int = Field(description="Warm-up: added per day.", examples=[0])
+    warmup_started_on: date | None = Field(description="Warm-up day 0.", examples=[None])
+    paused_at: datetime | None = Field(description="Paused since.", examples=[None])
+    pause_reason: str = Field(description="Why it is paused.", examples=[""])
+    health_reset_at: datetime | None = Field(description="Health counts start here after a resume.", examples=[None])
 
     @classmethod
-    def of(cls, config) -> "MailboxResponse":
-        fields = {name: getattr(config, name) for name in cls.model_fields if name != "has_password"}
-        return cls.model_validate({**fields, "has_password": bool(config.imap_password)})
+    def of(cls, mailbox, state: str) -> "MailboxResponse":
+        derived = {"state", "smtp_password_set", "imap_password_set"}
+        fields = {name: getattr(mailbox, name) for name in cls.model_fields if name not in derived}
+        flags = {"smtp_password_set": bool(mailbox.smtp_password), "imap_password_set": bool(mailbox.imap_password)}
+        return cls.model_validate({**fields, **flags, "state": state})
+
+
+class MailboxListResponse(BaseModel):
+    results: list[MailboxResponse] = Field(description="Mailboxes of the channel by address.", examples=[[]])
+
+
+class MailboxTestResponse(BaseModel):
+    smtp: str = Field(description="ok, not_configured, no_password, auth_failed or unreachable.", examples=["ok"])
+    imap: str = Field(description="Same codes for the IMAP login.", examples=["auth_failed"])
+
+
+class HealthMetricsResponse(BaseModel):
+    sent: int = Field(description="Mails sent in the window.", examples=[120])
+    hard_bounces: int = Field(description="Hard bounces.", examples=[2])
+    soft_bounces: int = Field(description="Soft bounces waiting for a retry.", examples=[1])
+    complaints: int = Field(description="Spam complaints.", examples=[0])
+    optouts: int = Field(description="Confirmed opt-outs and unsubscribe links.", examples=[3])
+    replies: int = Field(description="Human replies.", examples=[9])
+    hard_bounces_pct: float | None = Field(description="Percent of sent; null while nothing was sent.", examples=[1.67])
+    soft_bounces_pct: float | None = Field(description="Percent of sent.", examples=[0.83])
+    complaints_pct: float | None = Field(description="Percent of sent.", examples=[0.0])
+    optouts_pct: float | None = Field(description="Percent of sent.", examples=[2.5])
+    replies_pct: float | None = Field(description="Percent of sent.", examples=[7.5])
+
+
+class HealthWindowsResponse(BaseModel):
+    last_24h: HealthMetricsResponse = Field(alias="24h", description="The last 24 hours.")
+    last_7d: HealthMetricsResponse = Field(alias="7d", description="The last 7 days.")
+
+
+class ChannelHealthResponse(BaseModel):
+    windows: HealthWindowsResponse = Field(description="Every mailbox and the channel SMTP entry together.")
+
+
+class MailboxHealthResponse(BaseModel):
+    id: int = Field(description="Mailbox id.", examples=[2])
+    address: str = Field(description="From address.", examples=["anna@mail.test"])
+    state: str = Field(description="active, paused, needs_login or disabled.", examples=["active"])
+    paused_at: datetime | None = Field(description="Paused since.", examples=[None])
+    pause_reason: str = Field(description="Why it is paused.", examples=[""])
+    sent_today: int = Field(description="Deliveries counted today (channel day).", examples=[12])
+    cap_today: int | None = Field(description="Today's cap with the warm-up; null: only the channel cap.")
+    windows: HealthWindowsResponse = Field(description="Counts and rates of this mailbox.")
+
+
+class HealthReportResponse(BaseModel):
+    channel: ChannelHealthResponse = Field(description="The whole channel.")
+    mailboxes: list[MailboxHealthResponse] = Field(description="Each mailbox by address.", examples=[[]])
+
+    @classmethod
+    def of(cls, report: dict) -> "HealthReportResponse":
+        rows = [
+            {**row, "id": row["mailbox"].pk, "address": row["mailbox"].address, "paused_at": row["mailbox"].paused_at}
+            | {"pause_reason": row["mailbox"].pause_reason}
+            for row in report["mailboxes"]
+        ]
+        return cls.model_validate({"channel": report["channel"], "mailboxes": rows})
+
+
+class HealthPolicyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    enabled: bool = Field(description="Auto-pause on live channels.", examples=[False])
+    window_hours: int = Field(description="Counting window.", examples=[168])
+    min_sample: int = Field(description="Sent mails before a mailbox is judged.", examples=[50])
+    max_bounce_pct: float = Field(description="Hard bounces %.", examples=[2.0])
+    max_optout_pct: float = Field(description="Opt-outs %.", examples=[3.0])
+    max_complaint_pct: float = Field(description="Spam complaints %.", examples=[0.1])
+
+
+class PauseLogResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Log entry id.", examples=[1])
+    mailbox_id: int = Field(description="Mailbox.", examples=[2])
+    action: str = Field(description="pause or resume.", examples=["pause"])
+    trigger: str = Field(description="bounce, optout, complaint or manual.", examples=["bounce"])
+    reason: str = Field(description="Readable reason.", examples=["hard bounces 4.0% of 50 sent in 168 h, limit 2%"])
+    metrics: dict[str, Any] = Field(description="Counts and rates measured at that moment.", examples=[{}])
+    user_id: int | None = Field(description="Who; null for the automatic pause.", examples=[None])
+    created_at: datetime = Field(description="When.", examples=["2026-09-14T10:00:00Z"])
+
+
+class PauseLogListResponse(BaseModel):
+    count: int = Field(description="Total log entries.", examples=[1])
+    next: str | None = Field(description="Next page URL.", examples=[None])
+    previous: str | None = Field(description="Previous page URL.", examples=[None])
+    results: list[PauseLogResponse] = Field(description="Newest first.", examples=[[]])
 
 
 class FooterResponse(BaseModel):
@@ -495,6 +609,9 @@ class ApprovalRowResponse(BaseModel):
 class ApprovalCountsResponse(BaseModel):
     total: int = Field(description="Drafts matching the filters.", examples=[3])
     by_channel: dict[str, int] = Field(description="Matching drafts per channel idx.", examples=[{"default-europe": 3}])
+    by_mailbox: dict[str, int] = Field(
+        description='Matching drafts per mailbox id; "none" = the channel SMTP entry.', examples=[{"2": 1, "none": 2}]
+    )
 
 
 class ApprovalListResponse(BaseModel):

@@ -59,6 +59,7 @@ class FailureCode(models.TextChoices):
     BOUNCE = "bounce", "Bounce"
     SEND_OUTCOME_UNKNOWN = "send_outcome_unknown", "Send outcome unknown"
     LEGAL_FOOTER = "legal_footer", "Legal footer missing"
+    MAILBOX = "mailbox", "Mailbox cannot send"
 
 
 class ReplyKind(models.TextChoices):
@@ -74,6 +75,34 @@ class QuarantineReason(models.TextChoices):
     OVERSIZED = "oversized", "Oversized"
     UNPARSEABLE = "unparseable", "Unparseable"
     DATA_ERROR = "data_error", "Data error"
+
+
+class MailboxAuth(models.TextChoices):
+    PASSWORD = "password", "Password"
+
+
+class SmtpSecurity(models.TextChoices):
+    STARTTLS = "starttls", "STARTTLS"
+    SSL = "ssl", "SSL/TLS"
+
+
+class MailboxState(models.TextChoices):
+    ACTIVE = "active", "Active"
+    PAUSED = "paused", "Paused"
+    NEEDS_LOGIN = "needs_login", "Needs login"
+    DISABLED = "disabled", "Disabled"
+
+
+class PauseAction(models.TextChoices):
+    PAUSE = "pause", "Pause"
+    RESUME = "resume", "Resume"
+
+
+class HealthTrigger(models.TextChoices):
+    BOUNCE = "bounce", "Hard bounces"
+    OPTOUT = "optout", "Opt-outs"
+    COMPLAINT = "complaint", "Spam complaints"
+    MANUAL = "manual", "Manual"
 
 
 class ReplyMatch(models.TextChoices):

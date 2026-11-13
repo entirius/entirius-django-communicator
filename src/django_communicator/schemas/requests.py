@@ -4,14 +4,24 @@
 """Request schemas of the communicator admin API v2."""
 
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from django_communicator.enums import ChannelMode, MessageStatus, ReplyKind, SuppressionKind, TemplateKind
+from django_communicator.enums import (
+    ChannelMode,
+    MessageStatus,
+    ReplyKind,
+    SmtpSecurity,
+    SuppressionKind,
+    TemplateKind,
+)
 from django_communicator.services.communicate_service import RecipientData
 
 AUDIENCE_PATTERN = r"^[A-Z0-9_]*$"
+EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+OPTIONAL_EMAIL_PATTERN = r"^([^@\s]+@[^@\s]+\.[^@\s]+)?$"
 
 
 class ReviewListQuery(BaseModel):
@@ -261,18 +271,73 @@ class ReplyListQuery(BaseModel):
     thread: int | None = Field(default=None, description="Only replies of this thread.")
 
 
-class MailboxRequest(BaseModel):
+_MAILBOX_NULLABLE = frozenset({"user_id", "daily_cap", "warmup_start_cap", "warmup_started_on"})
+
+
+class MailboxUpdateRequest(BaseModel):
+    """Every field optional: only the fields sent change. A password is write-only; omitted or null keeps it."""
+
     model_config = ConfigDict(extra="forbid")
 
-    imap_host: str = Field(min_length=1, max_length=255, description="IMAP host.", examples=["imap.mail.test"])
-    imap_port: int = Field(default=993, ge=1, le=65535, description="IMAP port.", examples=[993])
-    imap_use_ssl: bool = Field(default=True, description="IMAP over TLS.", examples=[True])
-    imap_user: str = Field(min_length=1, max_length=255, description="IMAP login.", examples=["outreach"])
-    imap_password: str | None = Field(
-        default=None, max_length=1024, description="Write-only; omitted or null keeps the stored one."
+    address: str | None = Field(
+        default=None, max_length=254, pattern=EMAIL_PATTERN, description="From address.", examples=["anna@mail.test"]
     )
-    folder: str = Field(default="INBOX", min_length=1, max_length=64, description="Folder polled.", examples=["INBOX"])
-    is_active: bool = Field(default=True, description="Polled by the beat.", examples=[True])
+    display_name: str | None = Field(default=None, max_length=128, description="From name.", examples=["Anna Nowak"])
+    cc_address: str | None = Field(
+        default=None, max_length=254, pattern=OPTIONAL_EMAIL_PATTERN, description="Copy of every mail; empty: none."
+    )
+    user_id: int | None = Field(default=None, description="Staff member whose mailbox this is; null: nobody.")
+    is_default: bool | None = Field(default=None, description="Used when the caller names no user with a mailbox.")
+    smtp_host: str | None = Field(default=None, max_length=255, description="SMTP host.", examples=["smtp.mail.test"])
+    smtp_port: int | None = Field(default=None, ge=1, le=65535, description="SMTP port.", examples=[587])
+    smtp_security: SmtpSecurity | None = Field(default=None, description="starttls or ssl.", examples=["starttls"])
+    smtp_user: str | None = Field(default=None, max_length=255, description="SMTP login; empty: the address.")
+    smtp_password: str | None = Field(default=None, min_length=1, max_length=1024, description="Write-only.")
+    send_enabled: bool | None = Field(default=None, description="Mail of new threads may leave from it.")
+    imap_host: str | None = Field(default=None, max_length=255, description="IMAP host.", examples=["imap.mail.test"])
+    imap_port: int | None = Field(default=None, ge=1, le=65535, description="IMAP port.", examples=[993])
+    imap_use_ssl: bool | None = Field(default=None, description="IMAP over TLS.", examples=[True])
+    imap_user: str | None = Field(default=None, max_length=255, description="IMAP login; empty: the address.")
+    imap_password: str | None = Field(default=None, min_length=1, max_length=1024, description="Write-only.")
+    folder: str | None = Field(default=None, min_length=1, max_length=64, description="Folder polled.")
+    receive_enabled: bool | None = Field(default=None, description="Polled by the beat.")
+    daily_cap: int | None = Field(default=None, ge=0, le=100000, description="Mails a day; null: only the channel cap.")
+    warmup_start_cap: int | None = Field(default=None, ge=0, le=100000, description="Warm-up: cap of day 0.")
+    warmup_step: int | None = Field(default=None, ge=0, le=100000, description="Warm-up: added per day.")
+    warmup_started_on: date | None = Field(default=None, description="Warm-up day 0; empty with a warm-up: today.")
+
+    def changes(self) -> dict[str, Any]:
+        """The fields the client sent. Null clears `user_id`, `daily_cap` and the warm-up; on any other field (a
+        password included) it keeps the stored value."""
+        sent = self.model_dump(exclude_unset=True)
+        return {name: value for name, value in sent.items() if value is not None or name in _MAILBOX_NULLABLE}
+
+
+class MailboxCreateRequest(MailboxUpdateRequest):
+    address: str = Field(
+        max_length=254, pattern=EMAIL_PATTERN, description="From address.", examples=["anna@mail.test"]
+    )
+
+
+class MailboxPauseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(
+        min_length=1, max_length=255, description="Why; logged.", examples=["Bounces after a list import"]
+    )
+
+
+class HealthPolicyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(default=False, description="Auto-pause on live channels.", examples=[True])
+    window_hours: int = Field(default=168, ge=1, le=24 * 90, description="Counting window.", examples=[168])
+    min_sample: int = Field(default=50, ge=1, le=100000, description="Sent mails before a mailbox is judged.")
+    max_bounce_pct: Decimal = Field(default=Decimal(2), ge=0, le=100, decimal_places=2, description="Hard bounces %.")
+    max_optout_pct: Decimal = Field(default=Decimal(3), ge=0, le=100, decimal_places=2, description="Opt-outs %.")
+    max_complaint_pct: Decimal = Field(
+        default=Decimal("0.1"), ge=0, le=100, decimal_places=2, description="Spam complaints %."
+    )
 
 
 class FooterRequest(BaseModel):
@@ -295,6 +360,7 @@ class ApprovalQuery(BaseModel):
         default="", max_length=200, description="Substring of the subject reference, recipient or subject."
     )
     min_age_hours: float | None = Field(default=None, ge=0, le=24 * 365, description="Drafts at least this old.")
+    mailbox: int | None = Field(default=None, description="Only drafts of threads that send from this mailbox id.")
 
 
 class BulkApprovalRequest(BaseModel):

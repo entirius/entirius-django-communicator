@@ -6,8 +6,10 @@ from django.contrib import admin
 
 from django_communicator.models import (
     Channel,
+    HealthPolicy,
     InboundQuarantine,
-    MailboxConfig,
+    Mailbox,
+    MailboxPauseLog,
     Message,
     MessageTemplate,
     MessageTemplateVersion,
@@ -20,7 +22,7 @@ from django_communicator.models import (
     TextPool,
     ThreadSequenceState,
 )
-from django_communicator.services import inbox_service, template_service
+from django_communicator.services import mailbox_service, template_service
 
 
 @admin.register(Channel)
@@ -123,31 +125,84 @@ class ThreadSequenceStateAdmin(admin.ModelAdmin):
         return False
 
 
-class MailboxConfigForm(forms.ModelForm):
+class MailboxForm(forms.ModelForm):
+    smtp_password = forms.CharField(
+        widget=forms.PasswordInput(render_value=False), required=False, help_text="Leave empty to keep the stored one."
+    )
     imap_password = forms.CharField(
         widget=forms.PasswordInput(render_value=False), required=False, help_text="Leave empty to keep the stored one."
     )
 
     class Meta:
-        model = MailboxConfig
-        fields = ("channel", "imap_host", "imap_port", "imap_use_ssl", "imap_user", "imap_password", "folder")
-        fields += ("last_uid", "is_active")
+        model = Mailbox
+        fields = ("channel", "address", "display_name", "cc_address", "user", "is_default", "auth_method")
+        fields += ("smtp_host", "smtp_port", "smtp_security", "smtp_user", "smtp_password", "send_enabled")
+        fields += ("imap_host", "imap_port", "imap_use_ssl", "imap_user", "imap_password", "folder")
+        fields += ("receive_enabled", "daily_cap", "warmup_start_cap", "warmup_step", "warmup_started_on")
 
-    def clean_imap_password(self) -> str:
-        return self.cleaned_data["imap_password"] or self.instance.imap_password
+    def mailbox_changes(self) -> dict:
+        """What the mailbox service writes: the changed fields; `user` as `user_id`; `channel` only on create."""
+        changes = {name: self.cleaned_data[name] for name in self.changed_data if name not in ("channel", "user")}
+        return changes | ({"user_id": self.instance.user_id} if "user" in self.changed_data else {})
+
+    def clean(self) -> dict:
+        """The service's refusals (warm-up without a ceiling, a non-staff user, a non-ASCII password) as form errors."""
+        cleaned = super().clean()
+        if self.errors:
+            return cleaned
+        try:
+            mailbox_service.check_changes(self._original(), self.mailbox_changes())
+        except mailbox_service.MailboxError as error:
+            raise forms.ValidationError(error.client_message) from None
+        return cleaned
+
+    def _original(self) -> Mailbox:
+        if self.instance.pk:
+            return Mailbox.objects.get(pk=self.instance.pk)
+        return Mailbox(channel=self.cleaned_data.get("channel"))
+
+    def _get_validation_exclusions(self):
+        """The service moves the default flag from the old default; the one-default constraint must not refuse it."""
+        return {*super()._get_validation_exclusions(), "is_default"}
 
 
-@admin.register(MailboxConfig)
-class MailboxConfigAdmin(admin.ModelAdmin):
-    form = MailboxConfigForm
-    list_display = ("channel", "imap_host", "imap_user", "folder", "is_active", "last_uid", "last_polled_at")
-    readonly_fields = ("last_polled_at",)
+@admin.register(Mailbox)
+class MailboxAdmin(admin.ModelAdmin):
+    """Passwords are written only when typed in; pause and resume belong to the API (they are logged)."""
+
+    form = MailboxForm
+    list_display = ("address", "channel", "user", "is_default", "send_enabled", "receive_enabled", "paused_at")
+    list_filter = ("send_enabled", "receive_enabled", "is_default")
+    search_fields = ("address", "display_name")
+    readonly_fields = ("smtp_login_failed_at", "paused_at", "pause_reason", "health_reset_at", "last_polled_at")
 
     def save_model(self, request, obj, form, change) -> None:
-        """Another host, user or folder is another mailbox: the cursor starts over (as `inbox_service.save_mailbox`)."""
-        if change and set(form.changed_data) & set(inbox_service.MAILBOX_IDENTITY):
-            obj.last_uid, obj.uid_validity = 0, None
-        super().save_model(request, obj, form, change)
+        """Through the mailbox service: a new IMAP host, user or folder restarts the cursor and an empty password
+        field leaves the stored (maybe undecryptable) secret alone."""
+        if change:
+            mailbox_service.update_mailbox(Mailbox.objects.get(pk=obj.pk), form.mailbox_changes())
+        else:
+            obj.pk = mailbox_service.create_mailbox(obj.channel, form.mailbox_changes()).pk
+
+    def get_readonly_fields(self, request, obj=None) -> tuple:
+        return (*self.readonly_fields, "channel") if obj else self.readonly_fields
+
+
+@admin.register(HealthPolicy)
+class HealthPolicyAdmin(admin.ModelAdmin):
+    list_display = ("channel", "enabled", "window_hours", "min_sample")
+
+
+@admin.register(MailboxPauseLog)
+class MailboxPauseLogAdmin(admin.ModelAdmin):
+    list_display = ("mailbox", "action", "trigger", "reason", "user", "created_at")
+    list_filter = ("action", "trigger")
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False
 
 
 @admin.register(InboundQuarantine)
