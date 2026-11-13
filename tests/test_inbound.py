@@ -773,3 +773,68 @@ def test_dev_poll_now_scoped_to_channel(channel, mailbox, admin_api, once_backen
             poll_inbox.once_backend.clear_lock(key)
 
     assert [call.args[0].pk for call in polled.call_args_list] == [mailbox.pk]
+
+
+# Opt-out phrases are matched on folded text, so natural wording and stems are caught.
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Prosimy o usunięcie mnie z listy.",
+        "Proszę o nie kontaktowanie się z nami w tej sprawie.",
+        "PROSZĘ MNIE WYPISAĆ",
+        "Rezygnujemy z dalszej korespondencji",
+        "Nie jesteśmy zainteresowani, dziękujemy",
+        "Prosze nie pisac wiecej",
+        "Proszę\nnie\npisać",
+    ],
+)
+def test_polish_refusals_are_suspected_optouts(body):
+    thread = SimpleNamespace(recipient_language=SimpleNamespace(iso2="PL"))
+
+    assert inbound_service.has_optout_phrase(thread, body)
+
+
+@pytest.mark.parametrize(
+    "body",
+    ["Dzień dobry, chętnie porozmawiam we wtorek.", "Proszę przesłać ofertę.", "Czy możemy się umówić na 15:00?"],
+)
+def test_ordinary_polish_replies_are_not_suspected(body):
+    thread = SimpleNamespace(recipient_language=SimpleNamespace(iso2="PL"))
+
+    assert not inbound_service.has_optout_phrase(thread, body)
+
+
+@pytest.mark.parametrize(
+    "body", ["Please don't email me again", "Take me off this list", "We are not interested, thanks", "OPT-OUT"]
+)
+def test_english_refusals_are_suspected_optouts(body):
+    thread = SimpleNamespace(recipient_language=SimpleNamespace(iso2="EN"))
+
+    assert inbound_service.has_optout_phrase(thread, body)
+
+
+def test_languageless_thread_uses_every_list():
+    thread = SimpleNamespace(recipient_language=None)
+
+    assert inbound_service.has_optout_phrase(thread, "usuń mnie z bazy")
+    assert inbound_service.has_optout_phrase(thread, "remove me please")
+
+
+def test_fold_lowers_strips_diacritics_and_l_stroke():
+    assert inbound_service.fold("Łódź, ŻÓŁĆ!  ok") == "lodz zolc ok"
+    assert inbound_service.fold(inbound_service.fold("Łódź")) == "lodz"
+
+
+def test_soft_refusal_is_a_suspicion_that_pauses_the_sequence(channel):
+    message = make_sent(channel, "owner@example-shop-4.test")
+    raw = eml("optout_pl.eml").replace(
+        "Proszę nie pisać do mnie więcej.".encode(), "Nie jesteśmy zainteresowani.".encode()
+    )
+
+    with mock.patch(NOTIFY):
+        reply = ingest(channel, raw)
+
+    assert reply.kind == ReplyKind.SUSPECTED_OPTOUT and state_of(message).stop_reason == SequenceStopReason.PAUSED
+    assert not Suppression.objects.exists()
