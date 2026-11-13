@@ -87,14 +87,14 @@ def test_fake_toolbox_classifies_the_golden_reply(channel, entry):
 
 
 @pytest.mark.parametrize("entry", GOLDEN, ids=IDS)
-def test_golden_reply_end_to_end_with_the_default_plans(channel, entry):
+def test_golden_reply_end_to_end_with_the_default_plans(channel, entry, django_capture_on_commit_callbacks):
     message = make_sent(channel, EMAIL)
     classified = entry.get("classified") is not False
     intent, kind, stop_reason, severity, review = (
         (entry["intent"], *EXPECTED[entry["intent"]]) if classified else UNCLASSIFIED
     )
 
-    with class_toolbox(), mock.patch(NOTIFY) as notify:
+    with class_toolbox(), mock.patch(NOTIFY) as notify, django_capture_on_commit_callbacks(execute=True):
         reply = ingest(channel, reply_mail(text_of(entry, today(channel)), entry["subject"]))
 
     reply.refresh_from_db()

@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 from django.db import connection
-from django.test import override_settings
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from django_utils.toolbox.testing import error_response
 
@@ -69,7 +69,7 @@ def given(intent: str, confidence: float = 0.9, return_date=None) -> Classificat
 
 
 def ingest_given(message, body: str, classification: Classification | None) -> tuple[Reply, mock.Mock]:
-    with mock.patch(NOTIFY) as notify:
+    with mock.patch(NOTIFY) as notify, TestCase.captureOnCommitCallbacks(execute=True):
         reply = ingest_with_class(Thread.objects.get(pk=message.thread_id), body, classification)
     return reply, notify
 
@@ -297,7 +297,7 @@ def test_a_stored_plan_overrides_the_default(channel):
     assert reply.needs_review is True and reply.plan_applied["is_default"] is False
 
 
-def test_receivers_read_the_class_from_the_reply(channel, django_capture_on_commit_callbacks):
+def test_receivers_read_the_class_from_the_reply(channel):
     message = sent(channel)
     seen = []
 
@@ -306,8 +306,7 @@ def test_receivers_read_the_class_from_the_reply(channel, django_capture_on_comm
 
     reply_received.connect(receiver)
     try:
-        with django_capture_on_commit_callbacks(execute=True):
-            ingest_given(message, "Not now.", given(U.WRONG_PERSON))
+        ingest_given(message, "Not now.", given(U.WRONG_PERSON))
     finally:
         reply_received.disconnect(receiver)
     assert seen == [(U.WRONG_PERSON, None, True, "medium")]

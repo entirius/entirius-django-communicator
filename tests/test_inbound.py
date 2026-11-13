@@ -271,10 +271,10 @@ def test_C25_dsn_soft_bounce_retry_after_24h_then_failed(channel):
     assert Reply.objects.filter(kind=ReplyKind.BOUNCE_SOFT).count() == 2 and not Suppression.objects.exists()
 
 
-def test_C26_duplicate_inbound_message_id_idempotent(channel):
+def test_C26_duplicate_inbound_message_id_idempotent(channel, django_capture_on_commit_callbacks):
     make_sent(channel, "owner@example-shop-1.test")
 
-    with mock.patch(NOTIFY) as notify:
+    with mock.patch(NOTIFY) as notify, django_capture_on_commit_callbacks(execute=True):
         first = ingest(channel, eml("reply_plain.eml"))
         again = ingest(channel, eml("duplicate.eml"))
 
