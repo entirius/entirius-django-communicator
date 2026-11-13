@@ -45,6 +45,7 @@ The only settings table. Defaults live in `django_communicator/settings.py` and 
 | `COMMUNICATOR_COMPLAINT_FEEDBACK` | `False` | ingest ARF spam complaints (`abuse`, `fraud`) for our messages |
 | `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` | `""` | public base URL of the service (`https://api.example.com`); empty = no one-click unsubscribe headers and no link |
 | `COMMUNICATOR_BULK_APPROVAL_MAX` | `100` | ids per bulk approve / reject request |
+| `COMMUNICATOR_COMPOSE_MAX_CHARS` | `20000` | longest body of a hand-written message (`compose()`) |
 | `DEFAULT_THROTTLE_RATES["communicator_unsubscribe"]` | `60/min` (fallback) | per client address on the public unsubscribe route |
 | `COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS` | out-of-office patterns (en, pl) | autoresponder subjects |
 | `COMMUNICATOR_SUPPRESSION_SCOPE` | `"channel"` | `channel`: a new email / domain suppression holds in its channel; `install`: in every channel (global row). Global rows hold under both; switching rewrites nothing (`communicator_suppressions --to-install`) |

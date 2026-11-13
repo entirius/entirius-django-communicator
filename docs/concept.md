@@ -63,6 +63,32 @@ first message is created its mailbox is chosen and stored in `Thread.mailbox` fo
 `mailbox_user_id` in the channel when it sends (`send_enabled`), else the channel's default mailbox when it sends,
 else none — the thread then sends through the channel SMTP entry, as before mailboxes existed.
 
+## One-off messages
+
+`services/compose_service.compose(*, channel_idx, recipient, subject, body_text, subject_ref, author,
+mailbox_user_id=None, thread=None, in_reply_to=None) -> Message` — one message a person wrote by hand: no template, no
+AI, no placeholder rendering. Communicator exposes no API for it; the calling module does (leads: the company card).
+Fixed order:
+
+1. **Text** — subject 1–255 characters, body 1–`COMMUNICATOR_COMPOSE_MAX_CHARS` (20 000), else `ComposeError`;
+   a given thread of another channel, subject or recipient, or a reply of another thread → `ThreadMismatchError`.
+   Nothing is created.
+2. **Can mail** — as in `communicate()`: a refusal → a `suppressed` message, no footer needed.
+3. **Legal footer** — `recipient.legal_footer` blank → `LegalFooterRequiredError`, nothing created. The preflight
+   asks again at delivery (a message without a template version always needs one).
+4. **Thread** — the given thread (or the thread of `in_reply_to`), else the newest **open or replied** thread of
+   (channel, `subject_ref`, email), else a new one; a closed thread is never reused. A replied thread is open again.
+5. **Message** — `approved` by its author (`reviewed_by`, `created_by`, `edited_by_human`), `body_text` as written
+   (the mail builder escapes it into paragraphs; no HTML from the caller), `scheduled_at` = the channel's now. Mode,
+   policy window, caps, mailbox hold and the delivery checks apply as to any message; `message_approved` fires on
+   commit.
+
+Writing by hand ends the automation of the thread: its sequence (running or paused) stops with reason `manual`, and a
+delivered message without a template version never arms, re-arms or autostarts a sequence. A follow-up of a sequence
+started again later takes its context and legal footer from the newest outbound message **with** a template version.
+With `in_reply_to` the mail answers that reply: `In-Reply-To` is the reply's inbound Message-ID and `References` ends
+with it (`Message.in_reply_to`).
+
 ## Mailboxes
 
 A channel has any number of `Mailbox` rows. Each is one From address (`address`, `display_name`, optional
@@ -222,6 +248,8 @@ The next due date counts from the delivery. Terminal outcomes go through
 `sequence_service.on_follow_up_finished`: delivered → next due date or `finished`
 (`sequence_finished`); failed / suppressed → stopped; rejected / skipped → re-armed from the last
 delivery. A reply stops or pauses the sequence by the plan of its class; a suspected opt-out pauses it.
+
+A hand-written message (`compose()`) stops the thread's sequence with reason `manual`; see § One-off messages.
 
 **Autostart.** A sequence with `autostart` (at most one per channel, a partial unique constraint) starts by itself:
 the first delivered message of an open thread that never had a sequence state starts the channel's active

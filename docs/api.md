@@ -121,6 +121,7 @@ They exist for BDD and e2e and are not part of `openapi.yaml`.
 | Endpoint | Does |
 |---|---|
 | `POST test/communicate/` | `communicate()` with a template key, recipient, context, `subject_ref`; missing footer → 400 |
+| `POST test/compose/` (`{recipient, subject, body_text, subject_ref, thread_id?, in_reply_to_id?, mailbox_user_id?}`) | `compose()` by the requesting user → 201 `approved` or `suppressed` message; missing footer, blank or too long text, a thread or reply of another subject → 400; a thread or reply of another channel → 404 |
 | `POST test/clock/` (`{iso_datetime}` or null) | freeze / clear the channel clock |
 | `POST test/send-due/` | `schedule_follow_ups` then `send_due` in-process under the beat's celery-once lock (409 while held) |
 | `POST test/start-sequence/` (`{thread_id, sequence_key}`) | start a sequence in a thread |

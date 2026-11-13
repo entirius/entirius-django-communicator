@@ -38,6 +38,9 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
 - **A template content change goes through `template_service.save_template`** (Django admin included) —
   a direct `save()` would change content without a version and break C-29.
 
+- **A hand-written message (`compose_service.compose`) is approved by its author and never routed through
+  `review_required`.** It stops the thread's sequence (`manual`); `sequence_service.on_delivered` ignores any message
+  without a template version, and follow-ups read context and footer from the newest templated message only.
 - **The preflight runs at accept and again at delivery** (`preflight_service.problem`). A message without a
   template version always needs a legal footer; the approval inbox shows the same detail as `blocker`. Bulk
   approve goes through `review_service.accept`, so the preflight is never skipped.

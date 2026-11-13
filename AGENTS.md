@@ -45,7 +45,7 @@ src/django_communicator/
 │               message_service (the only status writer)  review_service  preview_service
 │               send_service (send_due run)  delivery_service (deliver)  policy_service  counter_service
 │               clock_service  channel_service (live_allowed)  mail_builder  footer_service  alert_service
-│               sequence_service  sending_config_service
+│               sequence_service  sending_config_service  compose_service (hand-written message)
 │               poll_service  inbound_service (ingest)  mail_parser  dsn_service  optout_service  inbox_service
 │               anonymisation_service  draft_retry_service (transient failure retry)
 │               preflight_service (legal footer at accept and delivery)  approval_service (cross-channel inbox)

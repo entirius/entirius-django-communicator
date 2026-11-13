@@ -2,7 +2,17 @@
 
 ## Unreleased
 
+Release as 0.5.0 (new fields, new service, changed sequence behaviour).
+
 ### Added
+
+- **Hand-written messages.** `compose_service.compose(*, channel_idx, recipient, subject, body_text, subject_ref,
+  author, mailbox_user_id=None, thread=None, in_reply_to=None)`: no template, no AI; can mail → legal footer
+  (`LegalFooterRequiredError`) → thread (given, else the newest open or replied one, never a closed one) → `approved`
+  by the author, due now, `message_approved` on commit. Subject ≤ 255, body ≤ `COMMUNICATOR_COMPOSE_MAX_CHARS`
+  (20 000; `ComposeError`). Stops the thread's sequence with reason `manual`; a replied thread is open again.
+  `Message.in_reply_to` (FK `Reply`, migration 0022): the answer's `In-Reply-To` is the reply's Message-ID and
+  `References` ends with it. Development view `POST test/compose/`.
 
 - **Sequence autostart.** `Sequence.autostart` (at most one per channel, partial unique constraint, migration 0012):
   the first delivered templated message of an open thread that never had a sequence state starts the channel's
@@ -82,6 +92,8 @@
 
 ### Changed
 
+- A delivered message without a template version never arms or re-arms a sequence; a follow-up reads its context and
+  legal footer from the newest outbound message with a template version.
 - **`inbound_service.ingest` is no longer one transaction:** the reply class call runs first, outside any
   transaction; the writes of one reply, a DSN and a complaint stay atomic each. A plain reply's alert severity comes
   from the plan of its class (`high` without one, as before).
