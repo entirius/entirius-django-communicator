@@ -54,7 +54,7 @@ from django_communicator.services import (
     unsubscribe_service,
 )
 from django_communicator.services.reply_class_service import Classification
-from django_communicator.signals import message_bounced, reply_received
+from django_communicator.signals import message_bounced
 
 logger = logging.getLogger(__name__)
 
@@ -263,7 +263,7 @@ def _suspected_optout(
     by_class = reply.intent == ReplyIntent.UNSUBSCRIBE
     plan = reply_plan_service.plan_for(channel, reply.intent) if by_class else reply_plan_service.PHRASE_OPTOUT_PLAN
     reply_plan_service.record(reply, plan)
-    reply_plan_service.notify(reply, plan, title="Possible opt-out")
+    reply_plan_service.notify(reply, plan, title=reply_plan_service.optout_title(reply.from_email))
     return reply
 
 
@@ -273,8 +273,9 @@ def _plain_reply(
     reply = _store(inbound, match, ReplyKind.REPLY, body, classification)
     _mark_replied(match.thread, reply)
     mark_message_replied(reply)
-    reply_plan_service.apply(reply, reply_plan_service.plan_for(channel, reply.intent))
-    transaction.on_commit(lambda: reply_received.send(sender=Thread, thread=match.thread, reply=reply))
+    plan = reply_plan_service.plan_for(channel, reply.intent)
+    reply_plan_service.apply(reply, plan)
+    transaction.on_commit(lambda: reply_plan_service.announce(reply, plan))
     return reply
 
 

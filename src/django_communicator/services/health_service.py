@@ -245,4 +245,6 @@ def counts_of(mailbox: Mailbox, now: datetime) -> dict[str, int]:
 
 
 def list_logs(channel: Channel) -> QuerySet[MailboxPauseLog]:
-    return MailboxPauseLog.objects.filter(channel=channel).select_related("mailbox").order_by("-created_at", "-pk")
+    return (
+        MailboxPauseLog.objects.filter(channel=channel).select_related("mailbox", "user").order_by("-created_at", "-pk")
+    )

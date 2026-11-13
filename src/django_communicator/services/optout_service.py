@@ -57,7 +57,7 @@ def dismiss(reply: Reply) -> Reply:
     reply.kind = ReplyKind.REPLY
     reply.save(update_fields=["kind", "modified_at"])
     inbound_service.mark_message_replied(reply)
-    transaction.on_commit(lambda: reply_received.send(sender=Thread, thread=reply.thread, reply=reply))
+    transaction.on_commit(lambda: reply_received.send_robust(sender=Thread, thread=reply.thread, reply=reply))
     return reply
 
 

@@ -78,6 +78,4 @@ class HealthLogView(AdminView):
     def get(self, request: Request, channel_idx: str) -> Response:
         paginator = AdminPagination()
         page = paginator.paginate_queryset(health_service.list_logs(self.channel(channel_idx)), request, view=self)
-        return paginator.get_paginated_response(
-            [PauseLogResponse.model_validate(log).model_dump(mode="json") for log in page]
-        )
+        return paginator.get_paginated_response([PauseLogResponse.of(log).model_dump(mode="json") for log in page])

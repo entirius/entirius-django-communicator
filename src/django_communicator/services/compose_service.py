@@ -27,6 +27,7 @@ from django_communicator.services.communicate_service import (
     RecipientData,
     ThreadMismatchError,
     check_thread,
+    label_thread,
     mail_refusal,
     thread_for,
 )
@@ -52,12 +53,13 @@ def compose(
     mailbox_user_id: int | None = None,
     thread: Thread | None = None,
     in_reply_to: Reply | None = None,
+    subject_label: str = "",
 ) -> Message:
     """Can mail (a refusal → `suppressed` message) → legal footer → thread → `approved` message, due now.
 
     The thread: the given one (or the reply's), else the newest open or replied thread of (channel, subject_ref,
     email), else a new one. Raises `Channel.DoesNotExist`, `ComposeError`, `ThreadMismatchError` and
-    `LegalFooterRequiredError` — nothing is created then."""
+    `LegalFooterRequiredError` — nothing is created then. A non-empty `subject_label` is stored on the thread."""
     channel = channel_service.get_channel(channel_idx)
     _check_text(subject, body_text)
     if thread := _reply_thread(thread, in_reply_to):
@@ -67,6 +69,7 @@ def compose(
         raise LegalFooterRequiredError("a hand-written message requires a legal footer")
     thread = thread or thread_for(channel, recipient, subject_ref, REUSABLE_THREADS)
     mailbox_service.assign(thread, mailbox_user_id)
+    label_thread(thread, subject_label)
     fields = {"subject": subject, "body_text": body_text, "legal_footer": recipient.legal_footer}
     fields.update(created_by=author, edited_by_human=True, requires_review=False, in_reply_to=in_reply_to)
     if refusal:

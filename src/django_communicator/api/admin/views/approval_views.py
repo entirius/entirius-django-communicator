@@ -37,6 +37,7 @@ def _row(message: Message, now: datetime) -> dict:
         channel=thread.channel.idx,
         thread_id=thread.pk,
         subject_ref=thread.subject_ref,
+        subject_label=thread.subject_label,
         recipient_email=thread.recipient_email,
         recipient_name=thread.recipient_name,
         template_key=version.template.key if version else "",

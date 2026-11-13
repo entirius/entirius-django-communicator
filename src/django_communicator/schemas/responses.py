@@ -614,6 +614,12 @@ class HealthPolicyResponse(BaseModel):
     max_complaint_pct: float = Field(description="Spam complaints %.", examples=[0.1])
 
 
+def _person_name(user) -> str:
+    if user is None:
+        return ""
+    return user.get_full_name().strip() or user.get_username()
+
+
 class PauseLogResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -624,7 +630,16 @@ class PauseLogResponse(BaseModel):
     reason: str = Field(description="Readable reason.", examples=["hard bounces 4.0% of 50 sent in 168 h, limit 2%"])
     metrics: dict[str, Any] = Field(description="Counts and rates measured at that moment.", examples=[{}])
     user_id: int | None = Field(description="Who; null for the automatic pause.", examples=[None])
+    user_name: str = Field(
+        description="Full name of the user, else the username; empty for the automatic pause.", examples=["Anna Nowak"]
+    )
     created_at: datetime = Field(description="When.", examples=["2026-09-14T10:00:00Z"])
+
+    @classmethod
+    def of(cls, log) -> "PauseLogResponse":
+        """`log.user` should be selected with the log: one query for a page."""
+        fields = {field: getattr(log, field) for field in cls.model_fields if field != "user_name"}
+        return cls(**fields, user_name=_person_name(log.user))
 
 
 class PauseLogListResponse(BaseModel):
@@ -668,6 +683,10 @@ class ApprovalRowResponse(BaseModel):
     channel: str = Field(description="Channel idx.", examples=["default-europe"])
     thread_id: int = Field(description="Thread id.", examples=[3])
     subject_ref: str = Field(description="Caller's reference of the thread.", examples=["leads.Company:42"])
+    subject_label: str = Field(
+        description="What the thread is about, in the caller's words (leads: the company name); empty when unknown.",
+        examples=["Shop Ltd"],
+    )
     recipient_email: str = Field(description="Recipient.", examples=["jan@shop.test"])
     recipient_name: str = Field(description="Recipient name.", examples=["Jan Kowalski"])
     template_key: str = Field(description="Template key; empty without a template version.", examples=["lead.cold"])

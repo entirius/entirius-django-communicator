@@ -120,6 +120,9 @@ class AddressStatusQuery(BaseModel):
     email: str = Field(min_length=3, max_length=254, description="The address to explain.", examples=["jan@shop.test"])
 
 
+SUBJECT_LABEL_HELP = "What the thread is about, in the caller's words; blank keeps the thread's label."
+
+
 class DevCommunicateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -131,6 +134,7 @@ class DevCommunicateRequest(BaseModel):
     audience: str = Field(
         default="", max_length=64, pattern=AUDIENCE_PATTERN, description="Audience code.", examples=["RETAILER"]
     )
+    subject_label: str = Field(default="", max_length=200, description=SUBJECT_LABEL_HELP, examples=["Shop Ltd"])
 
 
 class DevComposeRequest(BaseModel):
@@ -143,6 +147,7 @@ class DevComposeRequest(BaseModel):
     thread_id: int | None = Field(default=None, description="Thread to write in; null = the reuse rule.")
     in_reply_to_id: int | None = Field(default=None, description="Reply of the thread being answered.")
     mailbox_user_id: int | None = Field(default=None, description="Staff user whose mailbox a new thread uses.")
+    subject_label: str = Field(default="", max_length=200, description=SUBJECT_LABEL_HELP, examples=["Shop Ltd"])
 
 
 class WindowRequest(BaseModel):

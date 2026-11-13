@@ -35,8 +35,8 @@ class Filters:
 
 
 def pending(filters: Filters, now: datetime) -> QuerySet[Message]:
-    """Outbound drafts in `review_required`, oldest first. `search` matches the subject reference, the recipient
-    address or name and the subject."""
+    """Outbound drafts in `review_required`, oldest first. `search` matches the subject reference and label, the
+    recipient address or name and the subject."""
     rows = Message.objects.select_related("thread__channel", "thread__mailbox", "template_version__template").filter(
         status=MessageStatus.REVIEW_REQUIRED, direction=Direction.OUT
     )
@@ -56,6 +56,7 @@ def pending(filters: Filters, now: datetime) -> QuerySet[Message]:
 def _search(term: str) -> Q:
     return (
         Q(thread__subject_ref__icontains=term)
+        | Q(thread__subject_label__icontains=term)
         | Q(thread__recipient_email__icontains=term)
         | Q(thread__recipient_name__icontains=term)
         | Q(subject__icontains=term)

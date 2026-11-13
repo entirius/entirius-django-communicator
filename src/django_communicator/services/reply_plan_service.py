@@ -16,9 +16,10 @@ from zoneinfo import ZoneInfo
 from django.utils import timezone
 
 from django_communicator.enums import AlertSeverity, ReplyIntent, ReplySequenceAction, SequenceStopReason
-from django_communicator.models import Channel, Reply, ReplyClassPlan, ThreadSequenceState
+from django_communicator.models import Channel, Reply, ReplyClassPlan, Thread, ThreadSequenceState
 from django_communicator.services import alert_service, sequence_service
 from django_communicator.services.exceptions import ClientError
+from django_communicator.signals import REPLY_ALERTED, reply_received
 
 UNCLASSIFIED = ""
 PLAN_FIELDS = frozenset({"sequence", "notify", "needs_review"})
@@ -111,7 +112,8 @@ def resume_moment(channel: Channel, return_date: date) -> datetime:
 
 
 def apply(reply: Reply, plan: Plan) -> None:
-    """Sequence, review flag, snapshot and alert for a stored human reply (not a suspected opt-out)."""
+    """Sequence, review flag and snapshot for a stored human reply (not a suspected opt-out); the alert is
+    `announce`'s, after the commit."""
     thread = reply.thread
     resume_at = None
     if plan.sequence == _STOP:
@@ -124,7 +126,6 @@ def apply(reply: Reply, plan: Plan) -> None:
             resume_at=resume_at, modified_at=timezone.now()
         )
     record(reply, plan, resume_at=resume_at)
-    notify(reply, plan, title=f"Reply from {reply.from_email}")
 
 
 def record(reply: Reply, plan: Plan, *, resume_at: datetime | None = None) -> None:
@@ -134,7 +135,28 @@ def record(reply: Reply, plan: Plan, *, resume_at: datetime | None = None) -> No
     Reply.objects.filter(pk=reply.pk).update(needs_review=plan.needs_review, plan_applied=snapshot)
 
 
+def reply_type_label(intent: str) -> str:
+    """The words of a reply class for people ("Not now"); "" for a reply without a class."""
+    return ReplyIntent(intent).label if intent in ReplyIntent.values else ""
+
+
+def reply_title(sender: str, intent: str) -> str:
+    """`Reply from <sender> — <class words>`; `Reply from <sender>` without a class."""
+    label = reply_type_label(intent)
+    return f"Reply from {sender} — {label}" if label else f"Reply from {sender}"
+
+
+def optout_title(sender: str) -> str:
+    return f"Possible opt-out — {sender}"
+
+
+def announce(reply: Reply, plan: Plan) -> None:
+    """`reply_received` to every receiver (robust: a failing receiver is skipped), then communicator's own alert
+    unless a receiver raised one and said so with `REPLY_ALERTED`: one bell entry per reply."""
+    responses = reply_received.send_robust(sender=Thread, thread=reply.thread, reply=reply)
+    if not any(response == REPLY_ALERTED for _, response in responses):
+        notify(reply, plan, title=reply_title(reply.from_email, reply.intent))
+
+
 def notify(reply: Reply, plan: Plan, *, title: str) -> None:
-    if reply.intent:
-        title = f"{title} ({reply.intent})"
     alert_service.notify_subject(reply.channel, subject_ref=reply.thread.subject_ref, severity=plan.notify, title=title)
