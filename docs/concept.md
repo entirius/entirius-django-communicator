@@ -39,7 +39,7 @@ interprets (leads passes the lead type). Blank serves every audience. Unique `(c
 ## communicate()
 
 `services/communicate_service.communicate(*, channel_idx, template_key, recipient, context,
-subject_ref, requires_review=True, thread=None, audience="", mailbox_user_id=None) -> Message` — the one entry point for other modules.
+subject_ref, requires_review=True, thread=None, audience="", mailbox_user_id=None, subject_label="") -> Message` — the one entry point for other modules.
 Fixed order:
 
 1. **Can mail** — `suppression_service.can_mail`: an `invalid` address status → `suppressed` with
@@ -62,6 +62,9 @@ The thread is the newest open `Thread(channel, subject_ref, recipient_email)`, o
 first message is created its mailbox is chosen and stored in `Thread.mailbox` for good: the mailbox of
 `mailbox_user_id` in the channel when it sends (`send_enabled`), else the channel's default mailbox when it sends,
 else none — the thread then sends through the channel SMTP entry, as before mailboxes existed.
+`subject_label` is what the thread is about in the caller's words (leads: the company name): a non-empty value is
+stored on `Thread.subject_label` (a later non-empty one replaces it, a blank one keeps it) so screens never show the
+opaque `subject_ref`; `compose()` takes it the same way.
 
 ## One-off messages
 
@@ -287,8 +290,14 @@ tracked per mailbox; each mailbox fails and is announced on its own) and hands e
    except `not_interested`, whose refusal wins over the phrase. Phrase matching runs on folded text (lower case, no
    diacritics, `ł` → `l`, any other run of characters → one space), so a phrase is a stem: "rezygnuj" covers
    "Rezygnujemy", "prosze nie pisac" covers "Proszę nie pisać".
-7. **Reply** → thread `replied`, `Message.replied_at`, the plan of the class (sequence, alert, review flag),
-   `reply_received`. Without a class: sequence stopped, `high` alert.
+7. **Reply** → thread `replied`, `Message.replied_at`, the plan of the class (sequence, review flag), then after
+   the commit `reply_received` and the alert. Without a class: sequence stopped, `high` alert.
+
+Alerts of a reply carry words, never a raw value: `Reply from <sender> — <class words>` (`reply_type_label`:
+`not_now` → "Not now" …), `Reply from <sender>` without a class, `Possible opt-out — <sender>` for a suspected
+opt-out. One bell entry per reply: `reply_received` goes out with `send_robust`, and a receiver that raised its own
+alert for the reply (leads, with the company name) returns `REPLY_ALERTED` (`django_communicator.signals`);
+communicator's own alert goes out only when no receiver did — a thread nobody listens to, or a receiver that failed.
 
 Confirm opt-out → suppression of the thread recipient, sequence `optout`, `optout_confirmed`, and a
 `django_agreements` objection when installed (retried by task `record_objection`). Dismiss → kind
@@ -364,5 +373,5 @@ the subject's data.
 ## Signals
 
 All sent on commit (`signals/__init__.py`): `message_approved`, `company_skipped`, `message_sent`,
-`sequence_finished`, `reply_received`, `optout_confirmed`, `message_bounced(message, hard, reason="")` — a hard DSN,
+`sequence_finished`, `reply_received` (`send_robust`; a receiver that alerted answers `REPLY_ALERTED`), `optout_confirmed`, `message_bounced(message, hard, reason="")` — a hard DSN,
 an SMTP 5xx recipient refusal or a complaint (`reason="complaint"`), live channels only.

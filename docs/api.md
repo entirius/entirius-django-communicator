@@ -53,7 +53,7 @@ generated document is `docs/openapi.yaml`. Views are thin: parse, call a service
 | `POST mailboxes/<id>/pause/` · `resume/` (`{reason}`) | hold or release the mailbox's mail, logged with the user; 409 `MAILBOX_STATE` when already in that state |
 | `GET health/` | channel and each mailbox: counts and rates for `24h` and `7d`, per mailbox `state`, `sent_today`, `cap_today` |
 | `GET/PUT health/policy/` | auto-pause policy (`enabled`, `window_hours`, `min_sample`, `max_bounce_pct`, `max_optout_pct`, `max_complaint_pct`) |
-| `GET health/log/` | pauses and resumes, newest first |
+| `GET health/log/` | pauses and resumes, newest first; `user_name` = the user's full name, else the username, `""` for an automatic pause |
 
 ## Approval inbox (all channels)
 
@@ -61,7 +61,7 @@ Under `/api/communicator/v2/admin/approvals/`, area `communicator.review`, same 
 
 | Endpoint | Meaning |
 |---|---|
-| `GET approvals/?channel=&template_key=&search=&min_age_hours=&mailbox=` | outbound `review_required` messages of every channel, oldest first; `search` matches the subject reference, the recipient address or name and the subject; `mailbox` = a mailbox id; each row carries `blocker` (the preflight detail — legal footer, or a mailbox that is paused, disabled or needs a login — null when it may be approved); `counts {total, by_channel, by_mailbox}` cover the whole filtered set (`by_mailbox` key `none` = the channel SMTP entry) |
+| `GET approvals/?channel=&template_key=&search=&min_age_hours=&mailbox=` | outbound `review_required` messages of every channel, oldest first; each row carries `subject_label` (the thread's label, e.g. the company name; `""` when unknown); `search` matches the subject reference and label, the recipient address or name and the subject; `mailbox` = a mailbox id; each row carries `blocker` (the preflight detail — legal footer, or a mailbox that is paused, disabled or needs a login — null when it may be approved); `counts {total, by_channel, by_mailbox}` cover the whole filtered set (`by_mailbox` key `none` = the channel SMTP entry) |
 | `POST approvals/bulk/` (`{action: approve \| reject, ids, reason}`) | each id handled on its own through `review_service.accept` / `skip`; answer `{id, action, done, failed: {id: reason}}`; more than `COMMUNICATOR_BULK_APPROVAL_MAX` (100) ids → 400 and nothing changes; every call writes a `BulkApprovalLog` (user, action, reason, ids) |
 | `GET approvals/log/` | the bulk log, newest first |
 
@@ -120,8 +120,8 @@ They exist for BDD and e2e and are not part of `openapi.yaml`.
 
 | Endpoint | Does |
 |---|---|
-| `POST test/communicate/` | `communicate()` with a template key, recipient, context, `subject_ref`; missing footer → 400 |
-| `POST test/compose/` (`{recipient, subject, body_text, subject_ref, thread_id?, in_reply_to_id?, mailbox_user_id?}`) | `compose()` by the requesting user → 201 `approved` or `suppressed` message; missing footer, blank or too long text, a thread or reply of another subject → 400; a thread or reply of another channel → 404 |
+| `POST test/communicate/` | `communicate()` with a template key, recipient, context, `subject_ref`, optional `subject_label`; missing footer → 400 |
+| `POST test/compose/` (`{recipient, subject, body_text, subject_ref, thread_id?, in_reply_to_id?, mailbox_user_id?, subject_label?}`) | `compose()` by the requesting user → 201 `approved` or `suppressed` message; missing footer, blank or too long text, a thread or reply of another subject → 400; a thread or reply of another channel → 404 |
 | `POST test/clock/` (`{iso_datetime}` or null) | freeze / clear the channel clock |
 | `POST test/send-due/` | `schedule_follow_ups` then `send_due` in-process under the beat's celery-once lock (409 while held) |
 | `POST test/start-sequence/` (`{thread_id, sequence_key}`) | start a sequence in a thread |

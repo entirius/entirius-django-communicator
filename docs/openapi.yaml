@@ -2815,6 +2815,12 @@ components:
           - leads.Company:42
           title: Subject Ref
           type: string
+        subject_label:
+          description: 'What the thread is about, in the caller''s words (leads: the company name); empty when unknown.'
+          examples:
+          - Shop Ltd
+          title: Subject Label
+          type: string
         recipient_email:
           description: Recipient.
           examples:
@@ -2869,6 +2875,7 @@ components:
       - channel
       - thread_id
       - subject_ref
+      - subject_label
       - recipient_email
       - recipient_name
       - template_key
@@ -5264,6 +5271,12 @@ components:
           examples:
           - null
           title: User Id
+        user_name:
+          description: Full name of the user, else the username; empty for the automatic pause.
+          examples:
+          - Anna Nowak
+          title: User Name
+          type: string
         created_at:
           description: When.
           examples:
@@ -5279,6 +5292,7 @@ components:
       - reason
       - metrics
       - user_id
+      - user_name
       - created_at
       title: PauseLogResponse
       type: object

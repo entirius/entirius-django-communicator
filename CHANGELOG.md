@@ -6,6 +6,18 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
 
 ### Added
 
+- **Words for the screens.** `Thread.subject_label` (migration 0023): `communicate()` and `compose()` take an optional
+  `subject_label` (what the thread is about, e.g. a company name); a non-empty value is stored on the thread, a blank
+  one keeps it; the development views `test/communicate/` and `test/compose/` accept it. The approval row carries
+  `subject_label` and `search` matches it. The pause log row carries `user_name` (full name, else username; `""` for
+  an automatic pause), users joined with the page.
+- **Reply alerts in words, one per reply.** `reply_plan_service.reply_type_label(intent)` gives the class words;
+  titles read `Reply from <sender> — <class words>`, `Reply from <sender>` and `Possible opt-out — <sender>` — no
+  bracket, no raw value. `reply_received` is sent with `send_robust`; a receiver that raised its own alert returns
+  `REPLY_ALERTED` (`django_communicator.signals`) and communicator then raises none. The reply alert now goes out
+  after the commit.
+- `__version__` matches `pyproject.toml` (0.5.0); a test keeps them equal.
+
 - **Hand-written messages.** `compose_service.compose(*, channel_idx, recipient, subject, body_text, subject_ref,
   author, mailbox_user_id=None, thread=None, in_reply_to=None)`: no template, no AI; can mail → legal footer
   (`LegalFooterRequiredError`) → thread (given, else the newest open or replied one, never a closed one) → `approved`

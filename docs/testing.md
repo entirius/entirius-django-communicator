@@ -42,6 +42,8 @@ C-01…C-33, all of the communicator edge cases.
 | `test_admin.py` | Django admin pages render (address status included), admin save versions, read-only messages | — |
 | `test_openapi.py` | the module schema validates | — |
 | `test_domains.py`, `test_smoke.py` | registrable domain rule; app installed | — |
+| `test_labels.py` | `Thread.subject_label` stored, replaced, kept when blank (communicate, compose, dev views); approval row label and search; reply alert titles in words for every class, no class and the suspected opt-out; one bell entry (`REPLY_ALERTED`, nobody listening, a failing receiver); pause log `user_name` without a query per row | — |
+| `test_version.py` | `__version__` equals the `pyproject.toml` version | — |
 
 ## End-to-end layers (outside this repo)
 
