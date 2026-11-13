@@ -41,7 +41,7 @@ from django_communicator.services import (
     sequence_service,
     suppression_service,
 )
-from django_communicator.signals import reply_received
+from django_communicator.signals import message_bounced, reply_received
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,8 @@ def ingest(channel: Channel, raw: bytes) -> Reply | None:
         return None  # our own mail, e.g. a sandbox copy in the polled mailbox
     if dsn_service.is_dsn(msg):
         return _ingest_dsn(channel, inbound)
+    if communicator_settings.COMMUNICATOR_COMPLAINT_FEEDBACK and dsn_service.is_arf(msg):
+        return _ingest_complaint(channel, inbound)
     match = _match_thread(channel, msg)
     if match is None:
         logger.info("communicator inbound %s in channel %s matched no thread", inbound.message_id, channel.idx)
@@ -257,7 +259,35 @@ def _hard_bounce(channel: Channel, inbound: Inbound, match: Match, dsn: dsn_serv
         suppression_service.suppress_email(channel, match.thread.recipient_email, reason=f"dsn {dsn.status}")
     sequence_service.stop_sequence(match.thread, SequenceStopReason.BOUNCE)
     alert_service.notify_subject(channel, subject_ref=match.thread.subject_ref, severity="low", title="Bounce")
+    if channel.mode == ChannelMode.LIVE:  # a sandbox bounce says nothing about the real recipient
+        _send_bounced(match.message)
     return reply
+
+
+def _ingest_complaint(channel: Channel, inbound: Inbound) -> Reply | None:
+    """A spam complaint for one of our messages is stored; on a live channel the recipient is suppressed, the
+    sequence stops, a high notification goes out and `message_bounced(reason="complaint")` follows on commit. A
+    sandbox or dry-run complaint says nothing about the real recipient: stored only. The message status stays."""
+    arf = dsn_service.parse_arf(inbound.msg)
+    message = _outbound_by_ids(channel, [arf.original_message_id] if arf.original_message_id else [])
+    recipient = message.thread.recipient_email.lower() if message else ""
+    if message is None or not arf.is_complaint or arf.recipient not in ("", recipient):
+        logger.info("communicator feedback report %s (%r) ignored", inbound.message_id, arf.feedback_type)
+        return None
+    match = Match(thread=message.thread, message=message, matched_by=ReplyMatch.FEEDBACK)
+    reply = _store(inbound, match, ReplyKind.COMPLAINT)
+    if channel.mode == ChannelMode.LIVE:
+        suppression_service.suppress_email(channel, recipient, reason="complaint")
+        sequence_service.stop_sequence(match.thread, SequenceStopReason.COMPLAINT)
+        alert_service.notify_subject(
+            channel, subject_ref=match.thread.subject_ref, severity="high", title="Spam complaint"
+        )
+        _send_bounced(message, reason="complaint")
+    return reply
+
+
+def _send_bounced(message: Message, reason: str = "") -> None:
+    transaction.on_commit(lambda: message_bounced.send(sender=Message, message=message, hard=True, reason=reason))
 
 
 def _soft_bounce(channel: Channel, inbound: Inbound, match: Match, dsn: dsn_service.Dsn) -> Reply:

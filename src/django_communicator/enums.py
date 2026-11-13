@@ -66,6 +66,7 @@ class ReplyKind(models.TextChoices):
     SUSPECTED_OPTOUT = "suspected_optout", "Suspected opt-out"
     BOUNCE_HARD = "bounce_hard", "Hard bounce"
     BOUNCE_SOFT = "bounce_soft", "Soft bounce"
+    COMPLAINT = "complaint", "Spam complaint"
 
 
 class QuarantineReason(models.TextChoices):
@@ -78,6 +79,7 @@ class ReplyMatch(models.TextChoices):
     HEADER = "header", "Header"
     SENDER = "sender", "Sender"
     DSN = "dsn", "DSN"
+    FEEDBACK = "feedback", "Feedback report"
 
 
 class SequenceStopReason(models.TextChoices):
@@ -89,6 +91,7 @@ class SequenceStopReason(models.TextChoices):
     PAUSED = "paused", "Paused"
     FAILED = "failed", "Failed"
     SUPPRESSED = "suppressed", "Suppressed"
+    COMPLAINT = "complaint", "Spam complaint"
 
 
 _S = MessageStatus

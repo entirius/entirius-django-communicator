@@ -86,6 +86,8 @@ COMMUNICATOR_OPTOUT_PHRASES = getattr(
         ],
     },
 )
+# ARF feedback reports (RFC 5965) of type abuse/fraud for our messages are ingested as spam complaints.
+COMMUNICATOR_COMPLAINT_FEEDBACK = getattr(settings, "COMMUNICATOR_COMPLAINT_FEEDBACK", False)
 COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS = getattr(
     settings,
     "COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS",

@@ -39,7 +39,7 @@ from django_communicator.models import (
 )
 from django_communicator.services import inbound_service, message_service, optout_service, poll_service
 from django_communicator.services.inbound_service import ingest
-from django_communicator.signals import optout_confirmed, reply_received
+from django_communicator.signals import message_bounced, optout_confirmed, reply_received
 from tests.conftest import api_url
 from tests.factories import ChannelFactory, LanguageFactory
 
@@ -838,3 +838,104 @@ def test_soft_refusal_is_a_suspicion_that_pauses_the_sequence(channel):
 
     assert reply.kind == ReplyKind.SUSPECTED_OPTOUT and state_of(message).stop_reason == SequenceStopReason.PAUSED
     assert not Suppression.objects.exists()
+
+
+# Spam complaints (ARF) and the bounce signal.
+
+
+@pytest.fixture
+def bounced():
+    calls = []
+
+    def receiver(**kwargs):
+        calls.append(kwargs)
+
+    message_bounced.connect(receiver)
+    yield calls
+    message_bounced.disconnect(receiver)
+
+
+@pytest.fixture
+def feedback_on(monkeypatch):
+    monkeypatch.setattr(communicator_settings, "COMMUNICATOR_COMPLAINT_FEEDBACK", True)
+
+
+def arf(feedback_type: str = "abuse", message_id: str = OUR_ID) -> bytes:
+    return eml("arf_abuse.eml", message_id).replace(b"{feedback_type}", feedback_type.encode())
+
+
+def test_complaints_are_ignored_while_the_feedback_loop_is_off(channel):
+    go_live(channel)
+    make_sent(channel, "owner@example-shop-6.test")
+
+    assert ingest(channel, arf()) is None
+    assert not Suppression.objects.exists() and not Reply.objects.exists()
+
+
+def test_live_complaint_suppresses_stops_the_sequence_notifies_and_signals(
+    channel, bounced, feedback_on, django_capture_on_commit_callbacks
+):
+    go_live(channel)
+    message = make_sent(channel, "owner@example-shop-6.test")
+
+    with mock.patch(NOTIFY) as notify, django_capture_on_commit_callbacks(execute=True):
+        reply = ingest(channel, arf())
+
+    message.refresh_from_db()
+    assert (reply.kind, reply.matched_by, reply.message_id) == (ReplyKind.COMPLAINT, ReplyMatch.FEEDBACK, message.pk)
+    assert message.status == MessageStatus.SENT
+    row = Suppression.objects.get()
+    assert (row.value, row.reason) == ("owner@example-shop-6.test", "complaint")
+    assert state_of(message).stop_reason == SequenceStopReason.COMPLAINT
+    assert notify.call_args.kwargs["severity"] == "high" and notify.call_args.kwargs["title"] == "Spam complaint"
+    assert [(c["hard"], c["reason"], c["message"].pk) for c in bounced] == [(True, "complaint", message.pk)]
+    assert ingest(channel, arf()).pk == reply.pk
+
+
+def test_fraud_report_is_a_complaint(channel, feedback_on):
+    make_sent(channel, "owner@example-shop-6.test")
+
+    assert ingest(channel, arf("fraud")).kind == ReplyKind.COMPLAINT
+
+
+def test_complaint_in_sandbox_is_stored_but_changes_nothing(
+    channel, sandbox, bounced, feedback_on, django_capture_on_commit_callbacks
+):
+    message = make_sent(channel, "owner@example-shop-6.test")
+
+    with mock.patch(NOTIFY) as notify, django_capture_on_commit_callbacks(execute=True):
+        reply = ingest(channel, arf())
+
+    assert reply.kind == ReplyKind.COMPLAINT and not Suppression.objects.exists() and not bounced
+    assert state_of(message).stopped_at is None and not notify.called
+
+
+def test_not_spam_reports_and_forged_recipients_are_ignored(channel, feedback_on):
+    go_live(channel)
+    make_sent(channel, "owner@example-shop-6.test")
+
+    assert ingest(channel, arf("not-spam")) is None
+    forged = arf().replace(
+        b"Original-Rcpt-To: <owner@example-shop-6.test>", b"Original-Rcpt-To: <victim@example-shop-9.test>"
+    )
+    assert ingest(channel, forged) is None
+    assert not Suppression.objects.exists()
+
+
+def test_live_hard_bounce_sends_message_bounced(channel, bounced, django_capture_on_commit_callbacks):
+    go_live(channel)
+    message = make_sent(channel, "owner@example-shop-6.test")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        ingest(channel, eml("dsn_hard.eml"))
+
+    assert [(c["hard"], c["reason"], c["message"].pk) for c in bounced] == [(True, "", message.pk)]
+
+
+def test_sandbox_hard_bounce_sends_no_signal(channel, sandbox, bounced, django_capture_on_commit_callbacks):
+    make_sent(channel, "owner@example-shop-6.test")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        ingest(channel, eml("dsn_hard.eml"))
+
+    assert bounced == []

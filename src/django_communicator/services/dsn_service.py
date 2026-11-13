@@ -2,7 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Delivery status notifications (RFC 3464): detection and the fields the inbound flow needs.
+"""Delivery status notifications (RFC 3464) and feedback reports (RFC 5965): detection and the fields the inbound
+flow needs.
 
 Only the report's own parts are read — a message/rfc822 attachment is never walked into, so a reply that forwards a
 bounce is not a DSN.
@@ -54,9 +55,14 @@ def parse(msg: EmailMessage) -> Dsn:
 
 def _status_fields(msg: EmailMessage) -> dict[str, str]:
     """Per-message and first per-recipient fields of the delivery-status part, lower-cased names."""
+    return _report_fields(msg, "message/delivery-status")
+
+
+def _report_fields(msg: EmailMessage, content_type: str) -> dict[str, str]:
+    """The first value of every field of the report part `content_type`, lower-cased names."""
     fields: dict[str, str] = {}
     for part in msg.iter_parts():
-        if part.get_content_type() != "message/delivery-status":
+        if part.get_content_type() != content_type:
             continue
         for block in part.get_payload():
             for name, value in block.items():
@@ -82,3 +88,37 @@ def _returned_messages(msg: EmailMessage) -> list[EmailMessage]:
         elif part.get_content_type() == "text/rfc822-headers":
             returned.append(message_from_string(part.get_content(), policy=policy.default))
     return returned
+
+
+COMPLAINT_TYPES = frozenset({"abuse", "fraud"})
+
+
+@dataclass(frozen=True)
+class Arf:
+    """A feedback report: a recipient marked the mail as spam (`abuse`, `fraud`) or something else."""
+
+    feedback_type: str
+    original_message_id: str
+    recipient: str
+
+    @property
+    def is_complaint(self) -> bool:
+        return self.feedback_type in COMPLAINT_TYPES
+
+
+def is_arf(msg: EmailMessage) -> bool:
+    """Top-level `multipart/report; report-type=feedback-report` only."""
+    report_type = str(msg.get_param("report-type", "")).lower()
+    return msg.get_content_type() == "multipart/report" and report_type == "feedback-report"
+
+
+def parse_arf(msg: EmailMessage) -> Arf:
+    fields = _report_fields(msg, "message/feedback-report")
+    candidates = ids_in(fields.get("original-message-id", ""))
+    for returned in _returned_messages(msg):
+        candidates += header_ids(returned, "Message-ID")
+    return Arf(
+        feedback_type=fields.get("feedback-type", "").lower(),
+        original_message_id=candidates[0] if candidates else "",
+        recipient=fields.get("original-rcpt-to", "").rpartition(";")[2].strip().strip("<>").lower(),
+    )

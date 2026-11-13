@@ -33,7 +33,7 @@ from django_communicator.services import (
     sequence_service,
     suppression_service,
 )
-from django_communicator.signals import message_sent
+from django_communicator.signals import message_bounced, message_sent
 
 logger = logging.getLogger(__name__)
 
@@ -172,9 +172,15 @@ def _fail(message: Message, error: Exception, attempts: int, now: datetime) -> N
 
 
 def _suppress_live_recipient(message: Message, code: int) -> None:
-    channel = message.thread.channel
-    if channel.mode != ChannelMode.LIVE:
+    """Live only: the recipient is suppressed and `message_bounced` follows on commit."""
+    if message.thread.channel.mode != ChannelMode.LIVE:
         return
+    _create_smtp_suppression(message, code)
+    transaction.on_commit(lambda: message_bounced.send(sender=Message, message=message, hard=True, reason=""))
+
+
+def _create_smtp_suppression(message: Message, code: int) -> None:
+    channel = message.thread.channel
     try:
         suppression_service.create_suppression(
             channel, kind=SuppressionKind.EMAIL, value=message.thread.recipient_email, reason=f"smtp {code}"
