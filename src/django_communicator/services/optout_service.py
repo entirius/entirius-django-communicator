@@ -13,7 +13,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.utils import timezone
 
-from django_communicator.enums import ReplyKind, SequenceStopReason
+from django_communicator.enums import ReplyKind, SequenceStopReason, SuppressionSource
 from django_communicator.models import Reply, Thread, ThreadSequenceState
 from django_communicator.services import inbound_service, sequence_service, suppression_service
 from django_communicator.services.exceptions import ClientError
@@ -34,7 +34,9 @@ def confirm(reply: Reply, *, user) -> Reply:
     reply = _locked_suspicion(reply)
     thread = reply.thread
     email = thread.recipient_email
-    suppression_service.suppress_email(thread.channel, email, reason=OPTOUT_REASON, user=user)
+    suppression_service.suppress_email(
+        thread.channel, email, source=SuppressionSource.OPTOUT_CONFIRMED, reason=OPTOUT_REASON, user=user
+    )
     sequence_service.stop_sequence(thread, SequenceStopReason.OPTOUT)
     reply.optout_confirmed_at, reply.optout_confirmed_by = timezone.now(), user
     reply.save(update_fields=["optout_confirmed_at", "optout_confirmed_by", "modified_at"])

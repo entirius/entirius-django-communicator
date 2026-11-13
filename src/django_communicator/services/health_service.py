@@ -30,12 +30,11 @@ from django_communicator.enums import (
     PauseAction,
     ReplyKind,
     SuppressionKind,
+    SuppressionSource,
 )
 from django_communicator.models import Channel, HealthPolicy, Mailbox, MailboxPauseLog, Message, Reply, Suppression
 from django_communicator.services import alert_service, counter_service, mailbox_service
 from django_communicator.services.exceptions import ClientError
-from django_communicator.services.optout_service import OPTOUT_REASON
-from django_communicator.services.unsubscribe_service import REASON as UNSUBSCRIBE_REASON
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +49,8 @@ _REPLY_COUNTERS = {
     ReplyKind.COMPLAINT: "complaints",
     ReplyKind.REPLY: "replies",
 }
+
+OPTOUT_SOURCES = (SuppressionSource.OPTOUT_CONFIRMED, SuppressionSource.UNSUBSCRIBE_LINK)
 
 Counts = dict[int | None, dict[str, int]]
 
@@ -92,10 +93,13 @@ def _replies(channel: Channel, since: datetime) -> QuerySet[Reply]:
 
 
 def _optouts(channel: Channel, since: datetime) -> dict[int | None, int]:
-    """Opt-out suppressions of the window, each on the mailbox of the address's newest sent mail."""
-    reasons = (OPTOUT_REASON, UNSUBSCRIBE_REASON)
+    """Opt-out suppressions of the window (the channel's rows and global ones), each on the mailbox of the
+    address's newest sent mail in the channel."""
     rows = Suppression.objects.filter(
-        channel=channel, kind=SuppressionKind.EMAIL, reason__in=reasons, modified_at__gt=since
+        Q(channel=channel) | Q(channel=None),
+        kind=SuppressionKind.EMAIL,
+        source__in=OPTOUT_SOURCES,
+        modified_at__gt=since,
     )
     emails = list(rows.values_list("value", flat=True))
     if not emails:

@@ -50,6 +50,8 @@ dependencies = [
 dev  = ["ruff", "pre-commit"]
 # Soft dependency: toolbox failures raise a notification only when django_notifications is installed.
 notifications = ["entirius-django-notifications>=0.1.0"]
+# Address verification (`COMMUNICATOR_VERIFY_ENABLED`): DNS lookups. Without it every check answers `dns_error`.
+verify = ["dnspython>=2.6"]
 test = [
     "pytest",
     "pytest-django",

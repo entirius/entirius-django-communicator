@@ -27,9 +27,10 @@ from django.db import transaction
 from django.utils import timezone
 
 from django_communicator import settings as communicator_settings
-from django_communicator.enums import ChannelMode, FailureCode, MailboxState, MessageStatus, SuppressionKind
+from django_communicator.enums import ChannelMode, FailureCode, MailboxState, MessageStatus, SuppressionSource
 from django_communicator.models import Channel, Message
 from django_communicator.services import (
+    address_service,
     alert_service,
     channel_service,
     mail_builder,
@@ -123,8 +124,8 @@ def _refusal(message: Message) -> tuple[str, dict] | None:
     """Suppressed since approval, a preflight problem (`failed/<code>`), or a follow-up whose thread got a reply or
     whose sequence no longer runs."""
     thread = message.thread
-    if suppression_service.is_suppressed(thread.channel, thread.recipient_email):
-        return MessageStatus.SUPPRESSED, {}
+    if code := suppression_service.can_mail(thread.channel, thread.recipient_email):
+        return MessageStatus.SUPPRESSED, {"failure_detail": code}
     if blocker := preflight_service.problem(message):
         return MessageStatus.FAILED, {"failure_code": blocker[0], "failure_detail": blocker[1]}
     blocker = sequence_service.follow_up_blocker(message)
@@ -219,18 +220,17 @@ def _fail(message: Message, error: Exception, attempts: int, now: datetime) -> N
 
 
 def _suppress_live_recipient(message: Message, code: int) -> None:
-    """Live only: the recipient is suppressed and `message_bounced` follows on commit."""
+    """Live only: the recipient is suppressed, its address `invalid / hard_bounce`, and `message_bounced` follows on
+    commit."""
     if message.thread.channel.mode != ChannelMode.LIVE:
         return
     _create_smtp_suppression(message, code)
+    address_service.mark_hard_bounce(message.thread.recipient_email)
     transaction.on_commit(lambda: message_bounced.send(sender=Message, message=message, hard=True, reason=""))
 
 
 def _create_smtp_suppression(message: Message, code: int) -> None:
     channel = message.thread.channel
-    try:
-        suppression_service.create_suppression(
-            channel, kind=SuppressionKind.EMAIL, value=message.thread.recipient_email, reason=f"smtp {code}"
-        )
-    except (ValueError, suppression_service.DuplicateSuppressionError):
-        pass
+    suppression_service.suppress_email(
+        channel, message.thread.recipient_email, source=SuppressionSource.BOUNCE, reason=f"smtp {code}"
+    )

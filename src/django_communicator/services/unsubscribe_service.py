@@ -17,7 +17,7 @@ from django.core import signing
 from django.db import transaction
 
 from django_communicator import settings as communicator_settings
-from django_communicator.enums import SequenceStopReason
+from django_communicator.enums import SequenceStopReason, SuppressionSource
 from django_communicator.models import Channel, Reply, Thread
 from django_communicator.services import optout_service, sequence_service, suppression_service
 from django_communicator.services.exceptions import ClientError
@@ -72,7 +72,9 @@ def unsubscribe(token: str) -> tuple[Channel, str]:
     suppressed for another reason (bounce, manual) takes the unsubscribe reason and the objection is recorded; one
     already unsubscribed changes nothing more (a second click is harmless). Raises `InvalidTokenError`."""
     channel, email = read_token(token)
-    if not suppression_service.suppress_email_for(channel, email, reason=REASON):
+    if not suppression_service.suppress_email_for(
+        channel, email, source=SuppressionSource.UNSUBSCRIBE_LINK, reason=REASON
+    ):
         return channel, email
     threads = list(Thread.objects.filter(channel=channel, recipient_email__iexact=email))
     for thread in threads:

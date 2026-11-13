@@ -7,7 +7,7 @@ only when django_leads is installed."""
 
 import logging
 
-from django_communicator.services import anonymisation_service, suppression_service
+from django_communicator.services import address_service, anonymisation_service, suppression_service
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +19,14 @@ def connect() -> None:
 
 
 def on_contact_anonymised(sender, email_hash: str, anonymised_email: str, subject_ref: str, **kwargs) -> None:
-    """The token suppressed on every channel (erase and retention alike), then the threads follow. Idempotent: a
-    thread already carrying the token no longer matches the hash. Never raises into leads."""
+    """The token suppressed on every channel (erase and retention alike), the address status dropped, then the
+    threads follow. Idempotent: a thread already carrying the token no longer matches the hash. Never raises into
+    leads."""
     try:
         if anonymised_email:
             suppression_service.suppress_token(anonymised_email, reason="contact_anonymised")
         thread_ids = anonymisation_service.threads_of_hash(subject_ref, email_hash)
+        address_service.forget(anonymisation_service.recipients_of(thread_ids))
         anonymisation_service.anonymise_recipients(thread_ids, anonymised_email, email_hash)
     except Exception:
         logger.exception("communicator: anonymising threads of %s failed", subject_ref)

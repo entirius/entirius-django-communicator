@@ -5,6 +5,7 @@ from django import forms
 from django.contrib import admin
 
 from django_communicator.models import (
+    AddressStatus,
     Channel,
     HealthPolicy,
     InboundQuarantine,
@@ -59,9 +60,16 @@ class MessageTemplateAdmin(admin.ModelAdmin):
 
 @admin.register(Suppression)
 class SuppressionAdmin(admin.ModelAdmin):
-    list_display = ("value", "kind", "channel", "reason", "created_at")
-    list_filter = ("channel", "kind")
+    list_display = ("value", "kind", "channel", "source", "reason", "created_at")
+    list_filter = ("channel", "kind", "source")
     search_fields = ("value",)
+
+
+@admin.register(AddressStatus)
+class AddressStatusAdmin(admin.ModelAdmin):
+    list_display = ("email", "status", "reason", "verified_at")
+    list_filter = ("status", "reason")
+    search_fields = ("email",)
 
 
 @admin.register(Message)

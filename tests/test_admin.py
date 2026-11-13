@@ -15,7 +15,7 @@ def superuser_client(client, db):
 
 
 def test_admin_pages_render(superuser_client, ai_template):
-    for url in ("channel", "messagetemplate", "suppression", "message"):
+    for url in ("channel", "messagetemplate", "suppression", "addressstatus", "message"):
         assert superuser_client.get(f"/admin/django_communicator/{url}/").status_code == 200
     assert (
         superuser_client.get(f"/admin/django_communicator/messagetemplate/{ai_template.pk}/change/").status_code == 200

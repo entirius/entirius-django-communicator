@@ -6,12 +6,15 @@
 
 from typing import Any
 
+from django.utils import timezone
 from django_utils.toolbox import ToolboxDisabledError, ToolboxError, is_enabled
 from pydantic import BaseModel, Field
 
+from django_communicator import settings as communicator_settings
 from django_communicator.enums import FailureCode, MessageStatus, TemplateKind, ThreadStatus
 from django_communicator.models import Channel, Message, MessageTemplate, Thread
 from django_communicator.services import (
+    address_service,
     channel_service,
     drafting_service,
     mailbox_service,
@@ -54,7 +57,7 @@ def communicate(
     audience: str = "",
     mailbox_user_id: int | None = None,
 ) -> Message:
-    """Suppression → template → legal footer → render → static body or AI draft. Raises `Channel.DoesNotExist`.
+    """Address status and suppression (`can_mail`) → template → legal footer → render → static body or AI draft. Raises `Channel.DoesNotExist`.
 
     `audience` is the caller's opaque code (leads: the lead type); it picks the template variant, blank = default.
     `mailbox_user_id` picks the mailbox of a new thread: that user's sending mailbox in the channel, else the
@@ -65,8 +68,9 @@ def communicate(
         _check_thread(thread, channel, recipient, subject_ref)
     base = {"render_context": context, "legal_footer": recipient.legal_footer, "requires_review": requires_review}
     base["mailbox_user_id"] = mailbox_user_id
-    if suppression_service.is_suppressed(channel, recipient.email):
-        return _create(channel, recipient, subject_ref, thread, status=MessageStatus.SUPPRESSED, **base)
+    if refusal := _refusal(channel, recipient.email):
+        fields = {**base, "failure_detail": refusal}
+        return _create(channel, recipient, subject_ref, thread, status=MessageStatus.SUPPRESSED, **fields)
     try:
         template = template_service.resolve(channel, template_key, recipient.language, audience)
     except template_service.NoTemplateError:
@@ -85,6 +89,13 @@ def communicate(
     except RenderError as error:
         return _fail(channel, recipient, subject_ref, thread, FailureCode.RENDER, str(error), base)
     return _ai_draft(channel, recipient, subject_ref, thread, template, prompt, base)
+
+
+def _refusal(channel: Channel, email: str) -> str | None:
+    """`can_mail`; with `COMMUNICATOR_VERIFY_ENABLED` an unknown or stale address is checked first (DNS, no lock)."""
+    if communicator_settings.COMMUNICATOR_VERIFY_ENABLED:
+        address_service.verify_if_due(email, timezone.now())
+    return suppression_service.can_mail(channel, email)
 
 
 def _static(channel, recipient, subject_ref, thread, template: MessageTemplate, values: dict, base: dict) -> Message:

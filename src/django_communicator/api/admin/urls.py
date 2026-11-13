@@ -44,6 +44,7 @@ urlpatterns = [
     path("models/", template.ModelListView.as_view(), name="admin-communicator-models"),
     path("suppressions/", suppression.SuppressionListView.as_view(), name="admin-communicator-suppressions"),
     path("suppressions/<int:pk>/", suppression.SuppressionDetailView.as_view(), name="admin-communicator-suppression"),
+    path("addresses/status/", suppression.AddressStatusView.as_view(), name="admin-communicator-address-status"),
     path("channel/", sending.ChannelConfigView.as_view(), name="admin-communicator-channel"),
     path("policy/", sending.PolicyView.as_view(), name="admin-communicator-policy"),
     path("messages/", sending.OutboxListView.as_view(), name="admin-communicator-messages"),

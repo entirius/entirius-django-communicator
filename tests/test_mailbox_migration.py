@@ -20,6 +20,11 @@ def migrate(targets):
     return executor.loader.project_state(targets).apps
 
 
+def latest():
+    """The app's newest migration: teardown leaves the schema every later test expects."""
+    return MigrationExecutor(connection).loader.graph.leaf_nodes(APP)
+
+
 def raw(table: str, column: str) -> str:
     with connection.cursor() as cursor:
         cursor.execute(f"SELECT {column} FROM {table}")  # noqa: S608 — test-only names
@@ -30,7 +35,7 @@ def raw(table: str, column: str) -> str:
 def old_state(transactional_db):
     apps = migrate(BEFORE)
     yield apps
-    migrate(AFTER)
+    migrate(latest())
 
 
 def test_one_row_forward_and_back(old_state):

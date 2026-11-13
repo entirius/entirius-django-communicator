@@ -100,3 +100,17 @@ COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS = getattr(
 COMMUNICATOR_UNSUBSCRIBE_BASE_URL = getattr(settings, "COMMUNICATOR_UNSUBSCRIBE_BASE_URL", "")
 # Approval inbox: at most this many message ids per bulk approve / reject request.
 COMMUNICATOR_BULK_APPROVAL_MAX = getattr(settings, "COMMUNICATOR_BULK_APPROVAL_MAX", 100)
+
+# Suppression scope: "channel" = a new email / domain suppression holds in its channel; "install" = in every channel
+# (a global row). Global rows are honoured under both; switching never rewrites rows (`communicator_suppressions`).
+COMMUNICATOR_SUPPRESSION_SCOPE = getattr(settings, "COMMUNICATOR_SUPPRESSION_SCOPE", "channel")
+# Address verification (syntax, disposable domain, DNS; never an SMTP probe). Off = only hard bounces set a status.
+COMMUNICATOR_VERIFY_ENABLED = getattr(settings, "COMMUNICATOR_VERIFY_ENABLED", False)
+COMMUNICATOR_VERIFY_MAX_AGE_DAYS = getattr(settings, "COMMUNICATOR_VERIFY_MAX_AGE_DAYS", 30)
+COMMUNICATOR_VERIFY_BATCH = getattr(settings, "COMMUNICATOR_VERIFY_BATCH", 200)
+COMMUNICATOR_DISPOSABLE_DOMAINS = getattr(
+    settings,
+    "COMMUNICATOR_DISPOSABLE_DOMAINS",
+    ["mailinator.com", "guerrillamail.com", "10minutemail.com", "yopmail.com", "tempmail.com", "trashmail.com",
+     "sharklasers.com", "getnada.com", "dispostable.com", "throwawaymail.com"],
+)  # fmt: skip

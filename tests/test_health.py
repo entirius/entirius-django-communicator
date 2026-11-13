@@ -9,7 +9,14 @@ from unittest import mock
 
 import pytest
 
-from django_communicator.enums import ChannelMode, Direction, MessageStatus, ReplyKind, SuppressionKind
+from django_communicator.enums import (
+    ChannelMode,
+    Direction,
+    MessageStatus,
+    ReplyKind,
+    SuppressionKind,
+    SuppressionSource,
+)
 from django_communicator.models import (
     Channel,
     HealthPolicy,
@@ -21,7 +28,6 @@ from django_communicator.models import (
     Thread,
 )
 from django_communicator.services import counter_service, health_service, send_service
-from django_communicator.services.optout_service import OPTOUT_REASON
 from tests.conftest import MONDAY_10, api_url, approved_message
 from tests.factories import MAILBOX_SECRET, make_mailbox
 
@@ -79,7 +85,10 @@ def test_counts_attributed_by_thread_mailbox(channel, two):
     reply(first_mail[1], ReplyKind.REPLY)
     reply(second_mail[0], ReplyKind.COMPLAINT)
     Suppression.objects.create(
-        channel=channel, kind=SuppressionKind.EMAIL, value=first_mail[2].thread.recipient_email, reason=OPTOUT_REASON
+        channel=channel,
+        kind=SuppressionKind.EMAIL,
+        value=first_mail[2].thread.recipient_email,
+        source=SuppressionSource.OPTOUT_CONFIRMED,
     )
 
     found = health_service.counts(channel, MONDAY_10 - timedelta(days=1))

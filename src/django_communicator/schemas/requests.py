@@ -14,7 +14,8 @@ from django_communicator.enums import (
     MessageStatus,
     ReplyKind,
     SmtpSecurity,
-    SuppressionKind,
+    SuppressionScope,
+    SuppressionSource,
     TemplateKind,
 )
 from django_communicator.services.communicate_service import RecipientData
@@ -94,9 +95,26 @@ class TestGenerateRequest(BaseModel):
 class SuppressionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    kind: SuppressionKind = Field(description="email or domain.", examples=["domain"])
+    kind: Literal["email", "domain"] = Field(
+        description="email or domain (`email_token` rows are written by erasure only).", examples=["domain"]
+    )
     value: str = Field(min_length=1, max_length=254, description="Email, or a domain / host.", examples=["shop.test"])
     reason: str = Field(default="", max_length=255, description="Why.", examples=["Asked not to be contacted"])
+
+
+class SuppressionListQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    value: str = Field(default="", max_length=254, description="Only rows with this value (lower-cased).")
+    scope: SuppressionScope | None = Field(default=None, description="channel: rows of the channel · install: global.")
+    source: SuppressionSource | None = Field(default=None, description="Only rows written by this source.")
+    search: str = Field(default="", max_length=254, description="Part of the value, case-insensitive.")
+
+
+class AddressStatusQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    email: str = Field(min_length=3, max_length=254, description="The address to explain.", examples=["jan@shop.test"])
 
 
 class DevCommunicateRequest(BaseModel):

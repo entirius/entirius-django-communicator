@@ -48,6 +48,43 @@ class SuppressionKind(models.TextChoices):
     EMAIL_TOKEN = "email_token", "Erased address token (all channels)"
 
 
+class SuppressionScope(models.TextChoices):
+    """`COMMUNICATOR_SUPPRESSION_SCOPE`, and the scope of one row: a channel row or a global row (no channel)."""
+
+    CHANNEL = "channel", "Channel"
+    INSTALL = "install", "Install"
+
+
+class SuppressionSource(models.TextChoices):
+    MANUAL = "manual", "Manual"
+    OPTOUT_CONFIRMED = "optout_confirmed", "Opt-out confirmed"
+    UNSUBSCRIBE_LINK = "unsubscribe_link", "Unsubscribe link"
+    BOUNCE = "bounce", "Hard bounce"
+    COMPLAINT = "complaint", "Spam complaint"
+    ERASED = "erased", "Erased or anonymised"
+
+
+class AddressState(models.TextChoices):
+    """Status of one address; only `invalid` blocks mail."""
+
+    UNKNOWN = "unknown", "Unknown"
+    VALID = "valid", "Valid"
+    RISKY = "risky", "Risky"
+    INVALID = "invalid", "Invalid"
+
+
+class AddressReason(models.TextChoices):
+    SYNTAX = "syntax", "Syntax"
+    DISPOSABLE = "disposable", "Disposable domain"
+    DOMAIN_NOT_FOUND = "domain_not_found", "Domain not found"
+    NULL_MX = "null_mx", "Null MX"
+    NO_MAIL_SERVER = "no_mail_server", "No mail server"
+    MX_OK = "mx_ok", "MX found"
+    NO_MX_ADDRESS_FALLBACK = "no_mx_address_fallback", "No MX, address record only"
+    HARD_BOUNCE = "hard_bounce", "Hard bounce"
+    DNS_ERROR = "dns_error", "DNS error"
+
+
 class FailureCode(models.TextChoices):
     NO_TEMPLATE = "no_template", "No template"
     RENDER = "render", "Render"

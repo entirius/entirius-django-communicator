@@ -29,10 +29,12 @@ from django_communicator.enums import (
     ReplyKind,
     ReplyMatch,
     SequenceStopReason,
+    SuppressionSource,
     ThreadStatus,
 )
 from django_communicator.models import Channel, Message, Reply, Thread
 from django_communicator.services import (
+    address_service,
     alert_service,
     clock_service,
     dsn_service,
@@ -262,7 +264,9 @@ def _hard_bounce(channel: Channel, inbound: Inbound, match: Match, dsn: dsn_serv
     reply = _store(inbound, match, ReplyKind.BOUNCE_HARD)
     _fail_bounced(match.message, dsn)
     if channel.mode == ChannelMode.LIVE:
-        suppression_service.suppress_email(channel, match.thread.recipient_email, reason=f"dsn {dsn.status}")
+        email = match.thread.recipient_email
+        suppression_service.suppress_email(channel, email, source=SuppressionSource.BOUNCE, reason=f"dsn {dsn.status}")
+        address_service.mark_hard_bounce(email)
     sequence_service.stop_sequence(match.thread, SequenceStopReason.BOUNCE)
     alert_service.notify_subject(channel, subject_ref=match.thread.subject_ref, severity="low", title="Bounce")
     if channel.mode == ChannelMode.LIVE:  # a sandbox bounce says nothing about the real recipient
@@ -283,7 +287,9 @@ def _ingest_complaint(channel: Channel, inbound: Inbound) -> Reply | None:
     match = Match(thread=message.thread, message=message, matched_by=ReplyMatch.FEEDBACK)
     reply = _store(inbound, match, ReplyKind.COMPLAINT)
     if channel.mode == ChannelMode.LIVE:
-        suppression_service.suppress_email(channel, match.thread.recipient_email, reason="complaint")
+        suppression_service.suppress_email(
+            channel, match.thread.recipient_email, source=SuppressionSource.COMPLAINT, reason="complaint"
+        )
         sequence_service.stop_sequence(match.thread, SequenceStopReason.COMPLAINT)
         alert_service.notify_subject(
             channel, subject_ref=match.thread.subject_ref, severity="high", title="Spam complaint"

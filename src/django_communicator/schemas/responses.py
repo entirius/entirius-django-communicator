@@ -170,17 +170,51 @@ class ModelListResponse(BaseModel):
 
 
 class SuppressionResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: int = Field(description="Suppression id.", examples=[1])
-    kind: str = Field(description="email, domain or email_token (global).", examples=["domain"])
+    kind: str = Field(description="email, domain or email_token (always global).", examples=["domain"])
     value: str = Field(description="Lower-cased email or registrable domain.", examples=["shop.test"])
-    reason: str = Field(description="Why.", examples=[""])
+    scope: str = Field(description="channel: this channel only · install: every channel.", examples=["channel"])
+    source: str = Field(
+        description="manual, optout_confirmed, unsubscribe_link, bounce, complaint or erased.", examples=["manual"]
+    )
+    reason: str = Field(description="Free note.", examples=[""])
     created_at: datetime = Field(description="Created.", examples=["2026-09-13T12:00:00Z"])
+
+    @classmethod
+    def of(cls, row) -> "SuppressionResponse":
+        fields = {name: getattr(row, name) for name in cls.model_fields if name not in ("id", "scope")}
+        return cls(id=row.pk, scope="install" if row.channel_id is None else "channel", **fields)
 
 
 class SuppressionListResponse(BaseModel):
     results: list[SuppressionResponse] = Field(description="Suppressions of the channel.", examples=[[]])
+
+
+class AddressStatusResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status: str = Field(description="unknown, valid, risky or invalid; only invalid blocks.", examples=["invalid"])
+    reason: str = Field(description="Code: syntax, disposable, domain_not_found, null_mx, no_mail_server, mx_ok, "
+                        "no_mx_address_fallback, hard_bounce or dns_error.", examples=["hard_bounce"])  # fmt: skip
+    verified_at: datetime | None = Field(description="When it was written.", examples=["2026-09-13T12:00:00Z"])
+
+
+class MatchingSuppressionResponse(BaseModel):
+    id: int = Field(description="Suppression id.", examples=[1])
+    kind: str = Field(description="email, domain or email_token.", examples=["email"])
+    scope: str = Field(description="channel or install.", examples=["install"])
+    source: str = Field(description="What wrote the row.", examples=["unsubscribe_link"])
+    reason: str = Field(description="Free note.", examples=[""])
+    created_at: datetime = Field(description="Created.", examples=["2026-09-13T12:00:00Z"])
+
+
+class AddressExplainResponse(BaseModel):
+    email: str = Field(description="The normalised address.", examples=["jan@shop.test"])
+    refusal: str | None = Field(
+        description="address_invalid, suppressed, or null: the channel may mail the address.", examples=["suppressed"]
+    )
+    suppressions: list[MatchingSuppressionResponse] = Field(description="Rows that match in this channel.")
+    address_status: AddressStatusResponse | None = Field(description="Null: nothing known about the address.")
 
 
 class OutboxMessageResponse(MessageDetailResponse):
