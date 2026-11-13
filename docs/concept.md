@@ -155,7 +155,9 @@ Python's SMTP policy would otherwise turn the long URL into RFC 2047 encoded wor
 header is written as before. The URL carries a `django.core.signing` token over `{c: channel idx, e: address}` with
 its own salt and no expiry. The public route shows a confirmation page on GET; a POST suppresses the address on the
 channel (reason `unsubscribe link`), stops every sequence of the address in the channel (`optout`), sends
-`optout_confirmed` once per `subject_ref` and records the agreements objection. A second POST changes nothing.
+`optout_confirmed` once per `subject_ref` and records the agreements objection. An address already suppressed for
+another reason (bounce, manual) takes the reason `unsubscribe link` and gets the same steps; a second POST changes
+nothing. Our own unsubscribe line quoted back in a reply is ignored by the opt-out phrase match.
 Empty base URL = no headers, no link.
 
 **SMTP errors** (C-19): 5xx → `failed/smtp`; the recipient is suppressed only in `live` and only when
@@ -200,7 +202,8 @@ tracked) and hands each mail to `inbound_service.ingest`, in fixed order:
    matched_by=feedback)`; the message status stays. On a live channel the recipient is suppressed (reason
    `complaint`), the sequence stops (`complaint`), a `high` alert goes out and `message_bounced(hard=True,
    reason="complaint")` follows. A sandbox or dry-run complaint is stored only — it says nothing about the real
-   recipient. Another feedback type or an `Original-Rcpt-To` other than the thread recipient is dropped.
+   recipient. Another feedback type is dropped; `Original-Rcpt-To` is not compared (feedback loops redact it, our
+   Message-ID names the recipient).
 3. **Thread match** — our Message-ID in `In-Reply-To`/`References` (`header`, C-20), else the newest open
    thread of the sender whose last outbound predates the mail (`sender`, C-21); no match → dropped.
 4. **Autoresponder** headers or subject patterns → `auto`, nothing else (C-22).
