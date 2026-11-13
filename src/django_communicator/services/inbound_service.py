@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Inbound mail → `Reply`. Fixed order: duplicate → DSN → thread match → autoresponder → opt-out → reply.
+"""Inbound mail → `Reply`. Fixed order: duplicate → DSN → complaint → thread match → autoresponder → opt-out → reply.
 
 The only writer of `Thread.status` besides the plan 05 close action; a closed thread stays closed. Unmatched mail is
 dropped, not stored. Dedup is per channel: the same mail in two channels' mailboxes is ingested for each.

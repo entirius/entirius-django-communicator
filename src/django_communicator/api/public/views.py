@@ -22,7 +22,11 @@ from django_communicator.services import unsubscribe_service
 
 _TAGS = ["Communicator Public"]
 _TEMPLATE = "django_communicator/unsubscribe.html"
-_HTML = {200: OpenApiResponse(OpenApiTypes.STR, description="HTML page."), 400: None, 429: None}
+_HTML = {
+    (200, "text/html"): OpenApiResponse(OpenApiTypes.STR, description="The page."),
+    (400, "text/html"): OpenApiResponse(OpenApiTypes.STR, description="Invalid link page (one generic message)."),
+    429: OpenApiResponse(description="Throttled."),
+}
 _TEXTS = {
     "pl": {
         "lang": "pl",

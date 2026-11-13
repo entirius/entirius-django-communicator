@@ -60,6 +60,7 @@ installed, only log lines remain.
 | high | SMTP refused the sender or the message | `SMTPSenderRefused` / `SMTPDataError` | once per channel day |
 | high (`budget`, `model`) / medium | Message draft failed: `<code>` (`<template key>`) | toolbox failure on draft or rewrite | per message |
 | high | Reply from `<sender>` | a human reply matched to a thread | per reply |
+| high | Spam complaint | an ARF `abuse`/`fraud` report on a live channel (`COMMUNICATOR_COMPLAINT_FEEDBACK`) | per complaint |
 | medium | Possible opt-out | opt-out phrase detected | per reply |
 | medium | IMAP poll failed | a mailbox poll failed | once per channel day |
 | low | Bounce | hard bounce | per bounce |
@@ -77,9 +78,28 @@ Escalation to email / Google Chat is configured in django_notifications (`Delive
 | `InboundQuarantine` rows (Django admin) | mail the poll could never ingest: `oversized`, `unparseable`, `data_error` — no body stored | read the mail in the mailbox by UID |
 | `MailboxConfig.last_polled_at` stale | poll not running or failing | worker `-Q communicator_inbound`, "IMAP poll failed" alerts |
 | `Message.delivery_note` | the last DSN that changed nothing (`delayed`, …) | informational |
+| `failed/legal_footer` | an approved message reached the delivery without the legal footer its template (or the missing template) requires | fix the caller's footer; the message stays failed |
+| `Reply(kind=complaint)` | a recipient marked our mail as spam | live: already suppressed and stopped; check the template and the list |
+| `BulkApprovalLog` (`GET approvals/log/`) | who approved or rejected drafts in bulk, which ids failed and why | audit |
+| `Suppression.reason = "unsubscribe link"` | a recipient used the one-click unsubscribe | none — final |
 
 The daily counter lives in Redis (`communicator:sent:<idx>:<channel day>`, 48 h TTL). Losing Redis
 resets today's count — the cap can be exceeded once on that day.
+
+## Outbound
+
+- **Approval inbox.** `GET api/communicator/v2/admin/approvals/` shows every draft waiting for a person across
+  channels, oldest first, with a `blocker` when approving would be refused. Bulk approve / reject takes at most
+  `COMMUNICATOR_BULK_APPROVAL_MAX` (100) ids per call.
+- **Autostart sequence.** `PATCH sequences/<id>/ {"autostart": true}` makes a sequence start by itself after the
+  first templated delivery of a new thread; one per channel. Switching it off stops new starts only.
+- **One-click unsubscribe.** Set `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` to the public URL of the service before
+  going live; the route `api/communicator/v2/public/unsubscribe/<token>/` must be reachable from the internet and is
+  throttled per client address (`DEFAULT_THROTTLE_RATES["communicator_unsubscribe"]`, fallback `20/hour`). Behind a
+  proxy set DRF `NUM_PROXIES` so the throttle sees the client, not the proxy.
+- **Complaints.** Point the provider's feedback loop at a polled mailbox and set
+  `COMMUNICATOR_COMPLAINT_FEEDBACK = True`.
+
 
 ## Inbound mailbox
 
@@ -106,6 +126,8 @@ Channel: `________` · Date: `________` · Operator: `________` · Sales owner: 
       not a TEST placeholder. Every template used by the channel keeps `requires_legal_footer = true`.
 - [ ] **Suppression list seeded.** Known opt-outs and do-not-contact domains are in `GET suppressions/`
       (kinds `email` / `domain`) for this channel.
+- [ ] **Unsubscribe.** `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` is the public URL of the service; a sandbox mail
+      carries `List-Unsubscribe` and the link, and a POST to that link from outside suppresses the canary address.
 - [ ] **SendPolicy reviewed.** `GET policy/` shows the agreed windows, `daily_cap`, `spread` and
       `business_days_only`; the channel `timezone` and `country` (holiday calendar) are correct; the sales
       owner reviewed them.

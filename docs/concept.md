@@ -1,6 +1,6 @@
 ---
 title: Concept
-description: Channels, templates and versions, communicate(), the message lifecycle, review, sending, sequences, inbound replies, suppression and GDPR.
+description: Channels, templates and versions, communicate(), the message lifecycle, review and approvals, sending, unsubscribe, sequences, inbound replies, complaints, suppression and GDPR.
 ---
 
 django-communicator turns "send this recipient the `lead.cold.shop` message about company 42" into a
@@ -72,7 +72,7 @@ draft ─┬─> review_required ─┬─> approved ─┬─> scheduled ─> s
 first-version AI draft that failed transiently (toolbox unreachable, timeout, 5xx) goes back to `review_required`
 when the beat `retry_failed_drafts` succeeds (`message_service.recover_draft`, outside the transition table).
 `failure_code` says why (`no_template`, `render`, `budget`, `schema`, `model`, `upstream`, `smtp`,
-`bounce`, `send_outcome_unknown`); `failure_detail` holds the error class, codes and field names —
+`bounce`, `send_outcome_unknown`, `legal_footer`); `failure_detail` holds the error class, codes and field names —
 never the prompt.
 
 **Toolbox switched off.** With `AI_TOOLBOX_ENABLED = False` an AI template is refused before anything is written:
@@ -86,11 +86,22 @@ templates work as before. A due AI follow-up keeps its step and due date and is 
 
 | Action | Effect |
 |---|---|
-| accept | `approved`, reviewer + time, `scheduled_at` = next policy slot (empty without a policy), `message_approved` (C-07) |
+| accept | preflight first (refused with `ReviewError` on a problem), then `approved`, reviewer + time, `scheduled_at` = next policy slot (empty without a policy), `message_approved` (C-07) |
 | rewrite (notes) | AI drafts only: new version with the notes appended to the user prompt, previous → `superseded`; a toolbox failure creates a `failed` version and keeps the reviewed one in the queue; automated rewrites capped by `COMMUNICATOR_AUTOMATED_REWRITE_LIMIT`, failures count (C-08) |
 | edit | new version `edited_by_human`, previous → `superseded`, no toolbox call (C-09) |
 | skip | `rejected` with a reason; a rejected follow-up re-arms its sequence |
 | skip company | skip + `company_skipped(subject_ref)` for the caller to stop the whole subject |
+
+**Preflight.** `preflight_service.problem(message) -> (failure_code, detail) | None` runs at accept and again in the
+delivery, before the claim. Today it checks the legal footer: required when the message's template requires one —
+also a template that started to require it after the draft was made — **and for every message without a template
+version**; a blank `legal_footer` then refuses the accept and fails the delivery with `failed/legal_footer`.
+
+**Approval inbox.** `approval_service` lists the `review_required` outbound messages of every channel (filters
+channel, template key, search, minimum age; counts per channel; each row with the preflight `blocker`) and
+approves or rejects up to `COMMUNICATOR_BULK_APPROVAL_MAX` (100) ids at once through `review_service.accept` /
+`skip`, each id on its own — a refused or vanished id lands in `failed` and never blocks the others. Every bulk call
+writes a `BulkApprovalLog` (user, action, reason, ids, done, failed).
 
 ## Sending
 
@@ -137,8 +148,18 @@ channel default language's, else none — the legal text then goes out alone, as
 part is the footer converted: blocks become lines, links `text <url>`, images dropped. The sent message stores the
 rendered footer in `footer_html`, so a later footer edit never rewrites sent mail.
 
+**One-click unsubscribe.** With `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` set every mail carries `List-Unsubscribe: <url>`
+and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058) and a link after the footer in the text and HTML
+parts, labelled in the body language (`pl`, else English). `List-Unsubscribe` is written as one unfolded line —
+Python's SMTP policy would otherwise turn the long URL into RFC 2047 encoded words no mail client reads; every other
+header is written as before. The URL carries a `django.core.signing` token over `{c: channel idx, e: address}` with
+its own salt and no expiry. The public route shows a confirmation page on GET; a POST suppresses the address on the
+channel (reason `unsubscribe link`), stops every sequence of the address in the channel (`optout`), sends
+`optout_confirmed` once per `subject_ref` and records the agreements objection. A second POST changes nothing.
+Empty base URL = no headers, no link.
+
 **SMTP errors** (C-19): 5xx → `failed/smtp`; the recipient is suppressed only in `live` and only when
-RCPT was refused (550/551/553/554). Sender or data refusals suppress nobody and raise a `high` alert.
+RCPT was refused (550/551/553/554), followed by `message_bounced(hard=True)`. Sender or data refusals suppress nobody and raise a `high` alert.
 4xx / transport errors → `scheduled` for the next run, `failed/smtp` at `COMMUNICATOR_SMTP_MAX_ATTEMPTS`.
 
 ## Sequences
@@ -156,6 +177,12 @@ The next due date counts from the delivery. Terminal outcomes go through
 (`sequence_finished`); failed / suppressed → stopped; rejected / skipped → re-armed from the last
 delivery. A reply stops the sequence; a suspected opt-out pauses it.
 
+**Autostart.** A sequence with `autostart` (at most one per channel, a partial unique constraint) starts by itself:
+the first delivered message of an open thread that never had a sequence state starts the channel's active
+autostart sequence, armed from that delivery — only when the message was rendered from a template
+(`template_version` set). A thread that ever had a state (running, paused, stopped, finished) is never restarted, and
+a hand-written message never starts one.
+
 ## Inbound
 
 Beat `poll_inbox` reads each active `MailboxConfig` read-only (`EXAMINE`, UID cursor, UIDVALIDITY
@@ -164,14 +191,23 @@ tracked) and hands each mail to `inbound_service.ingest`, in fixed order:
 1. **Duplicate** inbound Message-ID in the channel → the existing `Reply` (C-26). Our own outbound
    Message-ID (the sandbox copy) → dropped.
 2. **DSN** (top-level `multipart/report; report-type=delivery-status` only): `5.x.x` → `bounce_hard`,
-   message `failed/bounce`, recipient suppressed in `live` only, sequence stopped, `low` alert (C-24);
+   message `failed/bounce`, recipient suppressed in `live` only (then `message_bounced(hard=True)`), sequence
+   stopped, `low` alert (C-24);
    `4.x.x` → `bounce_soft`, one retry after `COMMUNICATOR_SOFT_BOUNCE_RETRY_H`, a second →
    `failed/bounce` (C-25). A `Final-Recipient` other than the thread recipient is dropped as forged.
+   **Complaint** (with `COMMUNICATOR_COMPLAINT_FEEDBACK` only): an ARF report (`multipart/report;
+   report-type=feedback-report`) of type `abuse` or `fraud` for one of our messages → `Reply(kind=complaint,
+   matched_by=feedback)`; the message status stays. On a live channel the recipient is suppressed (reason
+   `complaint`), the sequence stops (`complaint`), a `high` alert goes out and `message_bounced(hard=True,
+   reason="complaint")` follows. A sandbox or dry-run complaint is stored only — it says nothing about the real
+   recipient. Another feedback type or an `Original-Rcpt-To` other than the thread recipient is dropped.
 3. **Thread match** — our Message-ID in `In-Reply-To`/`References` (`header`, C-20), else the newest open
    thread of the sender whose last outbound predates the mail (`sender`, C-21); no match → dropped.
 4. **Autoresponder** headers or subject patterns → `auto`, nothing else (C-22).
 5. **Opt-out phrase** of the recipient language above the quote → `suspected_optout`, sequence paused,
-   thread `replied`, `medium` alert — no suppression until a human confirms (C-23).
+   thread `replied`, `medium` alert — no suppression until a human confirms (C-23). Matching runs on folded text
+   (lower case, no diacritics, `ł` → `l`, any other run of characters → one space), so a phrase is a stem:
+   "rezygnuj" covers "Rezygnujemy", "prosze nie pisac" covers "Proszę nie pisać".
 6. **Reply** → thread `replied`, `Message.replied_at`, sequence stopped, `reply_received`, `high` alert.
 
 Confirm opt-out → suppression of the thread recipient, sequence `optout`, `optout_confirmed`, and a
@@ -198,4 +234,5 @@ the subject's data.
 ## Signals
 
 All sent on commit (`signals/__init__.py`): `message_approved`, `company_skipped`, `message_sent`,
-`sequence_finished`, `reply_received`, `optout_confirmed`.
+`sequence_finished`, `reply_received`, `optout_confirmed`, `message_bounced(message, hard, reason="")` — a hard DSN,
+an SMTP 5xx recipient refusal or a complaint (`reason="complaint"`), live channels only.

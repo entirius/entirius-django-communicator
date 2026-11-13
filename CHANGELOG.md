@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Sequence autostart.** `Sequence.autostart` (at most one per channel, partial unique constraint, migration 0012):
+  the first delivered templated message of an open thread that never had a sequence state starts the channel's
+  active autostart sequence. A hand-written message (no template version) never starts one, and a thread that ever
+  had a state is never restarted. `POST sequences/` accepts `autostart`; new `PATCH sequences/<id>/`
+  (`is_active`, `autostart`); a second autostart sequence answers 409 `DUPLICATE_AUTOSTART`.
+- **One-click unsubscribe (RFC 8058).** With `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` set every mail carries
+  `List-Unsubscribe` (one unfolded line) and `List-Unsubscribe-Post`, and a link in the text and HTML parts labelled
+  by the body language. Public route `api/communicator/v2/public/unsubscribe/<token>/` (signed token, no expiry):
+  GET shows a confirmation page, POST suppresses the address on the channel (reason `unsubscribe link`), stops its
+  sequences, sends `optout_confirmed` per `subject_ref` and records the agreements objection; idempotent; an invalid
+  token is 400; throttled per client address (scope `communicator_unsubscribe`, fallback `20/hour`).
+- **Preflight.** `preflight_service.problem` checks the legal footer at accept (409 `REVIEW_REFUSED`) and again at
+  delivery (`failed/legal_footer`, new `FailureCode.LEGAL_FOOTER`, migration 0014). A message without a template
+  version always needs one.
+- **Spam complaints.** With `COMMUNICATOR_COMPLAINT_FEEDBACK` an ARF report (`abuse`, `fraud`) for one of our
+  messages is stored as `Reply(kind=complaint, matched_by=feedback)`; on a live channel the recipient is suppressed,
+  the sequence stops (`complaint`) and a `high` alert goes out (migration 0013).
+- **Signal `message_bounced(message, hard, reason="")`**, on commit, live channels only: hard DSN, SMTP 5xx recipient
+  refusal, complaint (`reason="complaint"`).
+- **Approval inbox across channels.** `GET admin/approvals/` (filters `channel`, `template_key`, `search`,
+  `min_age_hours`; `counts.by_channel`; a `blocker` per row), `POST admin/approvals/bulk/` (approve / reject, at most
+  `COMMUNICATOR_BULK_APPROVAL_MAX` = 100 ids, each id on its own, `done` / `failed`), `GET admin/approvals/log/`;
+  model `BulkApprovalLog` (migration 0015). Area `communicator.review`. System check `communicator.reserved_idx`
+  refuses a channel idx `approvals`.
+
+### Changed
+
+- **Opt-out phrases match on folded text** (lower case, no diacritics, `ł` → `l`, other characters → one space), so a
+  phrase is a stem; wider default `pl` and `en` lists. A hit is still a suspicion a person confirms or dismisses.
+- `suppression_service.suppress_email` returns whether it wrote a row; `optout_service.record_objection` is public.
+- `docs/openapi.yaml` regenerated.
+
 ## 0.4.1 — 2026-11-04
 
 ### Security

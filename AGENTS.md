@@ -34,10 +34,12 @@ src/django_communicator/
 ├── apps.py  enums.py (statuses + MESSAGE_STATUS_TRANSITIONS)  settings.py  urls.py  gdpr.py  admin.py
 ├── models/     channel  message_template  message_template_version  thread  message  suppression
 │               send_policy  send_window  sequence  sequence_step  text_pool  thread_pool_usage
-│               thread_sequence_state  mailbox_config  mail_footer  reply  inbound_quarantine
+│               thread_sequence_state  mailbox_config  mail_footer  reply  inbound_quarantine  bulk_approval_log
 ├── schemas/    requests.py  responses.py (Pydantic)
 ├── api/admin/  urls.py  views/ (review, template, suppression, sending, sequence, thread, reply, mailbox, footer,
-│               test)
+│               approval — mounted before the channel include in the root urls.py, test)
+├── api/public/ views (one-click unsubscribe page)  throttling
+├── templates/  django_communicator/unsubscribe.html
 ├── services/   communicate_service (communicate)  drafting_service  render_service  template_service
 │               message_service (the only status writer)  review_service  preview_service
 │               send_service (send_due run)  delivery_service (deliver)  policy_service  counter_service
@@ -45,9 +47,11 @@ src/django_communicator/
 │               sequence_service  sending_config_service  suppression_service
 │               poll_service  inbound_service (ingest)  mail_parser  dsn_service  optout_service  inbox_service
 │               anonymisation_service  draft_retry_service (transient failure retry)
+│               preflight_service (legal footer at accept and delivery)  approval_service (cross-channel inbox)
+│               unsubscribe_service (signed token, headers, public action)
 │               exceptions (ClientError: base of refusals shown to API clients)
 ├── signals/    __init__.py (message_approved, company_skipped, message_sent, sequence_finished,
-│               reply_received, optout_confirmed)  leads_receivers.py (contact_anonymised)
+│               reply_received, optout_confirmed, message_bounced)  leads_receivers.py (contact_anonymised)
 ├── tasks/      send_due  schedule_follow_ups  poll_inbox  record_objection  retry_failed_drafts
 └── utils/      domains  emails  encryption  encrypted_field (copies — never cross-imported)
 ```
@@ -63,7 +67,7 @@ Flow: caller `communicate()` → `Message` (`review_required` | `approved` | `fa
 | The `communicate()` contract | `services/communicate_service.py`; `docs/concept.md` § communicate() |
 | The live double gate | `channel_service.live_allowed`; `docs/concept.md` § Sending |
 | Cap, spread quota, next slot | `policy_service.py`, `counter_service.py` |
-| Inbound order (duplicate → DSN → thread → auto → opt-out → reply) | `inbound_service.ingest`; `docs/concept.md` § Inbound |
+| Inbound order (duplicate → DSN → complaint → thread → auto → opt-out → reply) | `inbound_service.ingest`; `docs/concept.md` § Inbound |
 | Request / response shape, auth, errors | `docs/api.md`; `schemas/`; `docs/openapi.yaml` |
 | Tasks, queues, alerts, what to watch, live checklist | `docs/operations.md` |
 | Which test file covers what; BDD and e2e in the entirius-zeno harness | `docs/testing.md` |

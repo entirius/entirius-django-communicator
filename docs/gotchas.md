@@ -38,6 +38,12 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
 - **A template content change goes through `template_service.save_template`** (Django admin included) —
   a direct `save()` would change content without a version and break C-29.
 
+- **The preflight runs at accept and again at delivery** (`preflight_service.problem`). A message without a
+  template version always needs a legal footer; the approval inbox shows the same detail as `blocker`. Bulk
+  approve goes through `review_service.accept`, so the preflight is never skipped.
+- **The approval routes are declared before the `<channel_idx>/` include** (`urls.py`). A channel idx `approvals`
+  would be unreachable; `communicator.reserved_idx` (an error, DB-bound) names it.
+
 ## Sending
 
 - **`delivery_service.deliver` has one caller, `send_service`.** `tests/test_sending.py` greps for
@@ -57,6 +63,14 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
 - **A bad stored `country` / `timezone` answers 409 `CHANNEL_CONFIG_INVALID`** from every admin view that
   loads the policy, never 500; `Channel.clean()` and `save()` validate both.
 
+- **`List-Unsubscribe` is written unfolded** by `mail_builder._UnsubscribeMail`; only that header gets the custom
+  header class. Test it on the wire (`message(policy=email.policy.SMTP).as_bytes()`), not on the parsed message.
+- **The unsubscribe token has no expiry and is tied to the channel idx** — renaming a channel invalidates every link
+  already sent (400). `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` is read at import, like every module setting.
+- **The unsubscribe throttle falls back to `UnsubscribeThrottle.fallback_rate`** when `DEFAULT_THROTTLE_RATES` has
+  no valid `communicator_unsubscribe` rate; the fallback is not a class `rate`, which would make DRF ignore the
+  setting. `get_rate()` never returns `None`.
+
 ## Sequences
 
 - **Follow-ups carry `Message.sequence_step`**, inherited by edited and rewritten versions; the step
@@ -70,6 +84,9 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   `remove_text` blocks a concurrent usage insert between the check and the delete.
 - **Step templates are resolved with `requires_review=False`** — only an `auto_approve` static template
   sends without review; anything else lands in the review queue.
+
+- **Autostart fires once per thread, ever.** `sequence_service._autostart` skips a thread with any
+  `ThreadSequenceState` row and a message without a template version; a stopped thread is never restarted.
 
 ## Footer
 
@@ -92,6 +109,12 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   poll that swallowed them would lose mail.
 - **Credentials and bodies are never logged; `Reply.raw_headers` holds headers only; attachments are
   never stored.**
+
+- **Opt-out phrases are stems on folded text** (`inbound_service.fold`), matched anywhere in the first 2 000
+  characters above the quote: a very short phrase over-matches. A hit is a suspicion only.
+- **Complaints need `COMMUNICATOR_COMPLAINT_FEEDBACK`**; off, an ARF report goes down the normal path and is usually
+  dropped as unmatched. A sandbox or dry-run complaint is stored and changes nothing.
+- **`message_bounced` is live-only** — a sandbox bounce or complaint says nothing about the real recipient.
 
 ## Admin API errors
 
