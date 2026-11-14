@@ -152,3 +152,19 @@ def test_an_unexpected_error_still_logs_the_ids_already_changed(drafts, admin_ap
 
     log = BulkApprovalLog.objects.get()
     assert (log.done, log.failed) == ([drafts[0].pk], {})
+
+
+def test_a_bulk_action_that_changed_nothing_is_not_logged(drafts, admin_api):
+    from django_communicator.services import approval_service, review_service
+
+    with mock.patch.object(review_service, "accept", side_effect=RuntimeError("gone")), pytest.raises(RuntimeError):
+        approval_service.bulk(user=admin_api.user, action="approve", ids=[drafts[0].pk])
+
+    assert not BulkApprovalLog.objects.exists()
+
+
+def test_a_bulk_action_with_refusals_only_is_logged(drafts, admin_api):
+    body = admin_api.post(URL + "bulk/", {"action": "approve", "ids": [drafts[1].pk]}, format="json").json()
+
+    log = BulkApprovalLog.objects.get()
+    assert body["id"] == log.pk and (log.done, list(log.failed)) == ([], [str(drafts[1].pk)])

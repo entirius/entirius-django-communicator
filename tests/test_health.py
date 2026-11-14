@@ -99,6 +99,16 @@ def test_counts_attributed_by_thread_mailbox(channel, two):
     assert (found[second.pk]["sent"], found[second.pk]["complaints"], found[None]["sent"]) == (2, 1, 1)
 
 
+def test_a_delivery_without_smtp_counts_as_sent(channel, two):
+    first, _ = two
+    delivered = sent_mail(first, 3)
+    Message.objects.filter(pk__in=[m.pk for m in delivered[:2]]).update(status=MessageStatus.WOULD_SEND)
+
+    found = health_service.counts(channel, MONDAY_10 - timedelta(days=1))
+
+    assert found[first.pk]["sent"] == 3
+
+
 def test_health_endpoint_shows_rates_and_todays_cap(policy, two, admin_api):
     first, _ = two
     Mailbox.objects.filter(pk=first.pk).update(daily_cap=30, warmup_start_cap=10, warmup_step=5)

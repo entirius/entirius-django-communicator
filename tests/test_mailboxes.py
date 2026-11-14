@@ -5,6 +5,7 @@
 
 import imaplib
 import smtplib
+import ssl
 from unittest import mock
 
 import pytest
@@ -249,7 +250,46 @@ class FakeImapLogin:
         pass
 
 
-def test_login_test_endpoint(channel, admin_api):
+SMTP_EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+
+
+@pytest.fixture
+def host_smtp(settings):
+    """The host's mail backend is the one a send uses; pytest-django replaces it with locmem."""
+    settings.EMAIL_BACKEND = SMTP_EMAIL_BACKEND
+
+
+def test_login_test_uses_the_hosts_mail_backend(channel, settings):
+    mailbox = make_mailbox(channel)
+    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+    with mock.patch.object(smtplib, "SMTP", FakeSmtp(smtplib.SMTPAuthenticationError(535, b"bad"))):
+        assert mailbox_service.check_login(mailbox)["smtp"] == "ok"  # no fixed backend: the host's answers
+
+
+def test_a_certificate_the_host_refuses_is_its_own_answer(channel, host_smtp):
+    mailbox = make_mailbox(channel, imap_host="imap.test", imap_password=MAILBOX_SECRET)
+    refused = ssl.SSLCertVerificationError("certificate verify failed")
+
+    with (
+        mock.patch.object(smtplib, "SMTP", FakeSmtp(refused)),
+        mock.patch.object(imaplib, "IMAP4_SSL", mock.Mock(side_effect=refused)),
+    ):
+        assert mailbox_service.check_login(mailbox) == {"smtp": "certificate", "imap": "certificate"}
+
+
+def test_a_server_that_does_not_answer_is_unreachable(channel, host_smtp):
+    mailbox = make_mailbox(channel, imap_host="imap.test", imap_password=MAILBOX_SECRET)
+    silent = ConnectionRefusedError("refused")
+
+    with (
+        mock.patch.object(smtplib, "SMTP", mock.Mock(side_effect=silent)),
+        mock.patch.object(imaplib, "IMAP4_SSL", mock.Mock(side_effect=silent)),
+    ):
+        assert mailbox_service.check_login(mailbox) == {"smtp": "unreachable", "imap": "unreachable"}
+
+
+def test_login_test_endpoint(channel, admin_api, host_smtp):
     mailbox = make_mailbox(channel, imap_host="imap.test", imap_password=MAILBOX_SECRET, smtp_login_failed_at=None)
     Mailbox.objects.filter(pk=mailbox.pk).update(smtp_login_failed_at="2026-09-14T08:00:00Z")
     smtp, imap = FakeSmtp(), FakeImapLogin(IMAP_ERROR("no"))
@@ -262,7 +302,7 @@ def test_login_test_endpoint(channel, admin_api):
     assert smtp.logins == ["anna@mail.example.test"] and mailbox.smtp_login_failed_at is None
 
 
-def test_login_test_codes_without_credentials_or_with_refused_login(channel):
+def test_login_test_codes_without_credentials_or_with_refused_login(channel, host_smtp):
     bare = make_mailbox(channel, "bare@x.test", smtp_host="", smtp_password="")
     refused = make_mailbox(channel, "refused@x.test", imap_host="imap.test")
     smtp = FakeSmtp(smtplib.SMTPAuthenticationError(535, b"bad"))

@@ -193,6 +193,23 @@ def test_C23_optout_phrase_pauses_sequence_confirm_creates_suppression_and_signa
         optout_service.confirm(reply, user=user)
 
 
+def test_confirmed_optout_withdraws_the_waiting_drafts_of_the_address(channel, django_capture_on_commit_callbacks):
+    message = make_sent(channel, "owner@example-shop-4.test")
+    waiting = Message.objects.create(thread=message.thread, status=MessageStatus.REVIEW_REQUIRED, subject="Again")
+    with mock.patch(NOTIFY):
+        reply = ingest(channel, eml("optout_pl.eml"))
+
+    with django_capture_on_commit_callbacks(execute=True):
+        optout_service.confirm(reply, user=None)
+
+    waiting.refresh_from_db()
+    assert (waiting.status, waiting.reject_reason, waiting.reviewed_by) == (
+        MessageStatus.REJECTED,
+        "the recipient opted out",
+        None,
+    )
+
+
 def test_optout_english_phrase_on_english_thread(channel):
     make_sent(channel, "owner@example-shop-5.test", language="EN")
     with mock.patch(NOTIFY):
