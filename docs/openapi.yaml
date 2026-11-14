@@ -2021,8 +2021,9 @@ paths:
           description: No response body
     post:
       operationId: api_communicator_v2_admin_suppressions_create
-      description: Emails are lower-cased; a domain or host is stored as its registrable domain. The row is a channel row,
-        or a global one (every channel) when the install runs `COMMUNICATOR_SUPPRESSION_SCOPE = "install"`; source `manual`.
+      description: Emails are lower-cased; a domain or host is stored as its registrable domain. `scope` `channel` adds a
+        channel row, `install` a global one (every channel); without it the row follows `COMMUNICATOR_SUPPRESSION_SCOPE`.
+        A duplicate is judged in that scope; source `manual`.
       summary: Suppress an email or a registrable domain
       parameters:
       - in: path
@@ -3203,6 +3204,12 @@ components:
           - false
           title: Composed
           type: boolean
+        from_email:
+          description: 'Address the draft will leave from: the thread''s mailbox, else the channel''s sender address.'
+          examples:
+          - sales@agency.test
+          title: From Email
+          type: string
         recipient_email:
           description: Recipient of the draft's own thread.
           examples:
@@ -3213,6 +3220,7 @@ components:
       - id
       - subject
       - composed
+      - from_email
       - recipient_email
       title: ConversationDraftResponse
       type: object
@@ -6062,6 +6070,14 @@ components:
           maxLength: 255
           title: Reason
           type: string
+        scope:
+          anyOf:
+          - $ref: '#/components/schemas/SuppressionScope'
+          - type: 'null'
+          default: null
+          description: 'channel: this channel only · install: every channel · null: the configured scope.'
+          examples:
+          - install
       required:
       - kind
       - value
@@ -6127,6 +6143,13 @@ components:
       - created_at
       title: SuppressionResponse
       type: object
+    SuppressionScope:
+      description: '`COMMUNICATOR_SUPPRESSION_SCOPE`, and the scope of one row: a channel row or a global row (no channel).'
+      enum:
+      - channel
+      - install
+      title: SuppressionScope
+      type: string
     TemplateKind:
       enum:
       - static
@@ -6674,10 +6697,17 @@ components:
           - false
           title: Composed
           type: boolean
+        from_email:
+          description: 'Address the draft will leave from: the thread''s mailbox, else the channel''s sender address.'
+          examples:
+          - sales@agency.test
+          title: From Email
+          type: string
       required:
       - id
       - subject
       - composed
+      - from_email
       title: ThreadDraftResponse
       type: object
     ThreadListResponse:
@@ -6973,7 +7003,8 @@ components:
           title: Body Text
           type: string
         from_email:
-          description: Sender of a reply; empty for our messages.
+          description: Sender of a reply; for our message the address it left or will leave from (the thread's mailbox, else
+            the channel's sender address).
           examples:
           - owner@shop.test
           title: From Email

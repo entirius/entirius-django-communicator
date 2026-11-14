@@ -6,6 +6,12 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
 
 ### Added
 
+- **Our mail names its sender.** A timeline entry of an outbound message carries `from_email`: the bare address it
+  left or will leave from — the thread's mailbox, else the channel's sender address, from the same function as the
+  From of the mail (`mail_builder.sender`). The draft of an inbox row carries it too (`draft.from_email`). No query
+  per entry.
+- **Do-not-contact reach per entry.** `POST suppressions/` takes `scope` (`channel` · `install` = every channel);
+  without it the row follows `COMMUNICATOR_SUPPRESSION_SCOPE` as before. A duplicate is judged in the scope asked for.
 - **One check for the recipient.** `preflight_service.problem` asks, after the legal footer and the mailbox, whether
   the recipient may be mailed: `can_mail` ("the recipient opted out or is on the do-not-contact list", "the
   recipient's address is not valid"), then the new synchronous signal `recipient_check(sender=Message, message=...)`,
@@ -33,8 +39,8 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
   `subject_label` and `search` matches it. The pause log row carries `user_name` (full name, else username; `""` for
   an automatic pause), users joined with the page.
 - **Reply alerts in words, one per reply.** `reply_plan_service.reply_type_label(intent)` gives the class words;
-  titles read `Reply from <sender> — <class words>`, `Reply from <sender>` and `Possible opt-out — <sender>` — no
-  bracket, no raw value. `reply_received` is sent with `send_robust`; a receiver that raised its own alert returns
+  titles read `Reply from <sender> — <class words>`, `Reply from <sender>` and `Reply from <sender> — Possible
+  opt-out` — every title starts with `Reply from`, no bracket, no raw value. `reply_received` is sent with `send_robust`; a receiver that raised its own alert returns
   `REPLY_ALERTED` (`django_communicator.signals`) and communicator then raises none. The reply alert now goes out
   after the commit.
 - `__version__` matches `pyproject.toml` (0.5.0); a test keeps them equal.

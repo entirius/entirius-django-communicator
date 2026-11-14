@@ -306,7 +306,8 @@ tracked per mailbox; each mailbox fails and is announced on its own) and hands e
 
 Alerts of a reply carry words, never a raw value: `Reply from <sender> — <class words>` (`reply_type_label`:
 `not_now` → "Not now" …), `Reply from <sender> — Needs review` without a class but flagged for a person,
-`Reply from <sender>` without either, `Possible opt-out — <sender>` for a suspected opt-out. One helper builds every
+`Reply from <sender>` without either, `Reply from <sender> — Possible opt-out` for a suspected opt-out (every
+title starts with `Reply from`). One helper builds every
 reply title, `reply_plan_service.reply_title(sender, reply)`; leads titles its alert with it too. One bell entry per reply: `reply_received` goes out with `send_robust`, and a receiver that raised its own
 alert for the reply (leads, with the company name) returns `REPLY_ALERTED` (`django_communicator.signals`);
 communicator's own alert goes out only when no receiver did — a thread nobody listens to, or a receiver that failed.
