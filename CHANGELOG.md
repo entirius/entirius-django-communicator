@@ -6,6 +6,20 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
 
 ### Added
 
+- **One check for the recipient.** `preflight_service.problem` asks, after the legal footer and the mailbox, whether
+  the recipient may be mailed: `can_mail` ("the recipient opted out or is on the do-not-contact list", "the
+  recipient's address is not valid"), then the new synchronous signal `recipient_check(sender=Message, message=...)`,
+  whose first non-empty answer (a sentence from the owner of the thread's subject) refuses. New failure code
+  `recipient` (migration 0025). The single approval, the bulk answer's `failed`, the approval row's `blocker` and the
+  delivery follow (an owner's refusal at delivery → `failed/recipient`; a suppressed address still ends `suppressed`).
+- **Drafts nobody may send leave the queue.** `review_service.withdraw(channel, email, *, reason)`: every draft to the
+  address waiting for review → `rejected` with the reason and no reviewer, no sequence re-armed. A confirmed opt-out
+  withdraws with "the recipient opted out".
+- **Rejected drafts on the timeline.** `rejected` is no longer hidden; a timeline entry carries `rejected_by` (the
+  reviewer's display name, `""` for a withdrawn draft and every other entry) and `reject_reason`.
+- **Login test `certificate`.** The mailbox login test answers `certificate` for a server certificate the host does
+  not accept (SMTP and IMAP); `unreachable` stays for a server that does not answer.
+
 - **What the screens no longer guess.** `GET conversations/?needs_review=true`: only conversations whose newest human
   reply is flagged for a person, the counts follow it (any other value → 400). A timeline entry carries `reply_id`
   (inbound entries) and `composed`; `Message.composed` (migration 0024, no backfill) is set by `compose()` and shown
@@ -110,6 +124,12 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
   Development only: `POST test/ingest-reply/` ingests a reply with a given class.
 
 ### Changed
+
+- The mailbox login test logs in through the host's mail backend, the connection a send uses (`SMTP_BACKEND` and the
+  `backend` argument of `mailbox_service.smtp_connection` are gone): a mailbox that sends no longer reads unreachable.
+- Sending health: `sent` of a window counts every delivery, `would_send` included, as `sent_today` does; rates and the
+  automatic pause read the same number.
+- A bulk approval that changed nothing and refused nothing writes no `BulkApprovalLog` row.
 
 - A delivered message without a template version never arms or re-arms a sequence; a follow-up reads its context and
   legal footer from the newest outbound message with a template version.

@@ -43,7 +43,8 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   without a template version, and follow-ups read context and footer from the newest templated message only.
 - **The preflight runs at accept and again at delivery** (`preflight_service.problem`). A message without a
   template version always needs a legal footer; the approval inbox shows the same detail as `blocker`. Bulk
-  approve goes through `review_service.accept`, so the preflight is never skipped.
+  approve goes through `review_service.accept`, so the preflight is never skipped. It also asks the owner of the
+  subject (`recipient_check`) on every approval row: a receiver must stay a constant number of queries.
 - **The approval routes are declared before the `<channel_idx>/` include** (`urls.py`). A channel idx `approvals`
   would be unreachable; `communicator.reserved_idx` (an error, DB-bound) names it.
 
@@ -64,6 +65,9 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
 - **A mailbox holds its own mail; it never stops the run.** Paused, disabled or `needs_login` → `deferred`; a missing
   or refused login (and a channel without its SMTP entry) is an outcome of that one message. Never turn it back into
   a channel-wide abort: one broken mailbox would stop the others.
+- **The login test logs in through the host's `EMAIL_BACKEND`**, the connection a send uses — never a fixed SMTP
+  backend (a host wrapper such as zeno's GreenMail backend would disagree with it). A host backend that does not
+  speak SMTP (console, locmem) logs nobody in, so the test answers `ok` there.
 - **`Thread.mailbox` is chosen once**, before the thread's first message, and never changes — a thread keeps its
   From. A thread without one sends through the channel SMTP entry. The FK is `PROTECT`: delete refuses a used one.
 - **Mailbox writes name their columns.** `mailbox_service.update_mailbox` (and the Django admin through it) never

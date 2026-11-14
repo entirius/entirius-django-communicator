@@ -2469,8 +2469,9 @@ paths:
     get:
       operationId: communicator_approvals_list
       description: 'Oldest first, paginated (`page`, `page_size` ≤ 100). `counts` covers the whole filtered set. `blocker`
-        says why approving a row would be refused (null: it may be approved): a missing legal footer or a mailbox that is
-        paused, disabled or needs a login.'
+        says why approving a row would be refused (null: it may be approved): a missing legal footer, a mailbox that is paused,
+        disabled or needs a login, or a recipient who may not be mailed (opted out, on the do-not-contact list, an invalid
+        address, or refused by the owner of the thread''s subject).'
       summary: Every outbound draft waiting for approval, all channels
       parameters:
       - in: query
@@ -2525,8 +2526,9 @@ paths:
     post:
       operationId: api_communicator_v2_admin_approvals_bulk_create
       description: 'Each id is handled on its own: a draft that is unknown, no longer waiting or refused by the preflight
-        (legal footer) lands in `failed` with the reason and never blocks the others. At most `COMMUNICATOR_BULK_APPROVAL_MAX`
-        ids (default 100), else 400. Every call is logged with the user.'
+        (legal footer, mailbox, recipient) lands in `failed` with the reason (the same sentence as the row''s `blocker`) and
+        never blocks the others. At most `COMMUNICATOR_BULK_APPROVAL_MAX` ids (default 100), else 400. Every call that changed
+        or refused a draft is logged with the user.'
       summary: Approve or reject several drafts at once
       tags:
       - Communicator Approvals
@@ -4244,7 +4246,8 @@ components:
     MailboxTestResponse:
       properties:
         smtp:
-          description: ok, not_configured, no_password, auth_failed or unreachable.
+          description: ok, not_configured, no_password, auth_failed, certificate (the host does not accept the server's certificate)
+            or unreachable (the server does not answer). Logs in the way a send does.
           examples:
           - ok
           title: Smtp
@@ -7010,6 +7013,19 @@ components:
           - false
           title: Needs Review
           type: boolean
+        rejected_by:
+          description: Display name of who rejected (skipped) the draft; empty for a draft withdrawn because nobody may mail
+            the recipient, and on every other entry.
+          examples:
+          - ''
+          title: Rejected By
+          type: string
+        reject_reason:
+          description: Why the draft was rejected; empty when none.
+          examples:
+          - ''
+          title: Reject Reason
+          type: string
       required:
       - kind
       - message_id
@@ -7026,6 +7042,8 @@ components:
       - intent_confidence
       - intent_return_date
       - needs_review
+      - rejected_by
+      - reject_reason
       title: TimelineEntryResponse
       type: object
     WindowRequest:

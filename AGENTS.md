@@ -48,7 +48,8 @@ src/django_communicator/
 │               sequence_service  sending_config_service  compose_service (hand-written message)
 │               poll_service  inbound_service (ingest)  mail_parser  dsn_service  optout_service  inbox_service
 │               anonymisation_service  draft_retry_service (transient failure retry)
-│               preflight_service (legal footer at accept and delivery)  approval_service (cross-channel inbox)
+│               preflight_service (legal footer, mailbox, recipient at accept and delivery)
+│               approval_service (cross-channel inbox)
 │               unsubscribe_service (signed token, headers, public action)
 │               mailbox_service (mailboxes, resolution, state, logins, cap)  health_service (rates, pause)
 │               suppression_service (scope, can_mail, explain)  address_service (status, DNS verification)
@@ -56,7 +57,8 @@ src/django_communicator/
 │               resume_service (out-of-office resume)
 │               exceptions (ClientError: base of refusals shown to API clients)
 ├── signals/    __init__.py (message_approved, company_skipped, message_sent, sequence_finished,
-│               reply_received, optout_confirmed, message_bounced)  leads_receivers.py (contact_anonymised)
+│               reply_received, optout_confirmed, message_bounced, draft_retry_requested, recipient_check)
+│               leads_receivers.py (contact_anonymised)
 ├── tasks/      send_due  schedule_follow_ups  poll_inbox  record_objection  retry_failed_drafts  reverify_addresses
 │               resume_paused_sequences
 ├── fixtures/   reply_class_profile.json (default reply class prompt — documentation, never loaded by code)

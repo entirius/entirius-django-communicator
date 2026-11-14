@@ -17,6 +17,7 @@ C-01…C-33, all of the communicator edge cases.
 | `test_draft_retry.py` | beat retry of transiently failed drafts: transient vs permanent, attempts cap, unreachable toolbox no-op, claim, skips, no call inside a transaction, dev retry and outage endpoints | — |
 | `test_toolbox_disabled.py` | toolbox switched off: AI `communicate()` and rewrite refused with nothing written, static and suppressed paths unchanged, 503 `AI_TOOLBOX_DISABLED` on the admin API, retry no-op, due AI follow-up waits; unconfigured paths unchanged | — |
 | `test_review.py` | accept, rewrite (limit, failures count), edit, skip, template versions | C-07…C-09, C-29 |
+| `test_recipient_check.py` | the recipient check (suppressed, invalid, `recipient_check` receivers, the first sentence) at approval, bulk, `blocker` and delivery; queries per approval row; `withdraw`; rejected drafts on the timeline | — |
 | `test_preflight.py` | legal footer at accept (409) and at delivery (`failed/legal_footer`), template-less messages | — |
 | `test_approvals.py` | approval inbox across channels: filters, counts, `blocker`, bulk approve / reject each id on its own, limit 400, log, staff only | — |
 | `test_unsubscribe.py` | token, RFC 8058 headers on the wire (unfolded, other headers unchanged), links by body language, public GET / POST, idempotency, 400 on a bad token, throttle 429 and its fallback rate | — |

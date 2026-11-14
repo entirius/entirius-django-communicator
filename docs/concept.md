@@ -117,7 +117,7 @@ the stored ciphertext; the mailbox shows `needs_login` until a password is set a
 
 **Health.** `HealthPolicy` (one per channel, off by default; window 168 h, sample 50, hard bounces 2 %, opt-outs
 3 %, complaints 0.1 % of sent) is judged by `health_service.evaluate` at the start of every send run of a live
-channel. Counts are per mailbox by `Thread.mailbox`: sent, hard and soft bounces, complaints, replies and opt-outs
+channel. Counts are per mailbox by `Thread.mailbox`: sent (every delivery, `would_send` included), hard and soft bounces, complaints, replies and opt-outs
 (confirmed opt-outs and unsubscribe links, on the mailbox of the address's newest sent mail). A mailbox with at least
 `min_sample` sent mails over a limit is paused, `MailboxPauseLog` records the measured rates and a `high` alert goes
 out. Only a person resumes it (`resume/`, logged); the policy then counts events after the resume only.
@@ -155,19 +155,27 @@ templates work as before. A due AI follow-up keeps its step and due date and is 
 | accept | preflight first (refused with `ReviewError` on a problem), then `approved`, reviewer + time, `scheduled_at` = next policy slot (empty without a policy), `message_approved` (C-07) |
 | rewrite (notes) | AI drafts only: new version with the notes appended to the user prompt, previous → `superseded`; a toolbox failure creates a `failed` version and keeps the reviewed one in the queue; automated rewrites capped by `COMMUNICATOR_AUTOMATED_REWRITE_LIMIT`, failures count (C-08) |
 | edit | new version `edited_by_human`, previous → `superseded`, no toolbox call (C-09) |
-| skip | `rejected` with a reason; a rejected follow-up re-arms its sequence |
+| skip | `rejected` with a reason; a rejected follow-up re-arms its sequence; on the timeline with the reviewer and the reason |
+| withdraw (channel, email, reason) | every draft to the address waiting for review → `rejected` with the reason and no reviewer; no sequence re-armed. A confirmed opt-out calls it ("the recipient opted out"); so does the owner of a subject that may no longer mail a recipient |
 | skip company | skip + `company_skipped(subject_ref)` for the caller to stop the whole subject |
 
 **Preflight.** `preflight_service.problem(message) -> (failure_code, detail) | None` runs at accept and again in the
 delivery, before the claim. Today it checks the legal footer: required when the message's template requires one —
 also a template that started to require it after the draft was made — **and for every message without a template
-version**; a blank `legal_footer` then refuses the accept and fails the delivery with `failed/legal_footer`.
+version**; a blank `legal_footer` then refuses the accept and fails the delivery with `failed/legal_footer`. Then
+the mailbox (paused, disabled, needs a login → `mailbox`), then the recipient (`recipient`): `can_mail` refuses the
+address ("the recipient opted out or is on the do-not-contact list", "the recipient's address is not valid"), else the
+signal `recipient_check(sender=Message, message=...)` asks the owner of the thread's subject — the first sentence a
+receiver returns is the detail. This module knows no companies; the owner answers through the signal. At delivery a
+suppressed address still ends the message `suppressed` (checked first); an owner's refusal ends it
+`failed/recipient`. The single approval, the bulk answer's `failed` and the approval row's `blocker` carry the same
+sentence.
 
 **Approval inbox.** `approval_service` lists the `review_required` outbound messages of every channel (filters
 channel, template key, search, minimum age; counts per channel; each row with the preflight `blocker`) and
 approves or rejects up to `COMMUNICATOR_BULK_APPROVAL_MAX` (100) ids at once through `review_service.accept` /
 `skip`, each id on its own — a refused or vanished id lands in `failed` and never blocks the others. Every bulk call
-writes a `BulkApprovalLog` (user, action, reason, ids, done, failed).
+writes a `BulkApprovalLog` (user, action, reason, ids, done, failed) — unless it changed and refused nothing.
 
 ## Sending
 
@@ -378,3 +386,7 @@ the subject's data.
 All sent on commit (`signals/__init__.py`): `message_approved`, `company_skipped`, `message_sent`,
 `sequence_finished`, `reply_received` (`send_robust`; a receiver that alerted answers `REPLY_ALERTED`), `optout_confirmed`, `message_bounced(message, hard, reason="")` — a hard DSN,
 an SMTP 5xx recipient refusal or a complaint (`reason="complaint"`), live channels only.
+
+Synchronous, answered by the owner of the thread's `subject_ref`: `draft_retry_requested(message)` (a reason code
+blocks the retry of a failed draft) and `recipient_check(message)` (a readable sentence refuses the recipient at
+approval, in the approval list and at delivery; None accepts).

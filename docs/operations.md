@@ -92,6 +92,7 @@ person: `GET replies/?needs_review=true`.
 | `GET mailboxes/` `state` not `active` | `paused`, `needs_login` or `disabled`: the mailbox holds its mail | see Mailboxes below |
 | `GET health/` rates, `GET health/log/` | bounce / opt-out / complaint rates per mailbox; who paused and resumed | resume only after the cause is fixed |
 | `Message.delivery_note` | the last DSN that changed nothing (`delayed`, …) | informational |
+| `failed/recipient` | the owner of the subject refused the recipient at delivery (e.g. the contact was flagged as the wrong person after approval) | nothing to fix; the detail names the reason |
 | `failed/legal_footer` | an approved message reached the delivery without the legal footer its template (or the missing template) requires | fix the caller's footer; the message stays failed |
 | `Reply(kind=complaint)` | a recipient marked our mail as spam | live: already suppressed and stopped; check the template and the list |
 | `BulkApprovalLog` (`GET approvals/log/`) | who approved or rejected drafts in bulk, which ids failed and why | audit |
@@ -141,7 +142,8 @@ resets today's count — the cap can be exceeded once on that day.
 `smtp_security` `starttls` | `ssl`, `smtp_user` — empty = the address — `smtp_password`) and, for replies, the IMAP
 login (`imap_host`, `imap_port`, `imap_use_ssl`, `imap_user`, `imap_password`, `folder`). `user_id` ties it to a
 staff member (their mail leaves from it), `is_default` makes it the channel's fallback. Then `POST
-mailboxes/<id>/test/` (`{smtp, imap}`: `ok`, `not_configured`, `no_password`, `auth_failed`, `unreachable`) and only
+mailboxes/<id>/test/` (`{smtp, imap}`: `ok`, `not_configured`, `no_password`, `auth_failed`, `certificate` — the
+host does not accept the server's certificate — `unreachable`; SMTP logs in the way a send does) and only
 then `PATCH {"send_enabled": true}` / `{"receive_enabled": true}`. A new mailbox: start a warm-up (`daily_cap` as the
 ceiling, `warmup_start_cap`, `warmup_step`; `GET health/` shows `cap_today`).
 
