@@ -52,9 +52,10 @@ def row_scope(row: Suppression) -> str:
     return SuppressionScope.INSTALL if row.channel_id is None else SuppressionScope.CHANNEL
 
 
-def _owner(channel: Channel) -> Channel | None:
-    """The channel a new `email` / `domain` row belongs to: None (global) under `install`."""
-    return None if scope() == SuppressionScope.INSTALL else channel
+def _owner(channel: Channel, asked: str | None = None) -> Channel | None:
+    """The channel a new `email` / `domain` row belongs to: None (global) for `install` — the scope asked for, else
+    the configured one."""
+    return None if (asked or scope()) == SuppressionScope.INSTALL else channel
 
 
 def _keys(email: str) -> tuple[str, str, str]:
@@ -181,15 +182,22 @@ def list_suppressions(channel: Channel, filters: dict[str, str] | None = None) -
 
 
 def create_suppression(
-    channel: Channel, *, kind: str, value: str, reason: str = "", source: str = SuppressionSource.MANUAL, user=None
+    channel: Channel,
+    *,
+    kind: str,
+    value: str,
+    reason: str = "",
+    source: str = SuppressionSource.MANUAL,
+    user=None,
+    scope: str | None = None,
 ) -> Suppression:
-    """A channel row, or a global one under the `install` scope. Raises `InvalidSuppressionValueError` (a
+    """A channel row, or a global one for `scope="install"` (None = the configured scope). Raises `InvalidSuppressionValueError` (a
     `ValueError`) on an unusable value or kind `email_token` (written by erasure only), `DuplicateSuppressionError`
     when it is already listed in that scope."""
     if kind not in SCOPED_KINDS:
         raise InvalidSuppressionValueError("only email and domain suppressions can be added")
     normalised = normalise_value(kind, value)
-    owner = _owner(channel)
+    owner = _owner(channel, scope)
     try:
         with transaction.atomic():
             return Suppression.objects.create(

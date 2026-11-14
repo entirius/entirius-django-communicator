@@ -163,6 +163,48 @@ def test_post_follows_the_scope_and_a_global_row_can_be_deleted(channel, admin_a
     assert not Suppression.objects.exists()
 
 
+def post_suppression(admin_api, **extra):
+    return admin_api.post(api_url("suppressions/"), {"kind": "email", "value": EMAIL, **extra}, format="json")
+
+
+@pytest.mark.parametrize(
+    ("configured", "asked", "expected"),
+    [
+        ("channel", None, "channel"),
+        ("install", None, "install"),
+        ("install", "channel", "channel"),
+        ("channel", "install", "install"),
+    ],
+)
+def test_post_takes_the_scope_asked_for(channel, admin_api, monkeypatch, configured, asked, expected):
+    monkeypatch.setattr(communicator_settings, "COMMUNICATOR_SUPPRESSION_SCOPE", configured)
+
+    created = post_suppression(admin_api, scope=asked)
+
+    assert created.status_code == 201 and created.json()["scope"] == expected
+    assert (Suppression.objects.get().channel_id is None) == (expected == "install")
+
+
+def test_an_entry_for_all_channels_refuses_mail_in_another_channel(two_channels, admin_api):
+    assert post_suppression(admin_api, scope="install").status_code == 201
+
+    assert outcome(send(OTHER_IDX)) == (MessageStatus.SUPPRESSED, "suppressed")
+
+
+def test_a_duplicate_is_judged_in_the_scope_asked_for(channel, admin_api):
+    assert post_suppression(admin_api, scope="channel").status_code == 201
+    assert post_suppression(admin_api, scope="install").status_code == 201
+
+    assert post_suppression(admin_api, scope="install").status_code == 409
+    assert post_suppression(admin_api, scope="channel").status_code == 409
+    assert Suppression.objects.count() == 2
+
+
+def test_an_unknown_scope_is_a_400(channel, admin_api):
+    assert post_suppression(admin_api, scope="planet").status_code == 400
+    assert not Suppression.objects.exists()
+
+
 def test_a_token_row_cannot_be_deleted(channel, admin_api):
     suppression_service.suppress_token("anon-1@anonymised.invalid", reason="gdpr_erase")
     row = Suppression.objects.get()

@@ -141,6 +141,7 @@ def reply_type_label(intent: str) -> str:
 
 
 NEEDS_REVIEW_WORDS = "Needs review"
+POSSIBLE_OPTOUT_WORDS = "Possible opt-out"
 
 
 def reply_title(sender: str, reply: Reply) -> str:
@@ -151,7 +152,8 @@ def reply_title(sender: str, reply: Reply) -> str:
 
 
 def optout_title(sender: str) -> str:
-    return f"Possible opt-out — {sender}"
+    """A suspected opt-out in the shape of every reply title: `Reply from <sender> — Possible opt-out`."""
+    return f"Reply from {sender} — {POSSIBLE_OPTOUT_WORDS}"
 
 
 def announce(reply: Reply, plan: Plan) -> None:

@@ -106,7 +106,7 @@ def test_approval_row_carries_the_label_and_search_matches_it(channel, cold, adm
         (ReplyIntent.OUT_OF_OFFICE, f"Reply from {EMAIL} — Out of office"),
         (ReplyIntent.WRONG_PERSON, f"Reply from {EMAIL} — Wrong person"),
         (ReplyIntent.UNCLEAR, f"Reply from {EMAIL} — Unclear"),
-        (ReplyIntent.UNSUBSCRIBE, f"Possible opt-out — {EMAIL}"),
+        (ReplyIntent.UNSUBSCRIBE, f"Reply from {EMAIL} — Possible opt-out"),
         (None, f"Reply from {EMAIL}"),
     ],
 )

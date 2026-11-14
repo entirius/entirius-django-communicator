@@ -50,9 +50,9 @@ class SuppressionListView(AdminView):
     @extend_schema(
         tags=_TAGS,
         summary="Suppress an email or a registrable domain",
-        description="Emails are lower-cased; a domain or host is stored as its registrable domain. The row is a "
-        "channel row, or a global one (every channel) when the install runs `COMMUNICATOR_SUPPRESSION_SCOPE = "
-        '"install"`; source `manual`.',
+        description="Emails are lower-cased; a domain or host is stored as its registrable domain. `scope` `channel` "
+        "adds a channel row, `install` a global one (every channel); without it the row follows "
+        "`COMMUNICATOR_SUPPRESSION_SCOPE`. A duplicate is judged in that scope; source `manual`.",
         request=SuppressionRequest,
         responses={201: SuppressionResponse, **ERROR_RESPONSES, 409: None},
     )

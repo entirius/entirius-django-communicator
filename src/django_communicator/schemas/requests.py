@@ -103,6 +103,11 @@ class SuppressionRequest(BaseModel):
     )
     value: str = Field(min_length=1, max_length=254, description="Email, or a domain / host.", examples=["shop.test"])
     reason: str = Field(default="", max_length=255, description="Why.", examples=["Asked not to be contacted"])
+    scope: SuppressionScope | None = Field(
+        default=None,
+        description="channel: this channel only · install: every channel · null: the configured scope.",
+        examples=["install"],
+    )
 
 
 class SuppressionListQuery(BaseModel):
