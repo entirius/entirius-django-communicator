@@ -14,9 +14,10 @@ from django.db.migrations.executor import MigrationExecutor
 
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import MessageStatus, SuppressionKind, SuppressionSource
-from django_communicator.models import Suppression
+from django_communicator.models import AddressStatus, Suppression
 from django_communicator.services import health_service, suppression_service, unsubscribe_service
 from django_communicator.services.communicate_service import RecipientData, communicate
+from django_communicator.utils.emails import anonymised_address
 from tests.conftest import CHANNEL_IDX, MONDAY_10, api_url
 from tests.factories import ChannelFactory, make_static
 from tests.test_health import sent_mail
@@ -202,3 +203,21 @@ def test_migration_sets_the_source_from_the_reason():
     executor.loader.build_graph()
     executor.migrate(executor.loader.graph.leaf_nodes(app))
     assert Suppression.objects.count() == len(reasons)
+
+
+# --- many addresses at once ---
+
+
+def test_can_mail_many_answers_like_can_mail_in_two_queries(channel, django_assert_num_queries):
+    suppression_service.create_suppression(channel, kind=SuppressionKind.EMAIL, value="listed@shop.test", reason="x")
+    suppression_service.create_suppression(channel, kind=SuppressionKind.DOMAIN, value="blocked.test", reason="x")
+    suppression_service.suppress_token(anonymised_address("erased@shop.test"), reason="erased")
+    AddressStatus.objects.create(email="bad@shop.test", status="invalid", reason="syntax")
+    emails = ["Listed@Shop.test", "a@blocked.test", "erased@shop.test", "bad@shop.test", "free@shop.test", "nohost"]
+    expected = {email: suppression_service.can_mail(channel, email) for email in emails}
+
+    with django_assert_num_queries(2):
+        answers = suppression_service.can_mail_many(channel, emails)
+
+    assert answers == expected
+    assert list(answers.values()) == ["suppressed", "suppressed", "suppressed", "address_invalid", None, None]
