@@ -8,6 +8,8 @@ from datetime import timedelta
 from unittest import mock
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from django_communicator.enums import (
     ChannelMode,
@@ -114,14 +116,40 @@ def test_health_endpoint_shows_rates_and_todays_cap(policy, two, admin_api):
     Mailbox.objects.filter(pk=first.pk).update(daily_cap=30, warmup_start_cap=10, warmup_step=5)
     Mailbox.objects.filter(pk=first.pk).update(warmup_started_on=MONDAY_10.date() - timedelta(days=2))
     reply(sent_mail(first, 4)[0], ReplyKind.BOUNCE_HARD)
-    counter_service.reserve_mailbox(first.pk, MONDAY_10.date(), None)
 
     body = admin_api.get(api_url("health/")).json()
 
     row = next(row for row in body["mailboxes"] if row["id"] == first.pk)
-    assert (row["sent_today"], row["cap_today"], row["state"]) == (1, 20, "active")
+    assert (row["sent_today"], row["cap_today"], row["state"]) == (4, 20, "active")
     assert row["windows"]["24h"]["sent"] == 4 and row["windows"]["24h"]["hard_bounces_pct"] == 25.0
     assert body["channel"]["windows"]["7d"]["sent"] == 4 and len(body["mailboxes"]) == 2
+
+
+def test_sent_today_counts_the_deliveries_of_the_channel_day(policy, sandbox, static_template, admin_api):
+    mailbox = make_mailbox(policy.channel, is_default=True)
+    approved_message()
+    send_service.run_send_due()  # one sandbox delivery, one reservation
+    midnight = MONDAY_10.replace(hour=0)
+    Message.objects.filter(pk=sent_mail(mailbox, 1)[0].pk).update(sent_at=midnight - timedelta(minutes=1))
+    counter_service.reserve_mailbox(mailbox.pk, MONDAY_10.date(), None)  # a reservation without a delivery
+
+    [row] = admin_api.get(api_url("health/")).json()["mailboxes"]
+
+    assert Message.objects.filter(status=MessageStatus.SENT, sent_at__gte=midnight).count() == 1
+    assert row["sent_today"] == 1
+
+
+def test_sent_today_asks_one_query_for_every_mailbox(channel, two, django_assert_num_queries):
+    sent_mail(two[0], 2)
+    with CaptureQueriesContext(connection) as two_mailboxes:
+        health_service.report(channel, MONDAY_10)
+    make_mailbox(channel, "ola@mail.example.test")
+    sent_mail(two[1], 1, start=5)
+
+    with django_assert_num_queries(len(two_mailboxes)):
+        rows = health_service.report(channel, MONDAY_10)["mailboxes"]
+
+    assert sorted(row["sent_today"] for row in rows) == [0, 1, 2]
 
 
 @pytest.fixture

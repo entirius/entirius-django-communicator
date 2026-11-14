@@ -34,7 +34,7 @@ from django_communicator.enums import (
     SuppressionSource,
 )
 from django_communicator.models import Channel, HealthPolicy, Mailbox, MailboxPauseLog, Message, Reply, Suppression
-from django_communicator.services import alert_service, counter_service, mailbox_service
+from django_communicator.services import alert_service, mailbox_service
 from django_communicator.services.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
@@ -76,16 +76,27 @@ def save_policy(channel: Channel, fields: dict) -> HealthPolicy:
 def counts(channel: Channel, since: datetime) -> Counts:
     """{mailbox id: {counter: n}} for events after `since`; the key is None for mail without a mailbox."""
     result: Counts = defaultdict(lambda: dict.fromkeys(COUNTERS, 0))
-    delivered = Q(status__in=(MessageStatus.SENT, MessageStatus.WOULD_SEND))
-    sent = delivered | Q(status=MessageStatus.FAILED, failure_code=FailureCode.BOUNCE)
-    messages = Message.objects.filter(sent, thread__channel=channel, direction=Direction.OUT, sent_at__gt=since)
-    for row in messages.values("thread__mailbox").annotate(n=Count("pk")):
+    for row in _sent(channel).filter(sent_at__gt=since).values("thread__mailbox").annotate(n=Count("pk")):
         result[row["thread__mailbox"]]["sent"] += row["n"]
     for row in _replies(channel, since).values("kind", "thread__mailbox").annotate(n=Count("pk")):
         result[row["thread__mailbox"]][_REPLY_COUNTERS[row["kind"]]] += row["n"]
     for mailbox_id, n in _optouts(channel, since).items():
         result[mailbox_id]["optouts"] += n
     return result
+
+
+def _sent(channel: Channel) -> QuerySet[Message]:
+    """The channel's deliveries: what `sent` of a window counts."""
+    delivered = Q(status__in=(MessageStatus.SENT, MessageStatus.WOULD_SEND))
+    sent = delivered | Q(status=MessageStatus.FAILED, failure_code=FailureCode.BOUNCE)
+    return Message.objects.filter(sent, thread__channel=channel, direction=Direction.OUT)
+
+
+def _sent_today(channel: Channel, now: datetime) -> dict[int | None, int]:
+    """{mailbox id: deliveries} of the channel's current day (`now` on the channel clock) — one query."""
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today = _sent(channel).filter(sent_at__gte=start, sent_at__lt=start + timedelta(days=1))
+    return dict(today.values("thread__mailbox").annotate(n=Count("pk")).values_list("thread__mailbox", "n"))
 
 
 def _replies(channel: Channel, since: datetime) -> QuerySet[Reply]:
@@ -136,7 +147,9 @@ def report(channel: Channel, now: datetime) -> dict:
         name: metrics({c: sum(r[c] for r in found.values()) for c in COUNTERS}) for name, found in by_window.items()
     }
     mailboxes = mailbox_service.list_mailboxes(channel)
-    return {"channel": {"windows": totals}, "mailboxes": [_row(m, by_window, now) for m in mailboxes]}
+    today = _sent_today(channel, now)
+    rows = [{**_row(m, by_window, now), "sent_today": today.get(m.pk, 0)} for m in mailboxes]
+    return {"channel": {"windows": totals}, "mailboxes": rows}
 
 
 def _row(mailbox: Mailbox, by_window: dict[str, Counts], now: datetime) -> dict:
@@ -144,7 +157,6 @@ def _row(mailbox: Mailbox, by_window: dict[str, Counts], now: datetime) -> dict:
     return {
         "mailbox": mailbox,
         "state": mailbox_service.state(mailbox),
-        "sent_today": counter_service.mailbox_sent_on(mailbox.pk, now.date()),
         "cap_today": mailbox_service.effective_cap(mailbox, now.date()),
         "windows": {name: metrics(found.get(mailbox.pk, empty)) for name, found in by_window.items()},
     }

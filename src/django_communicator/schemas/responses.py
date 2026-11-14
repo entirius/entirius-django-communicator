@@ -607,7 +607,7 @@ class MailboxHealthResponse(BaseModel):
     state: str = Field(description="active, paused, needs_login or disabled.", examples=["active"])
     paused_at: datetime | None = Field(description="Paused since.", examples=[None])
     pause_reason: str = Field(description="Why it is paused.", examples=[""])
-    sent_today: int = Field(description="Deliveries counted today (channel day).", examples=[12])
+    sent_today: int = Field(description="Deliveries sent on the channel's current day.", examples=[12])
     cap_today: int | None = Field(description="Today's cap with the warm-up; null: only the channel cap.")
     windows: HealthWindowsResponse = Field(description="Counts and rates of this mailbox.")
 

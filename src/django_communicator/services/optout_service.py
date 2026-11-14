@@ -22,7 +22,7 @@ from django_communicator.signals import optout_confirmed, reply_received
 logger = logging.getLogger(__name__)
 
 OBJECTION_RETRY_COUNTDOWN_S = 60
-OPTOUT_REASON = "optout confirmed"
+OPTOUT_REASON = "Confirmed from a reply"
 OPTED_OUT = "the recipient opted out"
 
 

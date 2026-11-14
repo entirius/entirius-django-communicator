@@ -6,6 +6,7 @@
 
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime
 from itertools import chain
 
 from django.db.models import Count, Exists, OuterRef, Q, QuerySet, Subquery
@@ -209,8 +210,8 @@ def get_thread(channel_idx: str, pk: int) -> Thread:
 
 
 def timeline(thread: Thread) -> list[dict]:
-    """Messages (without superseded versions; a rejected draft with who rejected it and why) and replies, oldest
-    first — two queries."""
+    """Messages (without superseded versions; a rejected draft with who rejected it and why, dated by its rejection)
+    and replies, oldest first — two queries."""
     messages = (
         Message.objects.filter(thread=thread).exclude(status__in=TIMELINE_HIDDEN_STATUSES).select_related("reviewed_by")
     )
@@ -225,7 +226,7 @@ def _message_entry(message: Message) -> dict:
         "message_id": message.pk,
         "reply_id": None,
         "composed": message.composed,
-        "at": message.sent_at or message.created_at,
+        "at": _message_at(message),
         "direction": message.direction,
         "status": message.status,
         "subject": message.subject,
@@ -238,6 +239,13 @@ def _message_entry(message: Message) -> dict:
         "needs_review": False,
         **_rejection(message),
     }
+
+
+def _message_at(message: Message) -> datetime:
+    """A rejected draft is dated by its rejection, a sent mail by its sending, every other message by its writing."""
+    if message.status == MessageStatus.REJECTED:
+        return message.reviewed_at or message.created_at
+    return message.sent_at or message.created_at
 
 
 def _rejection(message: Message) -> dict:

@@ -66,7 +66,7 @@ def mailbox_sent_on(mailbox_id: int, day: date) -> int:
 
 
 def reserve_mailbox(mailbox_id: int, day: date, cap: int | None) -> bool:
-    """Counted even without a cap, so `sent_today` of the health report is right."""
+    """Counted even without a cap, so a cap set later in the day starts from what the day reserved."""
     return _reserve(_mailbox_key(mailbox_id, day), cap)
 
 

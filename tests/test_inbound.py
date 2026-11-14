@@ -183,7 +183,7 @@ def test_C23_optout_phrase_pauses_sequence_confirm_creates_suppression_and_signa
     suppression = Suppression.objects.get()
     assert (suppression.value, suppression.reason, suppression.created_by) == (
         "owner@example-shop-4.test",
-        "optout confirmed",
+        "Confirmed from a reply",
         user,
     )
     assert state_of(message).stop_reason == SequenceStopReason.OPTOUT

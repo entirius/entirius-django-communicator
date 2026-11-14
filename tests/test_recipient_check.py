@@ -4,6 +4,7 @@
 """The recipient check of the preflight (address, then the owner of the subject through `recipient_check`) at every
 caller, drafts withdrawn when nobody may send them, and rejected drafts on the timeline."""
 
+from datetime import timedelta
 from unittest import mock
 
 import pytest
@@ -11,9 +12,11 @@ from django.contrib.auth import get_user_model
 from django.core import mail
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
-from django_communicator.enums import AddressState, FailureCode, MessageStatus
-from django_communicator.models import AddressStatus, Message
+from django_communicator.enums import AddressState, FailureCode, MessageStatus, ReplyKind
+from django_communicator.models import AddressStatus, Message, Reply
 from django_communicator.services import preflight_service, review_service, send_service, suppression_service
 from django_communicator.services.communicate_service import RecipientData, communicate
 from django_communicator.signals import recipient_check
@@ -203,6 +206,50 @@ def test_a_withdrawn_draft_has_no_reviewer_and_other_entries_are_empty(channel, 
         "the recipient opted out",
     )
     assert (fresh["status"], fresh["rejected_by"], fresh["reject_reason"]) == ("review_required", "", "")
+
+
+def written_days_ago(message: Message, days: int) -> Message:
+    Message.objects.filter(pk=message.pk).update(created_at=timezone.now() - timedelta(days=days))
+    message.refresh_from_db()
+    return message
+
+
+def test_a_skipped_draft_is_dated_by_its_skip_after_a_newer_reply(channel, cold, admin_api):
+    message = written_days_ago(draft(), 3)
+    thread = message.thread
+    Reply.objects.create(
+        channel=channel,
+        thread=thread,
+        from_email=EMAIL,
+        kind=ReplyKind.REPLY,
+        inbound_message_id="<dated@example-shop.test>",
+        received_at=timezone.now() - timedelta(days=1),
+    )
+    review_service.skip(message, user=None, reason="not now")
+
+    entries = timeline(admin_api, message)
+
+    assert [entry["kind"] for entry in entries] == ["reply", "message"]
+    message.refresh_from_db()
+    assert parse_datetime(entries[1]["at"]) == message.reviewed_at > message.created_at
+
+
+def test_a_withdrawn_draft_is_dated_by_its_withdrawal(channel, cold, admin_api):
+    message = written_days_ago(draft(), 3)
+    review_service.withdraw(channel, EMAIL, reason="the recipient opted out")
+
+    [entry] = timeline(admin_api, message)
+
+    message.refresh_from_db()
+    assert message.reviewed_by is None and parse_datetime(entry["at"]) == message.reviewed_at > message.created_at
+
+
+def test_a_waiting_draft_keeps_the_date_it_was_written(channel, cold, admin_api):
+    message = written_days_ago(draft(), 3)
+
+    [entry] = timeline(admin_api, message)
+
+    assert parse_datetime(entry["at"]) == message.created_at
 
 
 def test_an_inbox_row_shows_no_rejected_draft(channel, cold, admin_api):
