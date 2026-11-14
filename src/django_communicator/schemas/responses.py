@@ -352,6 +352,10 @@ class ThreadDraftResponse(BaseModel):
     id: int = Field(description="Message id of the draft waiting for review.", examples=[11])
     subject: str = Field(description="Draft subject.", examples=["Quick question"])
     composed: bool = Field(description="Written by hand (`compose`), not drafted from a template.", examples=[False])
+    from_email: str = Field(
+        description="Address the draft will leave from: the thread's mailbox, else the channel's sender address.",
+        examples=["sales@agency.test"],
+    )
 
 
 class ThreadWaitingResponse(BaseModel):
@@ -435,7 +439,11 @@ class TimelineEntryResponse(BaseModel):
     status: str = Field(description="Message status; empty for a reply.", examples=[""])
     subject: str = Field(description="Subject.", examples=["Re: Your shop audit"])
     body_text: str = Field(description="Plain-text body, quoted history included.", examples=["Hello, ..."])
-    from_email: str = Field(description="Sender of a reply; empty for our messages.", examples=["owner@shop.test"])
+    from_email: str = Field(
+        description="Sender of a reply; for our message the address it left or will leave from (the thread's "
+        "mailbox, else the channel's sender address).",
+        examples=["owner@shop.test"],
+    )
     reply_kind: str = Field(
         description="reply, auto, suspected_optout, bounce_hard or bounce_soft; empty for a message.",
         examples=["reply"],

@@ -21,7 +21,7 @@ from django_email.domain import EmailDomain
 
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import ChannelMode, MessageStatus
-from django_communicator.models import Channel, Mailbox, Message, MessageTemplateVersion, Reply
+from django_communicator.models import Channel, Mailbox, Message, MessageTemplateVersion, Reply, Thread
 from django_communicator.services import footer_service, mailbox_service, unsubscribe_service
 
 FOOTER_SEPARATOR = "\n\n-- \n"
@@ -93,11 +93,21 @@ def build(message: Message) -> EmailMultiAlternatives:
 def _transport(channel: Channel, mailbox: Mailbox | None) -> tuple[BaseEmailBackend, str]:
     """(SMTP connection, From) of the mailbox, else of the channel's django_email entry."""
     if mailbox is not None:
-        return mailbox_service.smtp_connection(mailbox), mailbox_service.sender(mailbox)
+        return mailbox_service.smtp_connection(mailbox), sender(channel, mailbox)
     connection = EmailDomain(channel_idx=channel.idx).get_channel_smtp_connection_if_exists()
     if connection is None:
         raise SmtpNotConfiguredError(f"no SMTP configuration for channel {channel.idx}")
-    return connection, from_email(channel)
+    return connection, sender(channel, mailbox)
+
+
+def sender(channel: Channel, mailbox: Mailbox | None) -> str:
+    """The From of a mail: the thread's mailbox, else the channel's sender address."""
+    return mailbox_service.sender(mailbox) if mailbox is not None else from_email(channel)
+
+
+def sender_address(thread: Thread) -> str:
+    """The bare address every mail of the thread leaves from — no query with `channel` and `mailbox` loaded."""
+    return parseaddr(sender(thread.channel, thread.mailbox))[1]
 
 
 def _cc(mailbox: Mailbox | None, channel: Channel, headers: dict[str, str]) -> list[str]:

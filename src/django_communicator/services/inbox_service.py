@@ -14,6 +14,7 @@ from django.db.models.functions import Coalesce, Greatest
 
 from django_communicator.enums import Direction, MessageStatus, ReplyKind, ThreadStatus
 from django_communicator.models import Channel, Message, Reply, SendPolicy, Thread
+from django_communicator.services import mail_builder
 from django_communicator.services.send_service import DUE_STATUSES, next_slot_for
 
 TIMELINE_HIDDEN_STATUSES = (MessageStatus.SUPERSEDED,)
@@ -140,7 +141,11 @@ def _merged(events: dict[int, list], ref_of: dict[int, str], key) -> dict[str, l
 def _events(ids: list[int]) -> tuple[dict[int, list[Message]], dict[int, list[Reply]]]:
     """Visible messages and replies of these threads, oldest first, by thread id — two queries."""
     messages, replies = defaultdict(list), defaultdict(list)
-    visible = Message.objects.filter(thread_id__in=ids).exclude(status__in=ROW_HIDDEN_STATUSES)
+    visible = (
+        Message.objects.filter(thread_id__in=ids)
+        .exclude(status__in=ROW_HIDDEN_STATUSES)
+        .select_related("thread__channel", "thread__mailbox")
+    )
     for message in visible.order_by("created_at", "pk"):
         messages[message.thread_id].append(message)
     for reply in Reply.objects.filter(thread_id__in=ids).order_by("received_at", "pk"):
@@ -183,10 +188,15 @@ def _row(thread: Thread, messages: list[Message], replies: list[Reply], policy: 
         "activity_at": getattr(thread, "activity_at", None) or thread.last_message_at or thread.created_at,
         "subject": _subject(messages, replies),
         "last_text": entries[-1][1][:LAST_TEXT_MAX] if entries else "",
-        "draft": {"id": draft.pk, "subject": draft.subject, "composed": draft.composed} if draft else None,
+        "draft": _draft(draft) if draft else None,
         "waiting": _waiting(waiting, policy) if waiting else None,
         **_reply_class(replies),
     }
+
+
+def _draft(draft: Message) -> dict:
+    fields = {"id": draft.pk, "subject": draft.subject, "composed": draft.composed}
+    return fields | {"from_email": mail_builder.sender_address(draft.thread)}
 
 
 def _reply_class(replies: list[Reply]) -> dict:
@@ -205,22 +215,24 @@ def _waiting(message: Message, policy: SendPolicy | None) -> dict:
 
 
 def get_thread(channel_idx: str, pk: int) -> Thread:
-    """One query (channel and sequence state joined). Raises `Thread.DoesNotExist`."""
-    return Thread.objects.select_related("sequence_state").get(channel__idx=channel_idx, pk=pk)
+    """One query (channel, mailbox and sequence state joined). Raises `Thread.DoesNotExist`."""
+    return Thread.objects.select_related("sequence_state", "channel", "mailbox").get(channel__idx=channel_idx, pk=pk)
 
 
 def timeline(thread: Thread) -> list[dict]:
     """Messages (without superseded versions; a rejected draft with who rejected it and why, dated by its rejection)
-    and replies, oldest first — two queries."""
+    and replies, oldest first — two queries with the thread's `channel` and `mailbox` loaded (`get_thread`)."""
     messages = (
         Message.objects.filter(thread=thread).exclude(status__in=TIMELINE_HIDDEN_STATUSES).select_related("reviewed_by")
     )
-    entries = [_message_entry(message) for message in messages]
+    sender = mail_builder.sender_address(thread)
+    entries = [_message_entry(message, sender) for message in messages]
     entries += [_reply_entry(reply) for reply in Reply.objects.filter(thread=thread)]
     return sorted(entries, key=lambda entry: entry["at"])
 
 
-def _message_entry(message: Message) -> dict:
+def _message_entry(message: Message, sender: str) -> dict:
+    """`from_email` of an outbound message: the address it left or will leave from (`sender`)."""
     return {
         "kind": "message",
         "message_id": message.pk,
@@ -231,7 +243,7 @@ def _message_entry(message: Message) -> dict:
         "status": message.status,
         "subject": message.subject,
         "body_text": message.body_text,
-        "from_email": "",
+        "from_email": sender if message.direction == Direction.OUT else "",
         "reply_kind": "",
         "intent": "",
         "intent_confidence": None,

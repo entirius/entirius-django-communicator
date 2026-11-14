@@ -79,6 +79,7 @@ def test_a_draft_in_an_older_thread_lists_the_conversation_under_drafts_with_tha
         "id": company["draft"].pk,
         "subject": "Answer draft",
         "composed": False,
+        "from_email": "outreach@mail.example.test",
         "recipient_email": "owner@shop.test",
     }
     assert rows[0]["recipient_email"] == "sales@shop.test"  # the newest thread's; the draft names its own
