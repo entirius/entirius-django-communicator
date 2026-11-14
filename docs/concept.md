@@ -121,6 +121,8 @@ channel. Counts are per mailbox by `Thread.mailbox`: sent (every delivery, `woul
 (confirmed opt-outs and unsubscribe links, on the mailbox of the address's newest sent mail). A mailbox with at least
 `min_sample` sent mails over a limit is paused, `MailboxPauseLog` records the measured rates and a `high` alert goes
 out. Only a person resumes it (`resume/`, logged); the policy then counts events after the resume only.
+A mailbox row's `sent_today` counts its deliveries of the channel's current day the same way; the cap is enforced with
+the reservation counter of `counter_service`, which is not shown.
 
 ## Message lifecycle
 
@@ -155,8 +157,8 @@ templates work as before. A due AI follow-up keeps its step and due date and is 
 | accept | preflight first (refused with `ReviewError` on a problem), then `approved`, reviewer + time, `scheduled_at` = next policy slot (empty without a policy), `message_approved` (C-07) |
 | rewrite (notes) | AI drafts only: new version with the notes appended to the user prompt, previous → `superseded`; a toolbox failure creates a `failed` version and keeps the reviewed one in the queue; automated rewrites capped by `COMMUNICATOR_AUTOMATED_REWRITE_LIMIT`, failures count (C-08) |
 | edit | new version `edited_by_human`, previous → `superseded`, no toolbox call (C-09) |
-| skip | `rejected` with a reason; a rejected follow-up re-arms its sequence; on the timeline with the reviewer and the reason |
-| withdraw (channel, email, reason) | every draft to the address waiting for review → `rejected` with the reason and no reviewer; no sequence re-armed. A confirmed opt-out calls it ("the recipient opted out"); so does the owner of a subject that may no longer mail a recipient |
+| skip | `rejected` with a reason; a rejected follow-up re-arms its sequence; on the timeline at the moment of the skip, with the reviewer and the reason |
+| withdraw (channel, email, reason) | every draft to the address waiting for review → `rejected` with the reason and no reviewer, stamped `reviewed_at`; no sequence re-armed. A confirmed opt-out calls it ("the recipient opted out"); so does the owner of a subject that may no longer mail a recipient |
 | skip company | skip + `company_skipped(subject_ref)` for the caller to stop the whole subject |
 
 **Preflight.** `preflight_service.problem(message) -> (failure_code, detail) | None` runs at accept and again in the
@@ -309,7 +311,7 @@ reply title, `reply_plan_service.reply_title(sender, reply)`; leads titles its a
 alert for the reply (leads, with the company name) returns `REPLY_ALERTED` (`django_communicator.signals`);
 communicator's own alert goes out only when no receiver did — a thread nobody listens to, or a receiver that failed.
 
-Confirm opt-out → suppression of the thread recipient, sequence `optout`, `optout_confirmed`, and a
+Confirm opt-out → suppression of the thread recipient (note "Confirmed from a reply"), sequence `optout`, `optout_confirmed`, and a
 `django_agreements` objection when installed (retried by task `record_objection`). Dismiss → kind
 `reply`, sequence stays paused until `threads/<id>/resume-sequence/`.
 

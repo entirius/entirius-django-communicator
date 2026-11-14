@@ -3945,7 +3945,7 @@ components:
           title: Pause Reason
           type: string
         sent_today:
-          description: Deliveries counted today (channel day).
+          description: Deliveries sent on the channel's current day.
           examples:
           - 12
           title: Sent Today

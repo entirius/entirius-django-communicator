@@ -130,6 +130,12 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
 - Sending health: `sent` of a window counts every delivery, `would_send` included, as `sent_today` does; rates and the
   automatic pause read the same number.
 - A bulk approval that changed nothing and refused nothing writes no `BulkApprovalLog` row.
+- A rejected draft's timeline entry is dated by its rejection (`at` = `reviewed_at`; a withdrawal stamps it too), so a
+  draft skipped now appears now on the timeline, whenever it was written.
+- Sending health: a mailbox row's `sent_today` counts the deliveries (what `sent` of a window counts) whose `sent_at`
+  lies on the channel's current day, in one query for every mailbox; the cap's reservation counter is no longer shown.
+- The suppression note of a confirmed opt-out reads "Confirmed from a reply" (`OPTOUT_REASON`); existing rows keep
+  their text.
 
 - A delivered message without a template version never arms or re-arms a sequence; a follow-up reads its context and
   legal footer from the newest outbound message with a template version.
