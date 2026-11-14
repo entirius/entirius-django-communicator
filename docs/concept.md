@@ -81,7 +81,7 @@ Fixed order:
    asks again at delivery (a message without a template version always needs one).
 4. **Thread** — the given thread (or the thread of `in_reply_to`), else the newest **open or replied** thread of
    (channel, `subject_ref`, email), else a new one; a closed thread is never reused. A replied thread is open again.
-5. **Message** — `approved` by its author (`reviewed_by`, `created_by`, `edited_by_human`), `body_text` as written
+5. **Message** — `approved` by its author (`reviewed_by`, `created_by`, `edited_by_human`, `composed`), `body_text` as written
    (the mail builder escapes it into paragraphs; no HTML from the caller), `scheduled_at` = the channel's now. Mode,
    policy window, caps, mailbox hold and the delivery checks apply as to any message; `message_approved` fires on
    commit.
@@ -90,7 +90,8 @@ Writing by hand ends the automation of the thread: its sequence (running or paus
 delivered message without a template version never arms, re-arms or autostarts a sequence. A follow-up of a sequence
 started again later takes its context and legal footer from the newest outbound message **with** a template version.
 With `in_reply_to` the mail answers that reply: `In-Reply-To` is the reply's inbound Message-ID and `References` ends
-with it (`Message.in_reply_to`).
+with it (`Message.in_reply_to`). `Message.composed` marks the message as written by hand, so a timeline entry and a
+conversation's draft say so (`composed`) without asking the caller.
 
 ## Mailboxes
 
@@ -294,8 +295,9 @@ tracked per mailbox; each mailbox fails and is announced on its own) and hands e
    the commit `reply_received` and the alert. Without a class: sequence stopped, `high` alert.
 
 Alerts of a reply carry words, never a raw value: `Reply from <sender> — <class words>` (`reply_type_label`:
-`not_now` → "Not now" …), `Reply from <sender>` without a class, `Possible opt-out — <sender>` for a suspected
-opt-out. One bell entry per reply: `reply_received` goes out with `send_robust`, and a receiver that raised its own
+`not_now` → "Not now" …), `Reply from <sender> — Needs review` without a class but flagged for a person,
+`Reply from <sender>` without either, `Possible opt-out — <sender>` for a suspected opt-out. One helper builds every
+reply title, `reply_plan_service.reply_title(sender, reply)`; leads titles its alert with it too. One bell entry per reply: `reply_received` goes out with `send_robust`, and a receiver that raised its own
 alert for the reply (leads, with the company name) returns `REPLY_ALERTED` (`django_communicator.signals`);
 communicator's own alert goes out only when no receiver did — a thread nobody listens to, or a receiver that failed.
 
@@ -361,7 +363,8 @@ writes nothing. Verification (`address_service.verify`, off until `COMMUNICATOR_
 disposable domain (`COMMUNICATOR_DISPOSABLE_DOMAINS`) → DNS: no domain `domain_not_found`, null MX `null_mx`, MX
 `mx_ok` (`valid`), no MX but A/AAAA `no_mx_address_fallback` (`risky`), nothing `no_mail_server`, a failed lookup
 `dns_error` (`unknown`). Never an SMTP probe or an external API. `suppression_service.can_mail(channel, email)`
-answers `address_invalid`, `suppressed` or None in at most two queries; `explain(channel, email)` adds the rows.
+answers `address_invalid`, `suppressed` or None in at most two queries; `can_mail_many(channel, emails)` gives the
+same answer for every address of a list in two queries (a page of contacts); `explain(channel, email)` adds the rows.
 
 With django_leads installed, `contact_anonymised(email_hash, anonymised_email, subject_ref)` suppresses
 the token globally and rewrites that subject's thread recipients and the subject's own reply senders.

@@ -127,6 +127,13 @@ paths:
           type: string
         required: true
       - in: query
+        name: needs_review
+        schema:
+          type: string
+          enum:
+          - 'true'
+        description: Only conversations whose newest human reply is flagged for a person; counts follow.
+      - in: query
         name: page
         schema:
           type: integer
@@ -3188,6 +3195,12 @@ components:
           - Quick question
           title: Subject
           type: string
+        composed:
+          description: Written by hand (`compose`), not drafted from a template.
+          examples:
+          - false
+          title: Composed
+          type: boolean
         recipient_email:
           description: Recipient of the draft's own thread.
           examples:
@@ -3197,6 +3210,7 @@ components:
       required:
       - id
       - subject
+      - composed
       - recipient_email
       title: ConversationDraftResponse
       type: object
@@ -3234,7 +3248,7 @@ components:
           type: array
         counts:
           $ref: '#/components/schemas/ConversationCountsResponse'
-          description: Conversations per state, ignoring the `state` filter.
+          description: Conversations per state, ignoring the `state` filter and following `needs_review`.
       required:
       - count
       - next
@@ -6604,6 +6618,12 @@ components:
           examples:
           - null
           title: Last Message At
+        subject_label:
+          description: What the thread is about, in the caller's words; empty when unknown.
+          examples:
+          - Shop Ltd
+          title: Subject Label
+          type: string
         sequence:
           anyOf:
           - $ref: '#/components/schemas/SequenceStateResponse'
@@ -6626,6 +6646,7 @@ components:
       - recipient_name
       - status
       - last_message_at
+      - subject_label
       - sequence
       - timeline
       title: ThreadDetailResponse
@@ -6644,9 +6665,16 @@ components:
           - Quick question
           title: Subject
           type: string
+        composed:
+          description: Written by hand (`compose`), not drafted from a template.
+          examples:
+          - false
+          title: Composed
+          type: boolean
       required:
       - id
       - subject
+      - composed
       title: ThreadDraftResponse
       type: object
     ThreadListResponse:
@@ -6896,6 +6924,20 @@ components:
           examples:
           - null
           title: Message Id
+        reply_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Reply id of an inbound entry; null for a message.
+          examples:
+          - 5
+          title: Reply Id
+        composed:
+          description: A message written by hand (`compose`); false for a reply.
+          examples:
+          - false
+          title: Composed
+          type: boolean
         at:
           description: Sent, received or created.
           examples:
@@ -6971,6 +7013,8 @@ components:
       required:
       - kind
       - message_id
+      - reply_id
+      - composed
       - at
       - direction
       - status

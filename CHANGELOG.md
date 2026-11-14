@@ -6,6 +6,13 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
 
 ### Added
 
+- **What the screens no longer guess.** `GET conversations/?needs_review=true`: only conversations whose newest human
+  reply is flagged for a person, the counts follow it (any other value → 400). A timeline entry carries `reply_id`
+  (inbound entries) and `composed`; `Message.composed` (migration 0024, no backfill) is set by `compose()` and shown
+  on the draft of a thread or conversation row too. The thread detail carries `subject_label` (`""` when unknown).
+  `reply_plan_service.reply_title(sender, reply)` is the one reply title helper: a flagged reply without a class reads
+  `Reply from <sender> — Needs review`. `suppression_service.can_mail_many(channel, emails)`: `can_mail` of a list
+  of addresses in two queries.
 - **Words for the screens.** `Thread.subject_label` (migration 0023): `communicate()` and `compose()` take an optional
   `subject_label` (what the thread is about, e.g. a company name); a non-empty value is stored on the thread, a blank
   one keeps it; the development views `test/communicate/` and `test/compose/` accept it. The approval row carries
