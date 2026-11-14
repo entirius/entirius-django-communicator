@@ -4,9 +4,10 @@
 
 """Sending health per mailbox and per channel, and the pause of a mailbox (automatic or by a person).
 
-Counts are events inside a window, attributed by `Thread.mailbox`: mails sent (`sent_at`), hard bounces, soft
-bounces (a DSN for a message that waits for its retry), complaints, human replies and opt-outs (a confirmed opt-out
-or an unsubscribe link, attributed to the mailbox of the recipient's newest sent mail). Rates are percent of `sent`.
+Counts are events inside a window, attributed by `Thread.mailbox`: mails delivered (`sent_at`; a delivery without
+SMTP, `would_send`, counts too), hard bounces, soft bounces (a DSN for a message that waits for its retry),
+complaints, human replies and opt-outs (a confirmed opt-out or an unsubscribe link, attributed to the mailbox of the
+recipient's newest sent mail). Rates are percent of `sent`.
 
 The auto-pause is off until the channel's `HealthPolicy` is enabled; it judges live channels only (a sandbox bounce
 says nothing about real recipients), pauses one mailbox and never resumes it: only a person does, and the policy
@@ -75,7 +76,8 @@ def save_policy(channel: Channel, fields: dict) -> HealthPolicy:
 def counts(channel: Channel, since: datetime) -> Counts:
     """{mailbox id: {counter: n}} for events after `since`; the key is None for mail without a mailbox."""
     result: Counts = defaultdict(lambda: dict.fromkeys(COUNTERS, 0))
-    sent = Q(status=MessageStatus.SENT) | Q(status=MessageStatus.FAILED, failure_code=FailureCode.BOUNCE)
+    delivered = Q(status__in=(MessageStatus.SENT, MessageStatus.WOULD_SEND))
+    sent = delivered | Q(status=MessageStatus.FAILED, failure_code=FailureCode.BOUNCE)
     messages = Message.objects.filter(sent, thread__channel=channel, direction=Direction.OUT, sent_at__gt=since)
     for row in messages.values("thread__mailbox").annotate(n=Count("pk")):
         result[row["thread__mailbox"]]["sent"] += row["n"]

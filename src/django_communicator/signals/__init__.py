@@ -15,6 +15,9 @@
   sandbox or dry-run channel.
 - `draft_retry_requested(sender=Message, message=...)` — sent synchronously before a failed draft is retried; the
   owner of the thread's `subject_ref` returns a reason code to block the retry, None to allow it.
+- `recipient_check(sender=Message, message=...)` — sent synchronously whenever a message is checked before approval
+  or delivery (`preflight_service.problem`); the owner of the thread's `subject_ref` returns a readable sentence to
+  refuse the recipient, None to accept. The first sentence is the refusal (failure code `recipient`).
 """
 
 from django.dispatch import Signal
@@ -29,3 +32,4 @@ reply_received = Signal()
 optout_confirmed = Signal()
 draft_retry_requested = Signal()
 message_bounced = Signal()
+recipient_check = Signal()

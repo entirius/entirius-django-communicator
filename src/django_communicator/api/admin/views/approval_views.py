@@ -57,8 +57,9 @@ class ApprovalListView(AdminView):
         operation_id="communicator_approvals_list",
         summary="Every outbound draft waiting for approval, all channels",
         description="Oldest first, paginated (`page`, `page_size` ≤ 100). `counts` covers the whole filtered set. "
-        "`blocker` says why approving a row would be refused (null: it may be approved): a missing legal footer or a "
-        "mailbox that is paused, disabled or needs a login.",
+        "`blocker` says why approving a row would be refused (null: it may be approved): a missing legal footer, a "
+        "mailbox that is paused, disabled or needs a login, or a recipient who may not be mailed (opted out, on the "
+        "do-not-contact list, an invalid address, or refused by the owner of the thread's subject).",
         parameters=[
             OpenApiParameter("channel", str),
             OpenApiParameter("template_key", str),
@@ -96,8 +97,9 @@ class BulkApprovalView(AdminView):
         tags=_TAGS,
         summary="Approve or reject several drafts at once",
         description="Each id is handled on its own: a draft that is unknown, no longer waiting or refused by the "
-        "preflight (legal footer) lands in `failed` with the reason and never blocks the others. At most "
-        "`COMMUNICATOR_BULK_APPROVAL_MAX` ids (default 100), else 400. Every call is logged with the user.",
+        "preflight (legal footer, mailbox, recipient) lands in `failed` with the reason (the same sentence as the "
+        "row's `blocker`) and never blocks the others. At most `COMMUNICATOR_BULK_APPROVAL_MAX` ids (default 100), "
+        "else 400. Every call that changed or refused a draft is logged with the user.",
         request=BulkApprovalRequest,
         responses={200: BulkApprovalResponse, **ERROR_RESPONSES},
     )

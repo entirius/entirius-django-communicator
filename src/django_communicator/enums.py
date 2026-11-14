@@ -97,6 +97,7 @@ class FailureCode(models.TextChoices):
     SEND_OUTCOME_UNKNOWN = "send_outcome_unknown", "Send outcome unknown"
     LEGAL_FOOTER = "legal_footer", "Legal footer missing"
     MAILBOX = "mailbox", "Mailbox cannot send"
+    RECIPIENT = "recipient", "Recipient refused"
 
 
 class ReplyKind(models.TextChoices):

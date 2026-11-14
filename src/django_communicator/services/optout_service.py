@@ -2,8 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""A human decides a suspected opt-out: confirm (suppression of the thread recipient + `optout_confirmed`) or
-dismiss (a plain reply, the sequence stays paused until `resume`)."""
+"""A human decides a suspected opt-out: confirm (suppression of the thread recipient, its waiting drafts withdrawn,
+`optout_confirmed`) or dismiss (a plain reply, the sequence stays paused until `resume`)."""
 
 import functools
 import logging
@@ -15,7 +15,7 @@ from django.utils import timezone
 
 from django_communicator.enums import ReplyKind, SequenceStopReason, SuppressionSource
 from django_communicator.models import Reply, Thread, ThreadSequenceState
-from django_communicator.services import inbound_service, sequence_service, suppression_service
+from django_communicator.services import inbound_service, review_service, sequence_service, suppression_service
 from django_communicator.services.exceptions import ClientError
 from django_communicator.signals import optout_confirmed, reply_received
 
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 OBJECTION_RETRY_COUNTDOWN_S = 60
 OPTOUT_REASON = "optout confirmed"
+OPTED_OUT = "the recipient opted out"
 
 
 class OptoutStateError(ClientError):
@@ -38,6 +39,7 @@ def confirm(reply: Reply, *, user) -> Reply:
         thread.channel, email, source=SuppressionSource.OPTOUT_CONFIRMED, reason=OPTOUT_REASON, user=user
     )
     sequence_service.stop_sequence(thread, SequenceStopReason.OPTOUT)
+    review_service.withdraw(thread.channel, email, reason=OPTED_OUT)
     reply.optout_confirmed_at, reply.optout_confirmed_by = timezone.now(), user
     reply.save(update_fields=["optout_confirmed_at", "optout_confirmed_by", "modified_at"])
     channel_idx = thread.channel.idx

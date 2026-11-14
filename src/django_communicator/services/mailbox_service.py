@@ -13,6 +13,7 @@ leaves a password column alone unless the caller sends a new password, so an unr
 import copy
 import imaplib
 import smtplib
+import ssl
 from datetime import date, datetime
 from email.utils import formataddr
 from typing import Any
@@ -56,13 +57,13 @@ _RELATION_FIELDS = frozenset({"user_id", "is_default", *PASSWORD_FIELDS})
 IMAP_IDENTITY = ("imap_host", "imap_user", "folder")
 LOGIN_TIMEOUT_S = 30
 IMAP_ERROR = imaplib.IMAP4.error  # bound at import: a test may replace imaplib.IMAP4
-SMTP_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-OK, NOT_CONFIGURED, NO_PASSWORD, AUTH_FAILED, UNREACHABLE = (
+OK, NOT_CONFIGURED, NO_PASSWORD, AUTH_FAILED, UNREACHABLE, CERTIFICATE = (
     "ok",
     "not_configured",
     "no_password",
     "auth_failed",
     "unreachable",
+    "certificate",
 )
 
 
@@ -249,14 +250,13 @@ def sender(mailbox: Mailbox) -> str:
     return formataddr((mailbox.display_name, mailbox.address))
 
 
-def smtp_connection(mailbox: Mailbox, backend: str | None = None) -> BaseEmailBackend:
-    """The mailbox's SMTP connection (the host's `EMAIL_BACKEND` unless `backend` is given). Raises
+def smtp_connection(mailbox: Mailbox) -> BaseEmailBackend:
+    """The mailbox's SMTP connection through the host's `EMAIL_BACKEND` (the send and the login test alike). Raises
     `MailboxLoginError` instead of logging in with empty credentials."""
     if not _smtp_ready(mailbox):
         raise MailboxLoginError(f"mailbox {mailbox.pk} has no SMTP host or password")
     use_ssl = mailbox.smtp_security == SmtpSecurity.SSL
     return get_connection(
-        backend,
         host=mailbox.smtp_host,
         port=mailbox.smtp_port,
         username=mailbox.smtp_user or mailbox.address,
@@ -297,7 +297,9 @@ def notify_needs_login(mailbox: Mailbox, now: datetime) -> None:
 
 
 def check_login(mailbox: Mailbox) -> dict[str, str]:
-    """Log in to SMTP and IMAP: `ok` or a code. A working SMTP login clears `needs_login`."""
+    """Log in to SMTP (the connection a send uses) and IMAP: `ok` or a code — `certificate` for a server certificate
+    the host does not accept, `unreachable` for a server that does not answer. A working SMTP login clears
+    `needs_login`."""
     result = {"smtp": _test_smtp(mailbox), "imap": _test_imap(mailbox)}
     if result["smtp"] == OK and mailbox.smtp_login_failed_at is not None:
         Mailbox.objects.filter(pk=mailbox.pk).update(smtp_login_failed_at=None)
@@ -310,11 +312,13 @@ def _test_smtp(mailbox: Mailbox) -> str:
         return NOT_CONFIGURED
     if not mailbox.smtp_password:
         return NO_PASSWORD
-    connection = smtp_connection(mailbox, backend=SMTP_BACKEND)
+    connection = smtp_connection(mailbox)
     try:
         connection.open()
     except smtplib.SMTPAuthenticationError:
         return AUTH_FAILED
+    except ssl.SSLCertVerificationError:
+        return CERTIFICATE
     except (smtplib.SMTPException, OSError):
         return UNREACHABLE
     connection.close()
@@ -330,6 +334,8 @@ def _test_imap(mailbox: Mailbox) -> str:
         imap = imap_login(mailbox)
     except IMAP_ERROR:
         return AUTH_FAILED
+    except ssl.SSLCertVerificationError:
+        return CERTIFICATE
     except OSError:
         return UNREACHABLE
     imap.logout()

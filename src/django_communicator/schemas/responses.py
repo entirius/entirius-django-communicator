@@ -7,7 +7,7 @@ from datetime import date, datetime, time
 from typing import Any
 
 from django_utils.toolbox import ModelInfo
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ThreadResponse(BaseModel):
@@ -444,6 +444,17 @@ class TimelineEntryResponse(BaseModel):
     intent_confidence: float | None = Field(description="Confidence of the class.", examples=[0.85])
     intent_return_date: date | None = Field(description="Return date of an out-of-office reply.", examples=[None])
     needs_review: bool = Field(description="A reply flagged for a person.", examples=[False])
+    rejected_by: str = Field(
+        description="Display name of who rejected (skipped) the draft; empty for a draft withdrawn because nobody may "
+        "mail the recipient, and on every other entry.",
+        examples=[""],
+    )
+    reject_reason: str = Field(description="Why the draft was rejected; empty when none.", examples=[""])
+
+    @field_validator("rejected_by", mode="before")
+    @classmethod
+    def _reviewer_name(cls, value: Any) -> str:
+        return value if isinstance(value, str) else _person_name(value)
 
 
 class ThreadDetailResponse(ThreadSummaryResponse):
@@ -559,7 +570,11 @@ class MailboxListResponse(BaseModel):
 
 
 class MailboxTestResponse(BaseModel):
-    smtp: str = Field(description="ok, not_configured, no_password, auth_failed or unreachable.", examples=["ok"])
+    smtp: str = Field(
+        description="ok, not_configured, no_password, auth_failed, certificate (the host does not accept the server's "
+        "certificate) or unreachable (the server does not answer). Logs in the way a send does.",
+        examples=["ok"],
+    )
     imap: str = Field(description="Same codes for the IMAP login.", examples=["auth_failed"])
 
 

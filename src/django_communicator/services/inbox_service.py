@@ -15,7 +15,9 @@ from django_communicator.enums import Direction, MessageStatus, ReplyKind, Threa
 from django_communicator.models import Channel, Message, Reply, SendPolicy, Thread
 from django_communicator.services.send_service import DUE_STATUSES, next_slot_for
 
-TIMELINE_HIDDEN_STATUSES = (MessageStatus.SUPERSEDED, MessageStatus.REJECTED)
+TIMELINE_HIDDEN_STATUSES = (MessageStatus.SUPERSEDED,)
+# An inbox row never shows a draft nobody sent: its text and subject come from what went out or waits.
+ROW_HIDDEN_STATUSES = (MessageStatus.SUPERSEDED, MessageStatus.REJECTED)
 # What an inbox list filters on: a draft waiting for review, a mail waiting for the send beat, a reply.
 THREAD_STATES = ("draft", "waiting", "replied")
 THREAD_SORTS = ("created", "activity")
@@ -137,7 +139,7 @@ def _merged(events: dict[int, list], ref_of: dict[int, str], key) -> dict[str, l
 def _events(ids: list[int]) -> tuple[dict[int, list[Message]], dict[int, list[Reply]]]:
     """Visible messages and replies of these threads, oldest first, by thread id — two queries."""
     messages, replies = defaultdict(list), defaultdict(list)
-    visible = Message.objects.filter(thread_id__in=ids).exclude(status__in=TIMELINE_HIDDEN_STATUSES)
+    visible = Message.objects.filter(thread_id__in=ids).exclude(status__in=ROW_HIDDEN_STATUSES)
     for message in visible.order_by("created_at", "pk"):
         messages[message.thread_id].append(message)
     for reply in Reply.objects.filter(thread_id__in=ids).order_by("received_at", "pk"):
@@ -207,8 +209,11 @@ def get_thread(channel_idx: str, pk: int) -> Thread:
 
 
 def timeline(thread: Thread) -> list[dict]:
-    """Messages (without superseded/rejected versions) and replies, oldest first — two queries."""
-    messages = Message.objects.filter(thread=thread).exclude(status__in=TIMELINE_HIDDEN_STATUSES)
+    """Messages (without superseded versions; a rejected draft with who rejected it and why) and replies, oldest
+    first — two queries."""
+    messages = (
+        Message.objects.filter(thread=thread).exclude(status__in=TIMELINE_HIDDEN_STATUSES).select_related("reviewed_by")
+    )
     entries = [_message_entry(message) for message in messages]
     entries += [_reply_entry(reply) for reply in Reply.objects.filter(thread=thread)]
     return sorted(entries, key=lambda entry: entry["at"])
@@ -231,7 +236,15 @@ def _message_entry(message: Message) -> dict:
         "intent_confidence": None,
         "intent_return_date": None,
         "needs_review": False,
+        **_rejection(message),
     }
+
+
+def _rejection(message: Message) -> dict:
+    """Who rejected the draft (a user, None when withdrawn) and why; None and "" for every other message."""
+    if message.status != MessageStatus.REJECTED:
+        return {"rejected_by": None, "reject_reason": ""}
+    return {"rejected_by": message.reviewed_by, "reject_reason": message.reject_reason}
 
 
 def _reply_entry(reply: Reply) -> dict:
@@ -251,6 +264,8 @@ def _reply_entry(reply: Reply) -> dict:
         "intent_confidence": reply.intent_confidence,
         "intent_return_date": reply.intent_return_date,
         "needs_review": reply.needs_review,
+        "rejected_by": None,
+        "reject_reason": "",
     }
 
 

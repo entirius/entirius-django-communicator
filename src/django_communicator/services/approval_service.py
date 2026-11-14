@@ -75,7 +75,8 @@ def counts_by_mailbox(rows: QuerySet[Message]) -> dict[str, int]:
 
 
 def bulk(*, user, action: str, ids: list[int], reason: str = "") -> BulkApprovalLog:
-    """Approve or reject each id on its own (a failing draft never blocks the others) and log the batch.
+    """Approve or reject each id on its own (a failing draft never blocks the others) and log the batch — unless
+    nothing was changed and nothing refused (the returned log is then not saved).
 
     Raises `BulkLimitError` above `COMMUNICATOR_BULK_APPROVAL_MAX` ids and `ValueError` for an unknown action."""
     if action not in (APPROVE, REJECT):
@@ -94,7 +95,9 @@ def bulk(*, user, action: str, ids: list[int], reason: str = "") -> BulkApproval
             else:
                 failed[str(pk)] = problem
     finally:
-        log = BulkApprovalLog.objects.create(user=user, action=action, reason=reason, ids=ids, done=done, failed=failed)
+        log = BulkApprovalLog(user=user, action=action, reason=reason, ids=ids, done=done, failed=failed)
+        if done or failed:
+            log.save()
     return log
 
 
