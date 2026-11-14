@@ -22,6 +22,11 @@ def threads_of_hash(subject_ref: str, hashed: str) -> list[int]:
     return [pk for pk, recipient in threads if email_hash(recipient) == hashed]
 
 
+def recipients_of(thread_ids: list[int]) -> list[str]:
+    """The recipient addresses of the threads (before they are replaced by the token)."""
+    return list(Thread.objects.filter(pk__in=thread_ids).values_list("recipient_email", flat=True).distinct())
+
+
 def threads_of_email(email: str) -> QuerySet[Thread]:
     """Every thread to the address, including threads already anonymised to its token."""
     return Thread.objects.filter(

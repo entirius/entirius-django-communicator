@@ -56,7 +56,7 @@ def _open(message: Message) -> bool:
     """Not replaced by a newer outbound message in the thread, recipient not suppressed since."""
     newer = Message.objects.filter(thread=message.thread_id, direction=Direction.OUT, pk__gt=message.pk)
     thread = message.thread
-    return not newer.exists() and not suppression_service.is_suppressed(thread.channel, thread.recipient_email)
+    return not newer.exists() and suppression_service.can_mail(thread.channel, thread.recipient_email) is None
 
 
 def retry(message: Message) -> bool | None:

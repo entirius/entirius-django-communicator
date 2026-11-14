@@ -5,7 +5,7 @@
 """GDPR hooks (art. 15 export, art. 17 erasure) discovered by `django_leads.gdpr.registry`.
 
 Erasure pseudonymises (rows stay for counters and the audit trail) and suppresses the address's token on every
-channel (`email_token`, no channel) — the plain address is kept nowhere, and `communicate()` answers `suppressed`
+channel (`email_token`, no channel) and drops the address status — the plain address is kept nowhere, and `communicate()` answers `suppressed`
 for it afterwards, whether or not a thread ever existed."""
 
 from typing import Any
@@ -14,8 +14,8 @@ from django.db import transaction
 from django.db.models import Q
 
 from django_communicator.enums import SuppressionKind
-from django_communicator.models import Suppression
-from django_communicator.services import anonymisation_service, suppression_service
+from django_communicator.models import AddressStatus, Suppression
+from django_communicator.services import address_service, anonymisation_service, suppression_service
 from django_communicator.utils.emails import anonymised_address, email_hash, normalize_email
 
 THREAD_FIELDS = ("id", "channel__idx", "subject_ref", "recipient_email", "recipient_name", "status", "created_at")
@@ -32,7 +32,10 @@ def gdpr_export(email: str) -> dict[str, Any]:
         "Thread": list(anonymisation_service.threads_of_email(email).values(*THREAD_FIELDS)),
         "Message": list(anonymisation_service.outbound_messages(thread_ids).values(*MESSAGE_FIELDS)),
         "Reply": list(anonymisation_service.replies_of_email(email).values(*REPLY_FIELDS)),
-        "Suppression": list(suppressions.values("channel__idx", "kind", "reason", "created_at")),
+        "Suppression": list(suppressions.values("channel__idx", "kind", "source", "reason", "created_at")),
+        "AddressStatus": list(
+            AddressStatus.objects.filter(email=normalize_email(email)).values("status", "reason", "verified_at")
+        ),
     }
 
 
@@ -43,4 +46,5 @@ def gdpr_erase(email: str) -> dict[str, int]:
         counts = anonymisation_service.erase_contents(thread_ids, email)
         anonymised = anonymisation_service.anonymise_recipients(thread_ids, token, email_hash(email))
         suppression_service.suppress_token(token, reason="gdpr_erase")
+        address_service.forget([email])
     return {**counts, "threads": anonymised["threads"], "suppressions": 1}

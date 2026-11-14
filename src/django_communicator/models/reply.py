@@ -6,7 +6,7 @@ from django.conf import settings
 from django.db import models
 from django_utils.models.base_model import BaseModel
 
-from django_communicator.enums import ReplyKind, ReplyMatch
+from django_communicator.enums import IntentSource, ReplyIntent, ReplyKind, ReplyMatch
 
 
 class Reply(BaseModel):
@@ -29,6 +29,13 @@ class Reply(BaseModel):
     optout_confirmed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
+    # The class of a human reply (blank = not classified) and what its plan did; see `reply_class_service`.
+    intent = models.CharField(max_length=24, choices=ReplyIntent.choices, blank=True, default="", db_index=True)
+    intent_confidence = models.FloatField(null=True, blank=True)
+    intent_source = models.CharField(max_length=16, choices=IntentSource.choices, blank=True, default="")
+    intent_return_date = models.DateField(null=True, blank=True)
+    needs_review = models.BooleanField(default=False, db_index=True)
+    plan_applied = models.JSONField(default=dict, blank=True)
 
     class Meta:
         verbose_name_plural = "replies"

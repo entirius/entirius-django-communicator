@@ -61,10 +61,10 @@ def start_sequence(thread: Thread, sequence: Sequence) -> ThreadSequenceState:
 
 
 def stop_sequence(thread: Thread, reason: str) -> None:
-    """Stops a running or paused sequence; an already stopped one keeps its reason."""
+    """Stops a running or paused sequence; an already stopped one keeps its reason. A planned resume is dropped."""
     active = Q(stopped_at=None) | Q(stop_reason=SequenceStopReason.PAUSED)
     ThreadSequenceState.objects.filter(active, thread=thread).update(
-        stopped_at=timezone.now(), stop_reason=reason, next_due_at=None
+        stopped_at=timezone.now(), stop_reason=reason, next_due_at=None, resume_at=None
     )
 
 
@@ -77,8 +77,8 @@ def resume_sequence(thread: Thread) -> ThreadSequenceState:
     state = ThreadSequenceState.objects.filter(thread=thread, stop_reason=SequenceStopReason.PAUSED).first()
     if state is None:
         raise SequenceError(f"thread {thread.pk} has no paused sequence")
-    state.stopped_at, state.stop_reason = None, ""
-    state.save(update_fields=["stopped_at", "stop_reason", "modified_at"])
+    state.stopped_at, state.stop_reason, state.resume_at = None, "", None
+    state.save(update_fields=["stopped_at", "stop_reason", "resume_at", "modified_at"])
     last = _last_delivered(thread)
     _arm(thread, last.sent_at if last else clock_service.now_for(thread.channel))
     state.refresh_from_db()
@@ -99,7 +99,28 @@ def on_follow_up_finished(message: Message, outcome: str) -> None:
 
 
 def on_delivered(message: Message) -> None:
+    """A hand-written message (no template version) neither starts nor arms a sequence."""
+    if message.template_version_id is None:
+        return
+    if message.sequence_step is None and _autostart(message):
+        return
     _arm(message.thread, message.sent_at)
+
+
+def _autostart(message: Message) -> bool:
+    """The first templated delivery of an open thread that never had a sequence state starts the channel's active
+    autostart sequence. A thread that ever had a state (running, paused, stopped) is left alone, and a hand-written
+    message (no template version) never starts one."""
+    thread = message.thread
+    if message.template_version_id is None or thread.status != ThreadStatus.OPEN:
+        return False
+    if ThreadSequenceState.objects.filter(thread=thread).exists():
+        return False
+    sequence = Sequence.objects.filter(channel_id=thread.channel_id, autostart=True, is_active=True).first()
+    if sequence is None or not sequence.steps.exists():
+        return False
+    start_sequence(thread, sequence)
+    return True
 
 
 def _arm(thread: Thread, base: datetime) -> None:
@@ -193,13 +214,19 @@ def pick_text(state: ThreadSequenceState, rng: random.Random) -> TextPool | None
     return rng.choice(fresh or texts)
 
 
+def _last_templated(thread: Thread) -> Message | None:
+    """The newest outbound message rendered from a template — a hand-written one has no context to carry on."""
+    messages = Message.objects.filter(thread=thread, direction=Direction.OUT, template_version__isnull=False)
+    return messages.order_by("-created_at", "-pk").first()
+
+
 def _previous_context(thread: Thread) -> dict:
-    last = Message.objects.filter(thread=thread, direction=Direction.OUT).order_by("-created_at", "-pk").first()
+    last = _last_templated(thread)
     return dict(last.render_context) if last else {}
 
 
 def _recipient(thread: Thread) -> RecipientData:
-    last = Message.objects.filter(thread=thread, direction=Direction.OUT).order_by("-created_at", "-pk").first()
+    last = _last_templated(thread)
     first_name, _, last_name = thread.recipient_name.partition(" ")
     language = thread.recipient_language.iso2.lower() if thread.recipient_language else ""
     footer = last.legal_footer if last else ""

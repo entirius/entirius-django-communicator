@@ -6,13 +6,23 @@
 - `message_approved(sender=Message, message=...)` — a reviewer accepted the message.
 - `company_skipped(sender=Message, subject_ref=..., message=...)` — the reviewer skipped the whole subject.
 - `message_sent(sender=Message, message=...)`, `sequence_finished(sender=Thread, thread=...)`.
-- `reply_received(sender=Thread, thread=..., reply=...)` — a human reply (or a dismissed opt-out suspicion).
+- `reply_received(sender=Thread, thread=..., reply=...)` — a human reply (or a dismissed opt-out suspicion), sent with
+  `send_robust`. A receiver that raised its own alert for the reply returns `REPLY_ALERTED`; communicator then raises
+  none (one bell entry per reply). Without such an answer communicator alerts as before.
 - `optout_confirmed(sender=Reply, subject_ref=..., email=..., channel_idx=...)` — a human confirmed an opt-out.
+- `message_bounced(sender=Message, message=..., hard=True, reason="")` — a live message hit a permanent failure (hard
+  DSN or an SMTP 5xx recipient refusal); a spam complaint is sent the same way with `reason="complaint"`. Never for a
+  sandbox or dry-run channel.
 - `draft_retry_requested(sender=Message, message=...)` — sent synchronously before a failed draft is retried; the
   owner of the thread's `subject_ref` returns a reason code to block the retry, None to allow it.
+- `recipient_check(sender=Message, message=...)` — sent synchronously whenever a message is checked before approval
+  or delivery (`preflight_service.problem`); the owner of the thread's `subject_ref` returns a readable sentence to
+  refuse the recipient, None to accept. The first sentence is the refusal (failure code `recipient`).
 """
 
 from django.dispatch import Signal
+
+REPLY_ALERTED = "reply_alerted"
 
 message_approved = Signal()
 company_skipped = Signal()
@@ -21,3 +31,5 @@ sequence_finished = Signal()
 reply_received = Signal()
 optout_confirmed = Signal()
 draft_retry_requested = Signal()
+message_bounced = Signal()
+recipient_check = Signal()

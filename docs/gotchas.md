@@ -38,6 +38,16 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
 - **A template content change goes through `template_service.save_template`** (Django admin included) —
   a direct `save()` would change content without a version and break C-29.
 
+- **A hand-written message (`compose_service.compose`) is approved by its author and never routed through
+  `review_required`.** It stops the thread's sequence (`manual`); `sequence_service.on_delivered` ignores any message
+  without a template version, and follow-ups read context and footer from the newest templated message only.
+- **The preflight runs at accept and again at delivery** (`preflight_service.problem`). A message without a
+  template version always needs a legal footer; the approval inbox shows the same detail as `blocker`. Bulk
+  approve goes through `review_service.accept`, so the preflight is never skipped. It also asks the owner of the
+  subject (`recipient_check`) on every approval row: a receiver must stay a constant number of queries.
+- **The approval routes are declared before the `<channel_idx>/` include** (`urls.py`). A channel idx `approvals`
+  would be unreachable; `communicator.reserved_idx` (an error, DB-bound) names it.
+
 ## Sending
 
 - **`delivery_service.deliver` has one caller, `send_service`.** `tests/test_sending.py` greps for
@@ -52,10 +62,29 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   shortcut only. No setting may relax `ENVIRONMENT == "production"` (a test asserts it).
 - **Only RCPT refusals (550/551/553/554) suppress, and only in live.** `SMTPSenderRefused` /
   `SMTPDataError` are our problem, not the recipient's.
+- **A mailbox holds its own mail; it never stops the run.** Paused, disabled or `needs_login` → `deferred`; a missing
+  or refused login (and a channel without its SMTP entry) is an outcome of that one message. Never turn it back into
+  a channel-wide abort: one broken mailbox would stop the others.
+- **The login test logs in through the host's `EMAIL_BACKEND`**, the connection a send uses — never a fixed SMTP
+  backend (a host wrapper such as zeno's GreenMail backend would disagree with it). A host backend that does not
+  speak SMTP (console, locmem) logs nobody in, so the test answers `ok` there.
+- **`Thread.mailbox` is chosen once**, before the thread's first message, and never changes — a thread keeps its
+  From. A thread without one sends through the channel SMTP entry. The FK is `PROTECT`: delete refuses a used one.
+- **Mailbox writes name their columns.** `mailbox_service.update_mailbox` (and the Django admin through it) never
+  writes a password column unless a new password is sent: an undecryptable password reads as `""`, and a full
+  `save()` would destroy the ciphertext.
 - **A channel without a `SendPolicy` never sends** — `run_send_due` iterates policies, not channels.
 - **`COMMUNICATOR_SEND_INTERVAL_MIN` must match the beat crontab** — the spread quota counts runs from it.
 - **A bad stored `country` / `timezone` answers 409 `CHANNEL_CONFIG_INVALID`** from every admin view that
   loads the policy, never 500; `Channel.clean()` and `save()` validate both.
+
+- **`List-Unsubscribe` is written unfolded** by `mail_builder._UnsubscribeMail`; only that header gets the custom
+  header class. Test it on the wire (`message(policy=email.policy.SMTP).as_bytes()`), not on the parsed message.
+- **The unsubscribe token has no expiry and is tied to the channel idx** — renaming a channel invalidates every link
+  already sent (400). `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` is read at import, like every module setting.
+- **The unsubscribe throttle falls back to `UnsubscribeThrottle.fallback_rate`** when `DEFAULT_THROTTLE_RATES` has
+  no valid `communicator_unsubscribe` rate; the fallback is not a class `rate`, which would make DRF ignore the
+  setting. `get_rate()` never returns `None`.
 
 ## Sequences
 
@@ -70,6 +99,9 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   `remove_text` blocks a concurrent usage insert between the check and the delete.
 - **Step templates are resolved with `requires_review=False`** — only an `auto_approve` static template
   sends without review; anything else lands in the review queue.
+
+- **Autostart fires once per thread, ever.** `sequence_service._autostart` skips a thread with any
+  `ThreadSequenceState` row and a message without a template version; a stopped thread is never restarted.
 
 ## Footer
 
@@ -90,8 +122,25 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   suspicion keeps the sequence paused until `threads/<id>/resume-sequence/`.
 - **The cursor moves only past ingested, dropped or quarantined mail.** Transient failures leave it; a
   poll that swallowed them would lose mail.
+- **Each mailbox is polled and announced on its own** (alert kind `imap:<mailbox id>`); dedup, own-mail check and
+  thread matching stay per channel, so a reply that reached two mailboxes is ingested once.
 - **Credentials and bodies are never logged; `Reply.raw_headers` holds headers only; attachments are
   never stored.**
+
+- **Opt-out phrases are stems on folded text** (`inbound_service.fold`), matched anywhere in the first 2 000
+  characters above the quote: a very short phrase over-matches. A hit is a suspicion only.
+- **Complaints need `COMMUNICATOR_COMPLAINT_FEEDBACK`**; off, an ARF report goes down the normal path and is usually
+  dropped as unmatched. A sandbox or dry-run complaint is stored and changes nothing.
+- **`message_bounced` is live-only** — a sandbox bounce or complaint says nothing about the real recipient.
+- **`ingest` is not one transaction.** The reply class toolbox call runs before the writes and outside any
+  transaction; the writes of one reply (`_store_human_reply`), a DSN and a complaint are atomic each. Never wrap
+  `ingest` in `atomic` — a slow toolbox would hold the transaction open. A poll that stored the same mail meanwhile
+  wins (re-checked inside the write).
+- **A reply class is advice.** Every failure ends in the unclassified behaviour (sequence stopped, `high` alert),
+  never in an exception or a lost reply. The prompt lives in `ReplyClassProfile`, never in code; prompts and reply
+  text are never logged. No plan suppresses: the class `unsubscribe` is a suspected opt-out a person confirms.
+- **`stop_sequence` drops `resume_at`.** That is how a newer reply cancels the resume of an out-of-office pause;
+  `resume_paused_sequences` resumes only a state still paused with `resume_at` due.
 
 ## Admin API errors
 
@@ -109,7 +158,12 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   leads/siteintel, django_leads and contact_forms) — never import them across modules.
   `test_token_parity_with_django_leads` guards the email token copy when leads is installed.
 - **Global suppression stores the token, never the plain address** (`Suppression(kind=email_token,
-  channel=None)`); a token address is always suppressed.
+  channel=None)`); a token address is always suppressed. Under `COMMUNICATOR_SUPPRESSION_SCOPE = "install"` global
+  `email` / `domain` rows do carry the address — they are the subject's data (export) like channel rows.
+- **Ask `suppression_service.can_mail`, never `is_suppressed` alone** — the address status (`invalid`) blocks too.
+  The scope comes from the setting only (`suppression_service.scope()`), never from the rows.
+- **`AddressStatus` is install-wide** and only a live bounce writes it — a sandbox or dry-run bounce says nothing
+  about the real address. Verification never runs inside a transaction or lock (DNS is slow).
 - **A subject's data is threads to the address and replies *sent by* it** — a colleague's reply in the
   same thread is neither exported nor rewritten.
 - **Alerts need a django_notifications channel with the communicator channel's `idx`** — otherwise they

@@ -29,11 +29,15 @@ groups:
       - ThreadPoolUsage
       - ThreadSequenceState
   - name: inbound
-    title: "Inbound Replies & Mailbox"
+    title: "Inbound Replies & Mailboxes"
     models:
       - Channel
-      - MailboxConfig
+      - Mailbox
+      - HealthPolicy
+      - MailboxPauseLog
       - InboundQuarantine
       - Thread
       - Message
       - Reply
+      - ReplyClassProfile
+      - ReplyClassPlan

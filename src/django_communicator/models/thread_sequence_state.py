@@ -17,6 +17,8 @@ class ThreadSequenceState(BaseModel):
     next_due_at = models.DateTimeField(null=True, blank=True)
     stopped_at = models.DateTimeField(null=True, blank=True)
     stop_reason = models.CharField(max_length=32, choices=SequenceStopReason.choices, blank=True, default="")
+    # A paused sequence resumes at this moment (beat `resume_paused_sequences`); set by an out-of-office reply.
+    resume_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self) -> str:
         return f"{self.thread_id} step {self.step}"

@@ -24,6 +24,7 @@ COMMUNICATOR_SANDBOX_SUBJECT_PREFIX = getattr(settings, "COMMUNICATOR_SANDBOX_SU
 COMMUNICATOR_REDIS_URL = getattr(settings, "COMMUNICATOR_REDIS_URL", getattr(settings, "REDIS_URL", ""))
 COMMUNICATOR_CLOCK_CACHE_KEY = "communicator:clock:{channel_idx}"
 COMMUNICATOR_SENT_COUNTER_KEY = "communicator:sent:{channel_idx}:{day}"
+COMMUNICATOR_MAILBOX_COUNTER_KEY = "communicator:mailbox:{mailbox_id}:{day}"
 # Host of the tokens that replace anonymised addresses (same setting as django_leads): always suppressed.
 LEADS_ANONYMISED_DOMAIN = getattr(settings, "LEADS_ANONYMISED_DOMAIN", "anonymised.invalid")
 # Workers refuse to start without the celery-once backend (two beats must never send twice).
@@ -41,12 +42,77 @@ COMMUNICATOR_OPTOUT_PHRASES = getattr(
     settings,
     "COMMUNICATOR_OPTOUT_PHRASES",
     {
-        "pl": ["nie chcę", "proszę nie pisać", "wypisz", "usuń mnie", "rezygnuję"],
-        "en": ["unsubscribe", "stop emailing", "remove me", "do not contact", "opt out"],
+        # Matched on text folded to lower case, without diacritics and with punctuation as one space, so a phrase is
+        # also a stem: "nie kontaktowa" covers "nie kontaktowanie się" and "nie kontaktować".
+        "pl": [
+            "nie chcę",
+            "nie chcemy",
+            "proszę nie pisać",
+            "proszę nie kontaktować",
+            "nie kontaktowa",
+            "nie kontaktuj",
+            "nie piszcie",
+            "nie wysyłać",
+            "nie wysyłaj",
+            "wypisz",
+            "wypis",
+            "usuń mnie",
+            "usunąć mnie",
+            "usunięcie mnie",
+            "usuń nas",
+            "usunąć nas",
+            "usunięcie nas",
+            "z listy mailingowej",
+            "z listy kontaktów",
+            "rezygnuj",
+            "rezygnacj",
+            "zaprzestań",
+            "zaprzestanie",
+            "nie jestem zainteresowan",
+            "nie jesteśmy zainteresowan",
+        ],
+        "en": [
+            "unsubscribe",
+            "stop emailing",
+            "stop sending",
+            "remove me",
+            "take me off",
+            "do not contact",
+            "don't contact",
+            "do not email",
+            "don't email",
+            "opt out",
+            "no longer wish",
+            "not interested",
+        ],
     },
 )
+# ARF feedback reports (RFC 5965) of type abuse/fraud for our messages are ingested as spam complaints.
+COMMUNICATOR_COMPLAINT_FEEDBACK = getattr(settings, "COMMUNICATOR_COMPLAINT_FEEDBACK", False)
 COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS = getattr(
     settings,
     "COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS",
     ["out of office", "auto-reply", "automatic reply", "autoreply", "poza biurem", "nieobecn"],
 )
+
+# One-click unsubscribe (RFC 8058): public base URL of the service ("https://api.example.com"). Empty = off: no
+# List-Unsubscribe headers and no link in the mail.
+COMMUNICATOR_UNSUBSCRIBE_BASE_URL = getattr(settings, "COMMUNICATOR_UNSUBSCRIBE_BASE_URL", "")
+# Approval inbox: at most this many message ids per bulk approve / reject request.
+COMMUNICATOR_BULK_APPROVAL_MAX = getattr(settings, "COMMUNICATOR_BULK_APPROVAL_MAX", 100)
+
+# Suppression scope: "channel" = a new email / domain suppression holds in its channel; "install" = in every channel
+# (a global row). Global rows are honoured under both; switching never rewrites rows (`communicator_suppressions`).
+COMMUNICATOR_SUPPRESSION_SCOPE = getattr(settings, "COMMUNICATOR_SUPPRESSION_SCOPE", "channel")
+# Address verification (syntax, disposable domain, DNS; never an SMTP probe). Off = only hard bounces set a status.
+COMMUNICATOR_VERIFY_ENABLED = getattr(settings, "COMMUNICATOR_VERIFY_ENABLED", False)
+COMMUNICATOR_VERIFY_MAX_AGE_DAYS = getattr(settings, "COMMUNICATOR_VERIFY_MAX_AGE_DAYS", 30)
+COMMUNICATOR_VERIFY_BATCH = getattr(settings, "COMMUNICATOR_VERIFY_BATCH", 200)
+COMMUNICATOR_DISPOSABLE_DOMAINS = getattr(
+    settings,
+    "COMMUNICATOR_DISPOSABLE_DOMAINS",
+    ["mailinator.com", "guerrillamail.com", "10minutemail.com", "yopmail.com", "tempmail.com", "trashmail.com",
+     "sharklasers.com", "getnada.com", "dispostable.com", "throwawaymail.com"],
+)  # fmt: skip
+# Hand-written messages (`compose_service.compose`): the longest body accepted, in characters.
+COMMUNICATOR_COMPOSE_MAX_CHARS = getattr(settings, "COMMUNICATOR_COMPOSE_MAX_CHARS", 20_000)

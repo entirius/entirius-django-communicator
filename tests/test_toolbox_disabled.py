@@ -78,7 +78,7 @@ def test_disabled_static_template_is_still_approved(static_template, toolbox, re
 
 def test_disabled_suppressed_recipient_is_still_suppressed(ai_template, toolbox, recipient, context, settings):
     settings.AI_TOOLBOX_ENABLED = False
-    suppression_service.suppress_email(ai_template.channel, recipient.email, reason="test")
+    suppression_service.suppress_email(ai_template.channel, recipient.email, source="manual")
 
     assert _communicate(recipient, context).status == MessageStatus.SUPPRESSED
 

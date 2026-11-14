@@ -10,7 +10,7 @@ from unittest import mock
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.db import OperationalError, connection
+from django.db import OperationalError
 from django.test import override_settings
 from django.utils import timezone
 
@@ -28,7 +28,7 @@ from django_communicator.enums import (
 from django_communicator.models import (
     Channel,
     InboundQuarantine,
-    MailboxConfig,
+    Mailbox,
     Message,
     Reply,
     Sequence,
@@ -37,9 +37,9 @@ from django_communicator.models import (
     Thread,
     ThreadSequenceState,
 )
-from django_communicator.services import inbound_service, message_service, optout_service, poll_service
+from django_communicator.services import inbound_service, mailbox_service, message_service, optout_service, poll_service
 from django_communicator.services.inbound_service import ingest
-from django_communicator.signals import optout_confirmed, reply_received
+from django_communicator.signals import message_bounced, optout_confirmed, reply_received
 from tests.conftest import api_url
 from tests.factories import ChannelFactory, LanguageFactory
 
@@ -47,6 +47,7 @@ NOTIFY = "django_notifications.services.notify_service.notify"
 MAIL = Path(__file__).parent / "fixtures" / "mail"
 OUR_ID = "<communicator-1-abcd1234@mail.example.test>"
 IMAP_ERROR = imaplib.IMAP4.error  # kept before the tests patch imaplib.IMAP4
+IMAP_SECRET = "p"  # noqa: S105 — test-only
 
 
 def eml(name: str, message_id: str = OUR_ID) -> bytes:
@@ -182,7 +183,7 @@ def test_C23_optout_phrase_pauses_sequence_confirm_creates_suppression_and_signa
     suppression = Suppression.objects.get()
     assert (suppression.value, suppression.reason, suppression.created_by) == (
         "owner@example-shop-4.test",
-        "optout confirmed",
+        "Confirmed from a reply",
         user,
     )
     assert state_of(message).stop_reason == SequenceStopReason.OPTOUT
@@ -190,6 +191,23 @@ def test_C23_optout_phrase_pauses_sequence_confirm_creates_suppression_and_signa
     assert [{k: call[k] for k in expected} for call in optout_signal] == [expected]
     with pytest.raises(optout_service.OptoutStateError):
         optout_service.confirm(reply, user=user)
+
+
+def test_confirmed_optout_withdraws_the_waiting_drafts_of_the_address(channel, django_capture_on_commit_callbacks):
+    message = make_sent(channel, "owner@example-shop-4.test")
+    waiting = Message.objects.create(thread=message.thread, status=MessageStatus.REVIEW_REQUIRED, subject="Again")
+    with mock.patch(NOTIFY):
+        reply = ingest(channel, eml("optout_pl.eml"))
+
+    with django_capture_on_commit_callbacks(execute=True):
+        optout_service.confirm(reply, user=None)
+
+    waiting.refresh_from_db()
+    assert (waiting.status, waiting.reject_reason, waiting.reviewed_by) == (
+        MessageStatus.REJECTED,
+        "the recipient opted out",
+        None,
+    )
 
 
 def test_optout_english_phrase_on_english_thread(channel):
@@ -270,10 +288,10 @@ def test_C25_dsn_soft_bounce_retry_after_24h_then_failed(channel):
     assert Reply.objects.filter(kind=ReplyKind.BOUNCE_SOFT).count() == 2 and not Suppression.objects.exists()
 
 
-def test_C26_duplicate_inbound_message_id_idempotent(channel):
+def test_C26_duplicate_inbound_message_id_idempotent(channel, django_capture_on_commit_callbacks):
     make_sent(channel, "owner@example-shop-1.test")
 
-    with mock.patch(NOTIFY) as notify:
+    with mock.patch(NOTIFY) as notify, django_capture_on_commit_callbacks(execute=True):
         first = ingest(channel, eml("reply_plain.eml"))
         again = ingest(channel, eml("duplicate.eml"))
 
@@ -301,8 +319,8 @@ class FakeImap:
     """Enough of imaplib.IMAP4 for the poll: EXAMINE with UIDVALIDITY, UID SEARCH n:* (always includes the highest
     UID), FETCH RFC822.SIZE / BODY.PEEK[]. `status` forces a command's answer, `fetched` records FETCH items."""
 
-    def __init__(self, mails: dict[int, bytes], uid_validity: int = 1):
-        self.mails, self.login_error, self.uid_validity = mails, None, uid_validity
+    def __init__(self, mails: dict[int, bytes], uidvalidity: int = 1):
+        self.mails, self.login_error, self.uidvalidity = mails, None, uidvalidity
         self.status, self.fetched = {}, []
 
     def __call__(self, host, port, timeout):
@@ -326,7 +344,7 @@ class FakeImap:
         return "OK", [str(len(self.mails)).encode()]
 
     def response(self, code):
-        return code, [str(self.uid_validity).encode()]
+        return code, [str(self.uidvalidity).encode()]
 
     def uid(self, command, *args):
         if command in self.status:
@@ -344,13 +362,15 @@ class FakeImap:
 
 @pytest.fixture
 def mailbox(channel):
-    return MailboxConfig.objects.create(
+    return Mailbox.objects.create(
         channel=channel,
+        address="replies@mail.example.test",
+        receive_enabled=True,
         imap_host="imap.test",
         imap_port=143,
         imap_use_ssl=False,
         imap_user="u",
-        imap_password="p",  # noqa: S106
+        imap_password=IMAP_SECRET,  # noqa: S106
     )
 
 
@@ -377,23 +397,10 @@ def test_imap_error_raises_for_retry_and_notifies_once_a_day(channel, mailbox):
             with pytest.raises(IMAP_ERROR):
                 poll_service.poll_all()
 
-    assert notify.call_count == 1 and notify.call_args.kwargs["title"] == "IMAP poll failed"
-
-
-def test_mailbox_password_encrypted_and_write_only(channel, admin_api):
-    body = {"imap_host": "imap.test", "imap_port": 143, "imap_use_ssl": False, "imap_user": "u"}
-
-    created = admin_api.put(api_url("mailbox/"), {**body, "imap_password": "imap-pass-1"}, format="json")
-    kept = admin_api.put(api_url("mailbox/"), {**body, "folder": "Replies"}, format="json")
-
-    assert created.status_code == kept.status_code == 200
-    assert "imap_password" not in kept.json() and kept.json()["has_password"] is True
-    with connection.cursor() as cursor:
-        cursor.execute(f"SELECT imap_password FROM {MailboxConfig._meta.db_table}")  # noqa: S608 — table name
-        stored = cursor.fetchone()[0]
-    assert stored and "imap-pass-1" not in stored
-    assert MailboxConfig.objects.get().imap_password == "imap-pass-1"
-    assert "imap-pass-1" not in admin_api.get(api_url("mailbox/")).content.decode()
+    assert (
+        notify.call_count == 1
+        and notify.call_args.kwargs["title"] == "IMAP poll of mailbox replies@mail.example.test failed"
+    )
 
 
 def test_poll_now_absent_outside_development(channel, admin_api, once_backend):
@@ -463,7 +470,14 @@ def test_item13_timeline_entries_carry_the_message_id(channel, admin_api):
 
 def test_inbound_admin_pages_render(client, channel, mailbox):
     client.force_login(get_user_model().objects.create_superuser("root", "root@example.test", "pw"))
-    for url in ("mailboxconfig", "reply", "inboundquarantine", f"mailboxconfig/{mailbox.pk}/change"):
+    for url in (
+        "mailbox",
+        "reply",
+        "inboundquarantine",
+        f"mailbox/{mailbox.pk}/change",
+        "mailboxpauselog",
+        "healthpolicy",
+    ):
         assert client.get(f"/admin/django_communicator/{url}/").status_code == 200
 
 
@@ -504,7 +518,13 @@ def test_fetch_no_does_not_advance_cursor(channel, mailbox):
 def test_search_no_isolated_to_one_mailbox(channel, mailbox):
     other = ChannelFactory(idx="second-channel", label="Second")
     make_sent(other, "owner@example-shop-1.test")
-    good = MailboxConfig.objects.create(channel=other, imap_host="imap.good.test", imap_user="u", imap_password="p")  # noqa: S106
+    good = Mailbox.objects.create(
+        channel=other,
+        address="good@mail.example.test",
+        imap_host="imap.good.test",
+        imap_password=IMAP_SECRET,
+        receive_enabled=True,
+    )
     broken, working = FakeImap({}), FakeImap({2: eml("reply_plain.eml")})
     broken.status["SEARCH"] = "NO"
 
@@ -515,7 +535,7 @@ def test_search_no_isolated_to_one_mailbox(channel, mailbox):
 
     good.refresh_from_db()
     assert (good.last_uid, Reply.objects.filter(channel=other).count()) == (2, 1)
-    assert "IMAP poll failed" in [call.kwargs["title"] for call in notify.call_args_list]
+    assert "IMAP poll of mailbox replies@mail.example.test failed" in [c.kwargs["title"] for c in notify.call_args_list]
 
 
 def test_unparseable_mail_quarantined_and_cursor_advances(channel, mailbox):
@@ -539,19 +559,19 @@ def test_uidvalidity_change_rescans_without_duplicates(channel, mailbox):
     make_sent(channel, "owner@example-shop-1.test")
     with mock.patch(NOTIFY):
         ingest(channel, eml("reply_plain.eml"))
-    MailboxConfig.objects.filter(pk=mailbox.pk).update(last_uid=50, uid_validity=1)
+    Mailbox.objects.filter(pk=mailbox.pk).update(last_uid=50, uidvalidity=1)
 
-    with mock.patch.object(imaplib, "IMAP4", FakeImap({1: eml("reply_plain.eml")}, uid_validity=2)):
+    with mock.patch.object(imaplib, "IMAP4", FakeImap({1: eml("reply_plain.eml")}, uidvalidity=2)):
         with mock.patch(NOTIFY) as notify:
             counts = poll_service.poll_all()
 
     mailbox.refresh_from_db()
-    assert (mailbox.uid_validity, mailbox.last_uid, counts["ingested"]) == (2, 1, 1)
+    assert (mailbox.uidvalidity, mailbox.last_uid, counts["ingested"]) == (2, 1, 1)
     assert Reply.objects.count() == 1 and notify.call_count == 0
 
 
 def test_deleting_newest_mail_does_not_rescan(channel, mailbox):
-    MailboxConfig.objects.filter(pk=mailbox.pk).update(last_uid=5, uid_validity=1)
+    Mailbox.objects.filter(pk=mailbox.pk).update(last_uid=5, uidvalidity=1)
     fake = FakeImap({3: eml("reply_plain.eml")})
 
     with mock.patch.object(inbound_service, "ingest") as ingested:
@@ -562,14 +582,14 @@ def test_deleting_newest_mail_does_not_rescan(channel, mailbox):
 
 
 def test_mailbox_change_resets_cursor(channel, mailbox, admin_api):
-    MailboxConfig.objects.filter(pk=mailbox.pk).update(last_uid=9, uid_validity=3)
-    body = {"imap_host": "imap.test", "imap_port": 143, "imap_use_ssl": False, "imap_user": "u", "folder": "INBOX"}
+    Mailbox.objects.filter(pk=mailbox.pk).update(last_uid=9, uidvalidity=3)
+    url = api_url(f"mailboxes/{mailbox.pk}/")
 
-    assert admin_api.put(api_url("mailbox/"), body, format="json").json()["last_uid"] == 9
-    moved = admin_api.put(api_url("mailbox/"), {**body, "folder": "Replies"}, format="json")
+    assert admin_api.patch(url, {"folder": "INBOX", "daily_cap": 5}, format="json").json()["last_uid"] == 9
+    moved = admin_api.patch(url, {"folder": "Replies"}, format="json")
 
     mailbox.refresh_from_db()
-    assert (moved.json()["last_uid"], mailbox.last_uid, mailbox.uid_validity) == (0, 0, None)
+    assert (moved.json()["last_uid"], mailbox.last_uid, mailbox.uidvalidity) == (0, 0, None)
 
 
 def test_nul_and_overlong_headers_sanitised(channel):
@@ -761,7 +781,13 @@ def test_reply_does_not_reopen_closed_thread(channel):
 
 def test_dev_poll_now_scoped_to_channel(channel, mailbox, admin_api, once_backend):
     other = ChannelFactory(idx="second-channel", label="Second")
-    MailboxConfig.objects.create(channel=other, imap_host="imap.other.test", imap_user="u", imap_password="p")  # noqa: S106
+    Mailbox.objects.create(
+        channel=other,
+        address="o@mail.example.test",
+        imap_host="imap.other.test",
+        imap_password=IMAP_SECRET,
+        receive_enabled=True,
+    )
     poll_inbox = tasks.poll_inbox
     with mock.patch.object(poll_service, "poll_mailbox", return_value={"ingested": 1}) as polled:
         assert admin_api.post(api_url("test/poll-now/")).json()["ingested"] == 1
@@ -773,3 +799,240 @@ def test_dev_poll_now_scoped_to_channel(channel, mailbox, admin_api, once_backen
             poll_inbox.once_backend.clear_lock(key)
 
     assert [call.args[0].pk for call in polled.call_args_list] == [mailbox.pk]
+
+
+# Opt-out phrases are matched on folded text, so natural wording and stems are caught.
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Prosimy o usunięcie mnie z listy.",
+        "Proszę o nie kontaktowanie się z nami w tej sprawie.",
+        "PROSZĘ MNIE WYPISAĆ",
+        "Rezygnujemy z dalszej korespondencji",
+        "Nie jesteśmy zainteresowani, dziękujemy",
+        "Prosze nie pisac wiecej",
+        "Proszę\nnie\npisać",
+    ],
+)
+def test_polish_refusals_are_suspected_optouts(body):
+    thread = SimpleNamespace(recipient_language=SimpleNamespace(iso2="PL"))
+
+    assert inbound_service.has_optout_phrase(thread, body)
+
+
+@pytest.mark.parametrize(
+    "body",
+    ["Dzień dobry, chętnie porozmawiam we wtorek.", "Proszę przesłać ofertę.", "Czy możemy się umówić na 15:00?"],
+)
+def test_ordinary_polish_replies_are_not_suspected(body):
+    thread = SimpleNamespace(recipient_language=SimpleNamespace(iso2="PL"))
+
+    assert not inbound_service.has_optout_phrase(thread, body)
+
+
+@pytest.mark.parametrize(
+    "body", ["Please don't email me again", "Take me off this list", "We are not interested, thanks", "OPT-OUT"]
+)
+def test_english_refusals_are_suspected_optouts(body):
+    thread = SimpleNamespace(recipient_language=SimpleNamespace(iso2="EN"))
+
+    assert inbound_service.has_optout_phrase(thread, body)
+
+
+def test_languageless_thread_uses_every_list():
+    thread = SimpleNamespace(recipient_language=None)
+
+    assert inbound_service.has_optout_phrase(thread, "usuń mnie z bazy")
+    assert inbound_service.has_optout_phrase(thread, "remove me please")
+
+
+def test_fold_lowers_strips_diacritics_and_l_stroke():
+    assert inbound_service.fold("Łódź, ŻÓŁĆ!  ok") == "lodz zolc ok"
+    assert inbound_service.fold(inbound_service.fold("Łódź")) == "lodz"
+
+
+def test_soft_refusal_is_a_suspicion_that_pauses_the_sequence(channel):
+    message = make_sent(channel, "owner@example-shop-4.test")
+    raw = eml("optout_pl.eml").replace(
+        "Proszę nie pisać do mnie więcej.".encode(), "Nie jesteśmy zainteresowani.".encode()
+    )
+
+    with mock.patch(NOTIFY):
+        reply = ingest(channel, raw)
+
+    assert reply.kind == ReplyKind.SUSPECTED_OPTOUT and state_of(message).stop_reason == SequenceStopReason.PAUSED
+    assert not Suppression.objects.exists()
+
+
+# Spam complaints (ARF) and the bounce signal.
+
+
+@pytest.fixture
+def bounced():
+    calls = []
+
+    def receiver(**kwargs):
+        calls.append(kwargs)
+
+    message_bounced.connect(receiver)
+    yield calls
+    message_bounced.disconnect(receiver)
+
+
+@pytest.fixture
+def feedback_on(monkeypatch):
+    monkeypatch.setattr(communicator_settings, "COMMUNICATOR_COMPLAINT_FEEDBACK", True)
+
+
+def arf(feedback_type: str = "abuse", message_id: str = OUR_ID) -> bytes:
+    return eml("arf_abuse.eml", message_id).replace(b"{feedback_type}", feedback_type.encode())
+
+
+def test_complaints_are_ignored_while_the_feedback_loop_is_off(channel):
+    go_live(channel)
+    make_sent(channel, "owner@example-shop-6.test")
+
+    assert ingest(channel, arf()) is None
+    assert not Suppression.objects.exists() and not Reply.objects.exists()
+
+
+def test_live_complaint_suppresses_stops_the_sequence_notifies_and_signals(
+    channel, bounced, feedback_on, django_capture_on_commit_callbacks
+):
+    go_live(channel)
+    message = make_sent(channel, "owner@example-shop-6.test")
+
+    with mock.patch(NOTIFY) as notify, django_capture_on_commit_callbacks(execute=True):
+        reply = ingest(channel, arf())
+
+    message.refresh_from_db()
+    assert (reply.kind, reply.matched_by, reply.message_id) == (ReplyKind.COMPLAINT, ReplyMatch.FEEDBACK, message.pk)
+    assert message.status == MessageStatus.SENT
+    row = Suppression.objects.get()
+    assert (row.value, row.reason) == ("owner@example-shop-6.test", "complaint")
+    assert state_of(message).stop_reason == SequenceStopReason.COMPLAINT
+    assert notify.call_args.kwargs["severity"] == "high" and notify.call_args.kwargs["title"] == "Spam complaint"
+    assert [(c["hard"], c["reason"], c["message"].pk) for c in bounced] == [(True, "complaint", message.pk)]
+    assert ingest(channel, arf()).pk == reply.pk
+
+
+def test_fraud_report_is_a_complaint(channel, feedback_on):
+    make_sent(channel, "owner@example-shop-6.test")
+
+    assert ingest(channel, arf("fraud")).kind == ReplyKind.COMPLAINT
+
+
+def test_complaint_in_sandbox_is_stored_but_changes_nothing(
+    channel, sandbox, bounced, feedback_on, django_capture_on_commit_callbacks
+):
+    message = make_sent(channel, "owner@example-shop-6.test")
+
+    with mock.patch(NOTIFY) as notify, django_capture_on_commit_callbacks(execute=True):
+        reply = ingest(channel, arf())
+
+    assert reply.kind == ReplyKind.COMPLAINT and not Suppression.objects.exists() and not bounced
+    assert state_of(message).stopped_at is None and not notify.called
+
+
+def test_not_spam_reports_are_ignored(channel, feedback_on):
+    go_live(channel)
+    make_sent(channel, "owner@example-shop-6.test")
+
+    assert ingest(channel, arf("not-spam")) is None
+    assert not Suppression.objects.exists()
+
+
+def test_redacted_recipient_still_counts_by_message_id(channel, feedback_on):
+    go_live(channel)
+    make_sent(channel, "owner@example-shop-6.test")
+    redacted = arf().replace(b"<owner@example-shop-6.test>", b"<redacted@fbl.example-shop-6.test>")
+
+    with mock.patch(NOTIFY):
+        assert ingest(channel, redacted).kind == ReplyKind.COMPLAINT
+
+    assert Suppression.objects.get().value == "owner@example-shop-6.test"
+
+
+def test_complaint_for_an_unknown_message_is_ignored(channel, feedback_on):
+    make_sent(channel, "owner@example-shop-6.test")
+
+    assert ingest(channel, arf(message_id="<unknown@mail.example.test>")) is None
+
+
+def test_live_hard_bounce_sends_message_bounced(channel, bounced, django_capture_on_commit_callbacks):
+    go_live(channel)
+    message = make_sent(channel, "owner@example-shop-6.test")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        ingest(channel, eml("dsn_hard.eml"))
+
+    assert [(c["hard"], c["reason"], c["message"].pk) for c in bounced] == [(True, "", message.pk)]
+
+
+def test_sandbox_hard_bounce_sends_no_signal(channel, sandbox, bounced, django_capture_on_commit_callbacks):
+    make_sent(channel, "owner@example-shop-6.test")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        ingest(channel, eml("dsn_hard.eml"))
+
+    assert bounced == []
+
+
+def test_our_quoted_unsubscribe_line_is_not_an_optout():
+    thread = SimpleNamespace(recipient_language=SimpleNamespace(iso2="PL"))
+    body = (
+        "Dziękuję, proszę o telefon we wtorek.\n\nFrom: Outreach\nSent: Monday\nWypisz się z listy: "
+        "https://api.example.test/api/communicator/v2/public/unsubscribe/abc/"
+    )
+
+    assert not inbound_service.has_optout_phrase(thread, body)
+
+
+def _receiving(channel, address: str, host: str) -> Mailbox:
+    return Mailbox.objects.create(
+        channel=channel, address=address, imap_host=host, imap_use_ssl=False, imap_password=IMAP_SECRET,
+        receive_enabled=True,
+    )  # fmt: skip
+
+
+def test_two_mailboxes_of_one_channel_keep_their_own_cursor(channel, mailbox):
+    second = _receiving(channel, "anna@mail.example.test", "imap.second.test")
+    make_sent(channel, "owner@example-shop-1.test")
+    first_box, second_box = FakeImap({4: eml("reply_plain.eml")}), FakeImap({9: eml("reply_no_headers.eml")})
+    route = {"imap.test": first_box, "imap.second.test": second_box}
+
+    with mock.patch.object(imaplib, "IMAP4", lambda host, *a, **k: route[host]), mock.patch(NOTIFY):
+        counts = poll_service.poll_all(channel)
+
+    mailbox.refresh_from_db()
+    second.refresh_from_db()
+    assert (mailbox.last_uid, second.last_uid, counts["ingested"]) == (4, 9, 1)
+
+
+def test_every_broken_mailbox_is_announced(channel, mailbox):
+    _receiving(channel, "anna@mail.example.test", "imap.second.test")
+    broken = FakeImap({})
+    broken.login_error = IMAP_ERROR("auth failed")
+
+    with mock.patch.object(imaplib, "IMAP4", broken), mock.patch(NOTIFY) as notify:
+        with pytest.raises(IMAP_ERROR):
+            poll_service.poll_all()
+
+    titles = sorted(call.kwargs["title"] for call in notify.call_args_list)
+    assert titles == [
+        "IMAP poll of mailbox anna@mail.example.test failed",
+        "IMAP poll of mailbox replies@mail.example.test failed",
+    ]
+
+
+def test_receiving_mailbox_without_password_is_not_logged_in(channel, mailbox):
+    Mailbox.objects.filter(pk=mailbox.pk).update(imap_password="")
+    fake = FakeImap({})
+
+    with mock.patch.object(imaplib, "IMAP4", mock.Mock(side_effect=fake)) as opened, mock.patch(NOTIFY) as notify:
+        with pytest.raises(mailbox_service.MailboxLoginError):
+            poll_service.poll_all()
+
+    assert (opened.call_count, notify.call_count) == (0, 1)

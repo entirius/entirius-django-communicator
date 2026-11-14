@@ -1,5 +1,173 @@
 # Changelog
 
+## Unreleased
+
+Release as 0.5.0 (new fields, new service, changed sequence behaviour).
+
+### Added
+
+- **Our mail names its sender.** A timeline entry of an outbound message carries `from_email`: the bare address it
+  left or will leave from — the thread's mailbox, else the channel's sender address, from the same function as the
+  From of the mail (`mail_builder.sender`). The draft of an inbox row carries it too (`draft.from_email`). No query
+  per entry.
+- **Do-not-contact reach per entry.** `POST suppressions/` takes `scope` (`channel` · `install` = every channel);
+  without it the row follows `COMMUNICATOR_SUPPRESSION_SCOPE` as before. A duplicate is judged in the scope asked for.
+- **One check for the recipient.** `preflight_service.problem` asks, after the legal footer and the mailbox, whether
+  the recipient may be mailed: `can_mail` ("the recipient opted out or is on the do-not-contact list", "the
+  recipient's address is not valid"), then the new synchronous signal `recipient_check(sender=Message, message=...)`,
+  whose first non-empty answer (a sentence from the owner of the thread's subject) refuses. New failure code
+  `recipient` (migration 0025). The single approval, the bulk answer's `failed`, the approval row's `blocker` and the
+  delivery follow (an owner's refusal at delivery → `failed/recipient`; a suppressed address still ends `suppressed`).
+- **Drafts nobody may send leave the queue.** `review_service.withdraw(channel, email, *, reason)`: every draft to the
+  address waiting for review → `rejected` with the reason and no reviewer, no sequence re-armed. A confirmed opt-out
+  withdraws with "the recipient opted out".
+- **Rejected drafts on the timeline.** `rejected` is no longer hidden; a timeline entry carries `rejected_by` (the
+  reviewer's display name, `""` for a withdrawn draft and every other entry) and `reject_reason`.
+- **Login test `certificate`.** The mailbox login test answers `certificate` for a server certificate the host does
+  not accept (SMTP and IMAP); `unreachable` stays for a server that does not answer.
+
+- **What the screens no longer guess.** `GET conversations/?needs_review=true`: only conversations whose newest human
+  reply is flagged for a person, the counts follow it (any other value → 400). A timeline entry carries `reply_id`
+  (inbound entries) and `composed`; `Message.composed` (migration 0024, no backfill) is set by `compose()` and shown
+  on the draft of a thread or conversation row too. The thread detail carries `subject_label` (`""` when unknown).
+  `reply_plan_service.reply_title(sender, reply)` is the one reply title helper: a flagged reply without a class reads
+  `Reply from <sender> — Needs review`. `suppression_service.can_mail_many(channel, emails)`: `can_mail` of a list
+  of addresses in two queries.
+- **Words for the screens.** `Thread.subject_label` (migration 0023): `communicate()` and `compose()` take an optional
+  `subject_label` (what the thread is about, e.g. a company name); a non-empty value is stored on the thread, a blank
+  one keeps it; the development views `test/communicate/` and `test/compose/` accept it. The approval row carries
+  `subject_label` and `search` matches it. The pause log row carries `user_name` (full name, else username; `""` for
+  an automatic pause), users joined with the page.
+- **Reply alerts in words, one per reply.** `reply_plan_service.reply_type_label(intent)` gives the class words;
+  titles read `Reply from <sender> — <class words>`, `Reply from <sender>` and `Reply from <sender> — Possible
+  opt-out` — every title starts with `Reply from`, no bracket, no raw value. `reply_received` is sent with `send_robust`; a receiver that raised its own alert returns
+  `REPLY_ALERTED` (`django_communicator.signals`) and communicator then raises none. The reply alert now goes out
+  after the commit.
+- `__version__` matches `pyproject.toml` (0.5.0); a test keeps them equal.
+
+- **Hand-written messages.** `compose_service.compose(*, channel_idx, recipient, subject, body_text, subject_ref,
+  author, mailbox_user_id=None, thread=None, in_reply_to=None)`: no template, no AI; can mail → legal footer
+  (`LegalFooterRequiredError`) → thread (given, else the newest open or replied one, never a closed one) → `approved`
+  by the author, due now, `message_approved` on commit. Subject ≤ 255, body ≤ `COMMUNICATOR_COMPOSE_MAX_CHARS`
+  (20 000; `ComposeError`). Stops the thread's sequence with reason `manual`; a replied thread is open again.
+  `Message.in_reply_to` (FK `Reply`, migration 0022): the answer's `In-Reply-To` is the reply's Message-ID and
+  `References` ends with it. Development view `POST test/compose/`.
+
+- **Sequence autostart.** `Sequence.autostart` (at most one per channel, partial unique constraint, migration 0012):
+  the first delivered templated message of an open thread that never had a sequence state starts the channel's
+  active autostart sequence. A hand-written message (no template version) never starts one, and a thread that ever
+  had a state is never restarted. `POST sequences/` accepts `autostart`; new `PATCH sequences/<id>/`
+  (`is_active`, `autostart`); a second autostart sequence answers 409 `DUPLICATE_AUTOSTART`.
+- **One-click unsubscribe (RFC 8058).** With `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` set every mail carries
+  `List-Unsubscribe` (one unfolded line) and `List-Unsubscribe-Post`, and a link in the text and HTML parts labelled
+  by the body language. Public route `api/communicator/v2/public/unsubscribe/<token>/` (signed token, no expiry):
+  GET shows a confirmation page, POST suppresses the address on the channel (reason `unsubscribe link`), stops its
+  sequences, sends `optout_confirmed` per `subject_ref` and records the agreements objection; idempotent; an invalid
+  token is 400; throttled per client address (scope `communicator_unsubscribe`, fallback `60/min`).
+- **Preflight.** `preflight_service.problem` checks the legal footer at accept (409 `REVIEW_REFUSED`) and again at
+  delivery (`failed/legal_footer`, new `FailureCode.LEGAL_FOOTER`, migration 0014). A message without a template
+  version always needs one.
+- **Spam complaints.** With `COMMUNICATOR_COMPLAINT_FEEDBACK` an ARF report (`abuse`, `fraud`) for one of our
+  messages is stored as `Reply(kind=complaint, matched_by=feedback)`; on a live channel the recipient is suppressed,
+  the sequence stops (`complaint`) and a `high` alert goes out (migration 0013).
+- **Signal `message_bounced(message, hard, reason="")`**, on commit, live channels only: hard DSN, SMTP 5xx recipient
+  refusal, complaint (`reason="complaint"`).
+- **Approval inbox across channels.** `GET admin/approvals/` (filters `channel`, `template_key`, `search`,
+  `min_age_hours`; `counts.by_channel`; a `blocker` per row), `POST admin/approvals/bulk/` (approve / reject, at most
+  `COMMUNICATOR_BULK_APPROVAL_MAX` = 100 ids, each id on its own, `done` / `failed`), `GET admin/approvals/log/`;
+  model `BulkApprovalLog` (migration 0015). Area `communicator.review`. System check `communicator.reserved_idx`
+  refuses a channel idx `approvals`.
+- **Mailboxes.** `Mailbox` replaces `MailboxConfig` (migrations 0016–0018; the old row becomes the channel's default
+  mailbox, receiving as before, `send_enabled = false`): several per channel, each with its From address, display
+  name, optional CC, its own SMTP and IMAP login (encrypted, write-only), daily cap with warm-up and pause.
+  `communicate(..., mailbox_user_id=None)` picks a new thread's mailbox (the user's, else the default, else none =
+  the channel SMTP entry); `Thread.mailbox` keeps it. A mailbox that is paused, disabled or `needs_login` holds its
+  own mail; the others keep sending. Per-mailbox Redis counter `communicator:mailbox:<id>:<day>`. Approval of a
+  draft whose mailbox cannot send is refused (new `FailureCode.MAILBOX`). Admin API `mailboxes/` (CRUD, `test/`,
+  `pause/`, `resume/`), `health/`, `health/policy/`, `health/log/`.
+- **Sending health.** `HealthPolicy` (per channel, off by default) pauses a mailbox of a live channel over the
+  bounce, opt-out or complaint limit (minimum sample); `MailboxPauseLog` records every pause and resume; only a person
+  resumes.
+- Approval inbox: filter `mailbox`, `counts.by_mailbox`.
+- **Suppression scope.** `COMMUNICATOR_SUPPRESSION_SCOPE = "channel"` (default) or `"install"`: under `install`
+  every new `email` / `domain` suppression (manual, opt-out confirm, unsubscribe link, bounce, complaint) is a global
+  row (`channel = NULL`) and holds in every channel; global rows are honoured under both settings and a switch
+  rewrites nothing. `suppression_service.scope()`; command `manage.py communicator_suppressions --to-install`
+  (dry run unless `--apply`, idempotent) copies channel rows to global rows. Check constraint: a global row only for
+  kinds `email_token`, `email`, `domain` (migration 0019).
+- **`Suppression.source`**: `manual`, `optout_confirmed`, `unsubscribe_link`, `bounce`, `complaint`, `erased`; the data
+  migration derives it from the old `reason` text where it is unambiguous, else `manual`; `reason` stays a free note.
+- **Address status.** `AddressStatus` (one row per address, install-wide: `unknown`, `valid`, `risky`, `invalid`, a
+  reason code, `verified_at`); a live hard bounce (DSN, SMTP 550/551/553/554 on RCPT) writes `invalid / hard_bounce`,
+  final. `address_service`: `status_of`, `verify` (syntax → disposable domain → DNS, injected resolver, no SMTP
+  probe), `mark_hard_bounce`, `stale`, `reverify_stale`. Off until `COMMUNICATOR_VERIFY_ENABLED`; then
+  `communicate()` verifies an unknown or stale address (`COMMUNICATOR_VERIFY_MAX_AGE_DAYS`, 30) before it drafts and
+  the daily task `django_communicator.reverify_addresses` re-checks up to `COMMUNICATOR_VERIFY_BATCH` (200).
+  `COMMUNICATOR_DISPOSABLE_DOMAINS`; optional extra `verify` (dnspython).
+- **One question: `suppression_service.can_mail(channel, email)`** → `address_invalid`, `suppressed` or None (at most
+  two queries), asked by `communicate()`, the delivery before its claim and the draft retry; a refusal is a
+  `suppressed` message with `failure_detail` = the code. `explain(channel, email)` adds the matching rows and the
+  address status.
+- Admin API: `GET addresses/status/?email=` (the `explain` answer); `GET suppressions/` filters `scope`, `source`,
+  `search` and every row carries `scope` and `source`.
+- **Reply classes.** A human reply may get one of seven classes (`interested`, `not_now`, `not_interested`,
+  `out_of_office`, `wrong_person`, `unsubscribe`, `unclear`) from one toolbox completion (tags
+  `communicator.reply_class`, `channel:<idx>`, temperature 0, closed JSON schema, reply text only as data). It runs
+  only with an active per-channel `ReplyClassProfile` (prompt, model, `min_confidence` 0.7, `max_chars` 3000) and the
+  toolbox enabled; a starting prompt ships in `fixtures/reply_class_profile.json`, never in code. Any failure means
+  no class and the behaviour as before. Stored on `Reply`: `intent`, `intent_confidence`, `intent_source`,
+  `intent_return_date`, `needs_review`, `plan_applied` (migration 0020).
+- **Plan per class.** `ReplyClassPlan(channel, intent)`: sequence `stop` / `pause` / `pause_until_return`, alert
+  severity, `needs_review`; no row = the code default (migration 0021). `unsubscribe` is always a suspected opt-out a
+  person confirms; a confident `not_interested` wins over an opt-out phrase, any other confident class with a phrase
+  hit is a suspected opt-out. No plan suppresses, reminds or moves a stage.
+- **Resume after an out-of-office reply.** `ThreadSequenceState.resume_at` (the day after the return date, channel
+  timezone) and beat task `django_communicator.resume_paused_sequences` (hourly, see `docs/install.md`): resumes a
+  due state still paused, in a thread not closed, to an address that may be mailed.
+- Admin API: `GET/PUT reply-classes/profile/` (area `communicator.content`), `GET reply-classes/plans/`,
+  `PUT/DELETE reply-classes/plans/<intent>/` (area `communicator.settings`); `GET replies/` filters `intent` and
+  `needs_review`; replies, thread rows (`reply_intent`, `needs_review`) and timeline entries carry the class.
+  Development only: `POST test/ingest-reply/` ingests a reply with a given class.
+
+### Changed
+
+- The mailbox login test logs in through the host's mail backend, the connection a send uses (`SMTP_BACKEND` and the
+  `backend` argument of `mailbox_service.smtp_connection` are gone): a mailbox that sends no longer reads unreachable.
+- Sending health: `sent` of a window counts every delivery, `would_send` included, as `sent_today` does; rates and the
+  automatic pause read the same number.
+- A bulk approval that changed nothing and refused nothing writes no `BulkApprovalLog` row.
+- A rejected draft's timeline entry is dated by its rejection (`at` = `reviewed_at`; a withdrawal stamps it too), so a
+  draft skipped now appears now on the timeline, whenever it was written.
+- Sending health: a mailbox row's `sent_today` counts the deliveries (what `sent` of a window counts) whose `sent_at`
+  lies on the channel's current day, in one query for every mailbox; the cap's reservation counter is no longer shown.
+- The suppression note of a confirmed opt-out reads "Confirmed from a reply" (`OPTOUT_REASON`); existing rows keep
+  their text.
+
+- A delivered message without a template version never arms or re-arms a sequence; a follow-up reads its context and
+  legal footer from the newest outbound message with a template version.
+- **`inbound_service.ingest` is no longer one transaction:** the reply class call runs first, outside any
+  transaction; the writes of one reply, a DSN and a complaint stay atomic each. A plain reply's alert severity comes
+  from the plan of its class (`high` without one, as before).
+
+- **Opt-out phrases match on folded text** (lower case, no diacritics, `ł` → `l`, other characters → one space), so a
+  phrase is a stem; wider default `pl` and `en` lists. A hit is still a suspicion a person confirms or dismisses.
+- `suppression_service.suppress_email` returns whether it wrote a row; `optout_service.record_objection` is public.
+- A missing channel SMTP entry defers each message on its own (alert once a day) instead of stopping the channel's
+  run; a refused mailbox login holds that mailbox's mail (`needs_login`, `high` alert once a day).
+- The IMAP poll alert is per mailbox (`IMAP poll of mailbox <address> failed`), so a second broken mailbox is
+  announced.
+- Suppression routes moved to area `communicator.settings` (was `communicator.conversations`); `POST suppressions/`
+  accepts kinds `email` and `domain` only (an `email_token` row could match nothing) and follows the scope;
+  `DELETE suppressions/<id>/` also removes a global `email` / `domain` row (a token row stays a 404).
+- Health opt-out counts read `Suppression.source` (`optout_confirmed`, `unsubscribe_link`), global rows included,
+  instead of the `reason` text.
+- GDPR erasure and the `contact_anonymised` receiver drop the address's `AddressStatus` row; the export lists it.
+- `docs/openapi.yaml` regenerated.
+
+### Removed
+
+- `MailboxConfig` and the singular `GET/PUT <channel_idx>/mailbox/` routes — use `mailboxes/`.
+
 ## 0.4.1 — 2026-11-04
 
 ### Security

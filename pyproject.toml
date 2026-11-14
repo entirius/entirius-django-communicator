@@ -1,7 +1,7 @@
 
 [project]
 name = "entirius-django-communicator"
-version = "0.4.1"
+version = "0.5.0"
 description = "Channel-agnostic communication for Entirius: templates, review, sequences, send policy and inbound replies"
 keywords = ["django", "email", "messaging", "outreach", "templates", "celery", "ecommerce", "entirius"]
 classifiers = [
@@ -50,6 +50,8 @@ dependencies = [
 dev  = ["ruff", "pre-commit"]
 # Soft dependency: toolbox failures raise a notification only when django_notifications is installed.
 notifications = ["entirius-django-notifications>=0.1.0"]
+# Address verification (`COMMUNICATOR_VERIFY_ENABLED`): DNS lookups. Without it every check answers `dns_error`.
+verify = ["dnspython>=2.6"]
 test = [
     "pytest",
     "pytest-django",

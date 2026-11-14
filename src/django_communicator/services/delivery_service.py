@@ -12,6 +12,10 @@ dry_run → `would_send`, no SMTP. sandbox → the sandbox mailbox. live → the
 gate holds for the re-read channel. SMTP 5xx → `failed/smtp` (+ suppression of the recipient only when RCPT was
 refused with 550/551/553/554 in live); 4xx and transport errors → `scheduled` for the next run, `failed/smtp`
 after `COMMUNICATOR_SMTP_MAX_ATTEMPTS`.
+
+A message whose thread sends from a mailbox that is paused, disabled or needs a login waits (`deferred`). A missing
+or refused login is an outcome of that message only: it waits, the mailbox gets `needs_login` and the run goes on
+with the other messages. So does a channel without an SMTP entry.
 """
 
 import logging
@@ -23,17 +27,20 @@ from django.db import transaction
 from django.utils import timezone
 
 from django_communicator import settings as communicator_settings
-from django_communicator.enums import ChannelMode, FailureCode, MessageStatus, SuppressionKind
+from django_communicator.enums import ChannelMode, FailureCode, MailboxState, MessageStatus, SuppressionSource
 from django_communicator.models import Channel, Message
 from django_communicator.services import (
+    address_service,
     alert_service,
     channel_service,
     mail_builder,
+    mailbox_service,
     message_service,
+    preflight_service,
     sequence_service,
     suppression_service,
 )
-from django_communicator.signals import message_sent
+from django_communicator.signals import message_bounced, message_sent
 
 logger = logging.getLogger(__name__)
 
@@ -45,14 +52,18 @@ LIVE_REFUSED = "Live sending refused"
 def deliver(message: Message, *, now: datetime) -> str:
     """Outcome: `sent`, `would_send`, `suppressed`, `skipped`, `failed` or `deferred`.
 
-    Suppression, follow-up blocker and mail build run before the claim; an error after the claim but before SMTP
-    releases it. Raises `SmtpNotConfiguredError` (nothing claimed).
+    Mailbox hold, suppression, follow-up blocker and mail build run before the claim; an error after the claim but
+    before SMTP releases it.
     """
-    current = Message.objects.select_related("thread__channel").get(pk=message.pk)
-    if current.status not in (MessageStatus.APPROVED, MessageStatus.SCHEDULED):
+    current = Message.objects.select_related("thread__channel", "thread__mailbox", "template_version__template").get(
+        pk=message.pk
+    )
+    if current.status not in (MessageStatus.APPROVED, MessageStatus.SCHEDULED) or _held(current, now):
         return DEFERRED
     refusal = _refusal(current)
-    mail = None if refusal or current.thread.channel.mode == ChannelMode.DRY_RUN else mail_builder.build(current)
+    mail = None if refusal or current.thread.channel.mode == ChannelMode.DRY_RUN else _build(current, now)
+    if isinstance(mail, str):
+        return DEFERRED
     claimed = message_service.claim_for_sending(current)
     if claimed is None:
         return DEFERRED
@@ -62,7 +73,30 @@ def deliver(message: Message, *, now: datetime) -> str:
         message_service.release_claim(claimed, current.status)
         raise
     claimed.footer_html = current.footer_html  # filled by the build, stored with the sent status
-    return outcome or _send(claimed, mail, now)
+    return outcome or _send(claimed, mail, now, previous=current.status)
+
+
+def _held(message: Message, now: datetime) -> bool:
+    """The thread's mailbox is paused, disabled or needs a login (read fresh from the database); a missing login is
+    announced once a day."""
+    mailbox = message.thread.mailbox
+    hold = mailbox_service.send_hold(mailbox) if mailbox is not None else None
+    if hold == MailboxState.NEEDS_LOGIN:
+        mailbox_service.notify_needs_login(mailbox, now)
+    return hold is not None
+
+
+def _build(message: Message, now: datetime) -> EmailMultiAlternatives | str:
+    """The mail, or `deferred` when no login can send it (the mailbox or the channel is told once a day)."""
+    try:
+        return mail_builder.build(message)
+    except mailbox_service.MailboxLoginError:
+        mailbox_service.mark_needs_login(message.thread.mailbox, now)
+    except mail_builder.SmtpNotConfiguredError:
+        title = "SMTP not configured"
+        channel = message.thread.channel
+        alert_service.notify_once(channel, kind="smtp_missing", severity="high", title=title, day=now.date())
+    return DEFERRED
 
 
 def _before_smtp(claimed: Message, current: Message, refusal: tuple[str, dict] | None, now: datetime) -> str | None:
@@ -72,8 +106,8 @@ def _before_smtp(claimed: Message, current: Message, refusal: tuple[str, dict] |
         message_service.release_claim(claimed, current.status)
         refuse_live(channel, now)
         return DEFERRED
-    if (channel.mode, channel.sandbox_mailbox) != (built_for.mode, built_for.sandbox_mailbox):
-        message_service.release_claim(claimed, current.status)
+    if (channel.mode, channel.sandbox_mailbox) != (built_for.mode, built_for.sandbox_mailbox) or _held(claimed, now):
+        message_service.release_claim(claimed, current.status)  # the mailbox was paused or disabled meanwhile
         return DEFERRED
     if refusal is not None:
         return _finish(claimed, *refusal)
@@ -87,10 +121,13 @@ def refuse_live(channel: Channel, now: datetime) -> None:
 
 
 def _refusal(message: Message) -> tuple[str, dict] | None:
-    """Suppressed since approval, or a follow-up whose thread got a reply or whose sequence no longer runs."""
+    """Suppressed since approval, a preflight problem (`failed/<code>`), or a follow-up whose thread got a reply or
+    whose sequence no longer runs."""
     thread = message.thread
-    if suppression_service.is_suppressed(thread.channel, thread.recipient_email):
-        return MessageStatus.SUPPRESSED, {}
+    if code := suppression_service.can_mail(thread.channel, thread.recipient_email):
+        return MessageStatus.SUPPRESSED, {"failure_detail": code}
+    if blocker := preflight_service.problem(message):
+        return MessageStatus.FAILED, {"failure_code": blocker[0], "failure_detail": blocker[1]}
     blocker = sequence_service.follow_up_blocker(message)
     return (MessageStatus.SKIPPED, {"failure_detail": blocker}) if blocker else None
 
@@ -102,9 +139,13 @@ def _finish(message: Message, outcome: str, fields: dict) -> str:
     return outcome
 
 
-def _send(message: Message, mail: EmailMultiAlternatives, now: datetime) -> str:
+def _send(message: Message, mail: EmailMultiAlternatives, now: datetime, *, previous: str) -> str:
     try:
         mail.send()
+    except smtplib.SMTPAuthenticationError as error:
+        if message.thread.mailbox_id is None:
+            return _smtp_error(message, error, now)
+        return _login_refused(message, previous, now)
     except (smtplib.SMTPException, OSError) as error:
         return _smtp_error(message, error, now)
     attempts = message.send_attempts + 1
@@ -117,6 +158,13 @@ def _send(message: Message, mail: EmailMultiAlternatives, now: datetime) -> str:
     _finish(message, MessageStatus.SENT, fields)
     transaction.on_commit(lambda: message_sent.send(sender=Message, message=message))
     return MessageStatus.SENT
+
+
+def _login_refused(message: Message, previous: str, now: datetime) -> str:
+    """The mailbox's SMTP refused its login: the message goes back to waiting, nothing counts as an attempt."""
+    message_service.release_claim(message, previous)
+    mailbox_service.mark_needs_login(message.thread.mailbox, now)
+    return DEFERRED
 
 
 def fail_stale_sending(channel: Channel) -> int:
@@ -172,12 +220,17 @@ def _fail(message: Message, error: Exception, attempts: int, now: datetime) -> N
 
 
 def _suppress_live_recipient(message: Message, code: int) -> None:
-    channel = message.thread.channel
-    if channel.mode != ChannelMode.LIVE:
+    """Live only: the recipient is suppressed, its address `invalid / hard_bounce`, and `message_bounced` follows on
+    commit."""
+    if message.thread.channel.mode != ChannelMode.LIVE:
         return
-    try:
-        suppression_service.create_suppression(
-            channel, kind=SuppressionKind.EMAIL, value=message.thread.recipient_email, reason=f"smtp {code}"
-        )
-    except (ValueError, suppression_service.DuplicateSuppressionError):
-        pass
+    _create_smtp_suppression(message, code)
+    address_service.mark_hard_bounce(message.thread.recipient_email)
+    transaction.on_commit(lambda: message_bounced.send(sender=Message, message=message, hard=True, reason=""))
+
+
+def _create_smtp_suppression(message: Message, code: int) -> None:
+    channel = message.thread.channel
+    suppression_service.suppress_email(
+        channel, message.thread.recipient_email, source=SuppressionSource.BOUNCE, reason=f"smtp {code}"
+    )

@@ -10,7 +10,7 @@ from rest_framework.response import Response
 
 from django_communicator.api.admin.views._base import ERROR_RESPONSES, AdminView, Conflict, parse
 from django_communicator.models import Sequence, TextPool
-from django_communicator.schemas.requests import SequenceRequest, TextRequest, TextUpdateRequest
+from django_communicator.schemas.requests import SequenceRequest, SequenceUpdateRequest, TextRequest, TextUpdateRequest
 from django_communicator.schemas.responses import (
     SequenceListResponse,
     SequenceResponse,
@@ -59,9 +59,28 @@ class SequenceListView(AdminView):
         body = parse(SequenceRequest, request.data)
         try:
             row = sending_config_service.create_sequence(self.channel(channel_idx), **body.model_dump())
+        except sending_config_service.DuplicateAutostartError as error:
+            raise Conflict(error.client_message, code="duplicate_autostart") from None
         except sending_config_service.DuplicateSequenceError as error:
             raise Conflict(error.client_message, code="duplicate_sequence") from None
         return Response(SequenceResponse.of(row).model_dump(mode="json"), status=201)
+
+
+class SequenceDetailView(SequenceView):
+    @extend_schema(
+        tags=_TAGS,
+        summary="Switch a sequence on or off, or make it the channel's autostart sequence",
+        request=SequenceUpdateRequest,
+        responses={200: SequenceResponse, **ERROR_RESPONSES, 409: None},
+    )
+    def patch(self, request: Request, channel_idx: str, pk: int) -> Response:
+        body = parse(SequenceUpdateRequest, request.data)
+        sequence = self.sequence(channel_idx, pk)
+        try:
+            row = sending_config_service.update_sequence(sequence, body.model_dump(exclude_none=True))
+        except sending_config_service.DuplicateAutostartError as error:
+            raise Conflict(error.client_message, code="duplicate_autostart") from None
+        return Response(SequenceResponse.of(row).model_dump(mode="json"))
 
 
 class SequenceStepListView(SequenceView):

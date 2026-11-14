@@ -13,6 +13,9 @@ class Thread(BaseModel):
 
     channel = models.ForeignKey("django_communicator.Channel", on_delete=models.CASCADE, related_name="threads")
     subject_ref = models.CharField(max_length=200, db_index=True)
+    subject_label = models.CharField(
+        max_length=200, blank=True, default="", help_text="What the thread is about, in the caller's words."
+    )
     recipient_email = models.EmailField()
     recipient_name = models.CharField(max_length=255, blank=True, default="")
     recipient_language = models.ForeignKey(
@@ -20,6 +23,14 @@ class Thread(BaseModel):
     )
     status = models.CharField(max_length=16, choices=ThreadStatus.choices, default=ThreadStatus.OPEN)
     last_message_at = models.DateTimeField(null=True, blank=True)
+    mailbox = models.ForeignKey(
+        "django_communicator.Mailbox",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="threads",
+        help_text="Set when the first message is created, never changed; empty = the channel SMTP entry.",
+    )
 
     class Meta:
         indexes = [

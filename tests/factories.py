@@ -5,7 +5,7 @@ import factory
 from django_regional.models import Language
 
 from django_communicator.enums import TemplateKind
-from django_communicator.models import Channel, MessageTemplate
+from django_communicator.models import Channel, Mailbox, MessageTemplate
 from django_communicator.services import template_service
 
 DRAFT_SCHEMA = {
@@ -56,3 +56,12 @@ def make_static(channel: Channel, **overrides) -> MessageTemplate:
     fields = {"key": "followup", "kind": TemplateKind.STATIC, "subject": "Hi {first_name}", "body": "Following up."}
     fields.update({"json_schema": None, "model": ""}, **overrides)
     return make_template(channel, **fields)
+
+
+MAILBOX_SECRET = "mailbox-secret-7f3a"  # noqa: S105 — test-only; tests grep every output for it
+
+
+def make_mailbox(channel: Channel, address: str = "anna@mail.example.test", **overrides) -> Mailbox:
+    """A sending mailbox with an SMTP login."""
+    fields = {"smtp_host": "smtp.mail.example.test", "smtp_password": MAILBOX_SECRET, "send_enabled": True}
+    return Mailbox.objects.create(channel=channel, address=address, **{**fields, **overrides})

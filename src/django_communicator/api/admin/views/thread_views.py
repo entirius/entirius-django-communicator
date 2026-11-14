@@ -66,6 +66,12 @@ class ConversationListView(AdminView):
         summary="Conversations of the channel (one row per subject reference), latest activity first",
         parameters=[
             OpenApiParameter("state", str, enum=list(inbox_service.THREAD_STATES), description="Inbox filter."),
+            OpenApiParameter(
+                "needs_review",
+                str,
+                enum=["true"],
+                description="Only conversations whose newest human reply is flagged for a person; counts follow.",
+            ),
             OpenApiParameter("page", int),
             OpenApiParameter("page_size", int),
         ],
@@ -74,12 +80,14 @@ class ConversationListView(AdminView):
     def get(self, request: Request, channel_idx: str) -> Response:
         query = parse(ConversationListQuery, request.query_params.dict())
         channel = self.channel(channel_idx)
+        needs_review = query.needs_review == "true"
+        conversations = inbox_service.list_conversations(channel, state=query.state, needs_review=needs_review)
         paginator = AdminPagination()
-        page = paginator.paginate_queryset(inbox_service.list_conversations(channel, state=query.state), request, self)
+        page = paginator.paginate_queryset(conversations, request, self)
         rows = inbox_service.conversation_rows(page, _policy_or_none(channel))
         results = [ConversationRowResponse.of(row).model_dump(mode="json") for row in rows]
         response = paginator.get_paginated_response(results)
-        counts = inbox_service.count_conversations(channel)
+        counts = inbox_service.count_conversations(channel, needs_review=needs_review)
         response.data["counts"] = ConversationCountsResponse(**counts).model_dump()
         return response
 
@@ -108,7 +116,8 @@ class ThreadDetailView(AdminView):
         summary = ThreadSummaryResponse.model_validate(thread).model_dump()
         state = getattr(thread, "sequence_state", None)
         sequence = SequenceStateResponse.model_validate(state) if state else None
-        body = ThreadDetailResponse(**summary, sequence=sequence, timeline=inbox_service.timeline(thread))
+        timeline = inbox_service.timeline(thread)
+        body = ThreadDetailResponse(**summary, subject_label=thread.subject_label, sequence=sequence, timeline=timeline)
         return Response(body.model_dump(mode="json"))
 
 

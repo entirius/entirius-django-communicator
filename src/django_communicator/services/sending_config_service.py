@@ -8,6 +8,7 @@ from typing import Any
 
 from django.db import IntegrityError, transaction
 from django.db.models import QuerySet
+from django.utils import timezone
 
 from django_communicator.models import (
     Channel,
@@ -21,9 +22,18 @@ from django_communicator.models import (
 from django_communicator.services.exceptions import ClientError
 
 _EDITABLE_TEXT_FIELDS = frozenset({"body", "is_active"})
+_EDITABLE_SEQUENCE_FIELDS = frozenset({"is_active", "autostart"})
+
+
+_AUTOSTART_TAKEN = "the channel already has an autostart sequence"
+_ONE_AUTOSTART = "communicator_sequence_one_autostart"
 
 
 class DuplicateSequenceError(ClientError):
+    pass
+
+
+class DuplicateAutostartError(DuplicateSequenceError):
     pass
 
 
@@ -45,15 +55,35 @@ def get_sequence(channel: Channel, pk: int) -> Sequence:
     return Sequence.objects.prefetch_related("steps").get(channel=channel, pk=pk)
 
 
-def create_sequence(channel: Channel, *, key: str, is_active: bool, steps: list[dict]) -> Sequence:
-    """Raises `DuplicateSequenceError` when the key exists in the channel."""
+def create_sequence(
+    channel: Channel, *, key: str, is_active: bool, steps: list[dict], autostart: bool = False
+) -> Sequence:
+    """Raises `DuplicateSequenceError` when the key exists in the channel; `DuplicateAutostartError` when the
+    channel already has an autostart sequence."""
     try:
         with transaction.atomic():
-            sequence = Sequence.objects.create(channel=channel, key=key, is_active=is_active)
+            sequence = Sequence.objects.create(channel=channel, key=key, is_active=is_active, autostart=autostart)
             SequenceStep.objects.bulk_create(SequenceStep(sequence=sequence, **step) for step in steps)
-    except IntegrityError:
+    except IntegrityError as error:
+        if _ONE_AUTOSTART in str(error):
+            raise DuplicateAutostartError(_AUTOSTART_TAKEN) from None
         raise DuplicateSequenceError(f"sequence {key} already exists") from None
     return get_sequence(channel, sequence.pk)
+
+
+def update_sequence(sequence: Sequence, updates: dict[str, Any]) -> Sequence:
+    """Only `is_active` and `autostart`; steps are fixed once created.
+
+    Raises `DuplicateAutostartError` when another sequence of the channel already autostarts."""
+    invalid = set(updates) - _EDITABLE_SEQUENCE_FIELDS
+    if invalid:
+        raise ValueError(f"Fields not editable via update_sequence: {sorted(invalid)}")
+    try:
+        with transaction.atomic():
+            Sequence.objects.filter(pk=sequence.pk).update(**updates, modified_at=timezone.now())
+    except IntegrityError:
+        raise DuplicateAutostartError(_AUTOSTART_TAKEN) from None
+    return get_sequence(sequence.channel, sequence.pk)
 
 
 def list_texts(sequence: Sequence) -> QuerySet[TextPool]:

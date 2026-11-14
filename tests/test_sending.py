@@ -34,7 +34,7 @@ from django_communicator.services import (
     suppression_service,
 )
 from django_communicator.services.communicate_service import communicate
-from django_communicator.signals import message_sent
+from django_communicator.signals import message_bounced, message_sent
 from django_communicator.tasks import send_due
 from tests.conftest import CHANNEL_IDX, MONDAY_10, WARSAW, api_url, approved_message
 from tests.factories import ChannelFactory
@@ -153,6 +153,38 @@ def test_C19_smtp_5xx_failed_suppression_4xx_retry_max_3(policy, sandbox, static
     hard.refresh_from_db()
     assert (hard.status, hard.failure_detail) == ("failed", "550")
     assert Suppression.objects.filter(value="gone@example-shop-2.test", reason="smtp 550").exists()
+
+
+def test_live_smtp_recipient_refusal_sends_message_bounced(policy, static_template, django_capture_on_commit_callbacks):
+    channel_service.set_mode(policy.channel, mode=ChannelMode.LIVE, live_enabled=True)
+    hard = approved_message(email="gone@example-shop-2.test", subject_ref="send:2")
+    refused = smtplib.SMTPRecipientsRefused({"gone@example-shop-2.test": (550, b"no such user")})
+    calls = []
+    message_bounced.connect(lambda **kw: calls.append(kw), weak=False, dispatch_uid="bounced-test")
+    try:
+        with (
+            override_settings(ENVIRONMENT="production"),
+            mock.patch("django.utils.timezone.now", return_value=MONDAY_10),
+            mock.patch(SEND, side_effect=refused),
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            _run()
+    finally:
+        message_bounced.disconnect(dispatch_uid="bounced-test")
+    assert [(c["hard"], c["reason"], c["message"].pk) for c in calls] == [(True, "", hard.pk)]
+
+
+def test_sandbox_smtp_recipient_refusal_sends_no_signal(policy, sandbox, static_template):
+    approved_message(email="gone@example-shop-2.test")
+    refused = smtplib.SMTPRecipientsRefused({"gone@example-shop-2.test": (550, b"no such user")})
+    calls = []
+    message_bounced.connect(lambda **kw: calls.append(kw), weak=False, dispatch_uid="bounced-test")
+    try:
+        with mock.patch(SEND, side_effect=refused):
+            _run()
+    finally:
+        message_bounced.disconnect(dispatch_uid="bounced-test")
+    assert calls == [] and not Suppression.objects.exists()
 
 
 def test_C32_mail_is_multipart_alternative_with_message_id(policy, sandbox, static_template):

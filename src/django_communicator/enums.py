@@ -48,6 +48,43 @@ class SuppressionKind(models.TextChoices):
     EMAIL_TOKEN = "email_token", "Erased address token (all channels)"
 
 
+class SuppressionScope(models.TextChoices):
+    """`COMMUNICATOR_SUPPRESSION_SCOPE`, and the scope of one row: a channel row or a global row (no channel)."""
+
+    CHANNEL = "channel", "Channel"
+    INSTALL = "install", "Install"
+
+
+class SuppressionSource(models.TextChoices):
+    MANUAL = "manual", "Manual"
+    OPTOUT_CONFIRMED = "optout_confirmed", "Opt-out confirmed"
+    UNSUBSCRIBE_LINK = "unsubscribe_link", "Unsubscribe link"
+    BOUNCE = "bounce", "Hard bounce"
+    COMPLAINT = "complaint", "Spam complaint"
+    ERASED = "erased", "Erased or anonymised"
+
+
+class AddressState(models.TextChoices):
+    """Status of one address; only `invalid` blocks mail."""
+
+    UNKNOWN = "unknown", "Unknown"
+    VALID = "valid", "Valid"
+    RISKY = "risky", "Risky"
+    INVALID = "invalid", "Invalid"
+
+
+class AddressReason(models.TextChoices):
+    SYNTAX = "syntax", "Syntax"
+    DISPOSABLE = "disposable", "Disposable domain"
+    DOMAIN_NOT_FOUND = "domain_not_found", "Domain not found"
+    NULL_MX = "null_mx", "Null MX"
+    NO_MAIL_SERVER = "no_mail_server", "No mail server"
+    MX_OK = "mx_ok", "MX found"
+    NO_MX_ADDRESS_FALLBACK = "no_mx_address_fallback", "No MX, address record only"
+    HARD_BOUNCE = "hard_bounce", "Hard bounce"
+    DNS_ERROR = "dns_error", "DNS error"
+
+
 class FailureCode(models.TextChoices):
     NO_TEMPLATE = "no_template", "No template"
     RENDER = "render", "Render"
@@ -58,6 +95,9 @@ class FailureCode(models.TextChoices):
     SMTP = "smtp", "SMTP"
     BOUNCE = "bounce", "Bounce"
     SEND_OUTCOME_UNKNOWN = "send_outcome_unknown", "Send outcome unknown"
+    LEGAL_FOOTER = "legal_footer", "Legal footer missing"
+    MAILBOX = "mailbox", "Mailbox cannot send"
+    RECIPIENT = "recipient", "Recipient refused"
 
 
 class ReplyKind(models.TextChoices):
@@ -66,6 +106,7 @@ class ReplyKind(models.TextChoices):
     SUSPECTED_OPTOUT = "suspected_optout", "Suspected opt-out"
     BOUNCE_HARD = "bounce_hard", "Hard bounce"
     BOUNCE_SOFT = "bounce_soft", "Soft bounce"
+    COMPLAINT = "complaint", "Spam complaint"
 
 
 class QuarantineReason(models.TextChoices):
@@ -74,10 +115,39 @@ class QuarantineReason(models.TextChoices):
     DATA_ERROR = "data_error", "Data error"
 
 
+class MailboxAuth(models.TextChoices):
+    PASSWORD = "password", "Password"
+
+
+class SmtpSecurity(models.TextChoices):
+    STARTTLS = "starttls", "STARTTLS"
+    SSL = "ssl", "SSL/TLS"
+
+
+class MailboxState(models.TextChoices):
+    ACTIVE = "active", "Active"
+    PAUSED = "paused", "Paused"
+    NEEDS_LOGIN = "needs_login", "Needs login"
+    DISABLED = "disabled", "Disabled"
+
+
+class PauseAction(models.TextChoices):
+    PAUSE = "pause", "Pause"
+    RESUME = "resume", "Resume"
+
+
+class HealthTrigger(models.TextChoices):
+    BOUNCE = "bounce", "Hard bounces"
+    OPTOUT = "optout", "Opt-outs"
+    COMPLAINT = "complaint", "Spam complaints"
+    MANUAL = "manual", "Manual"
+
+
 class ReplyMatch(models.TextChoices):
     HEADER = "header", "Header"
     SENDER = "sender", "Sender"
     DSN = "dsn", "DSN"
+    FEEDBACK = "feedback", "Feedback report"
 
 
 class SequenceStopReason(models.TextChoices):
@@ -89,6 +159,37 @@ class SequenceStopReason(models.TextChoices):
     PAUSED = "paused", "Paused"
     FAILED = "failed", "Failed"
     SUPPRESSED = "suppressed", "Suppressed"
+    COMPLAINT = "complaint", "Spam complaint"
+
+
+class ReplyIntent(models.TextChoices):
+    """The class of a human reply, given by the AI toolbox; advice for a person, never a decision."""
+
+    INTERESTED = "interested", "Interested"
+    NOT_NOW = "not_now", "Not now"
+    NOT_INTERESTED = "not_interested", "Not interested"
+    OUT_OF_OFFICE = "out_of_office", "Out of office"
+    WRONG_PERSON = "wrong_person", "Wrong person"
+    UNSUBSCRIBE = "unsubscribe", "Unsubscribe"
+    UNCLEAR = "unclear", "Unclear"
+
+
+class IntentSource(models.TextChoices):
+    TOOLBOX = "toolbox", "AI toolbox"
+
+
+class ReplySequenceAction(models.TextChoices):
+    """What a classified reply does to the thread's sequence."""
+
+    STOP = "stop", "Stop"
+    PAUSE = "pause", "Pause"
+    PAUSE_UNTIL_RETURN = "pause_until_return", "Pause until the return date"
+
+
+class AlertSeverity(models.TextChoices):
+    LOW = "low", "Low"
+    MEDIUM = "medium", "Medium"
+    HIGH = "high", "High"
 
 
 _S = MessageStatus

@@ -9,9 +9,9 @@ from django.db.models import QuerySet
 from django_utils.toolbox import ToolboxDisabledError, ToolboxError, is_enabled
 
 from django_communicator import settings as communicator_settings
-from django_communicator.enums import MessageStatus
+from django_communicator.enums import Direction, MessageStatus
 from django_communicator.models import Channel, Message
-from django_communicator.services import drafting_service, message_service, sequence_service
+from django_communicator.services import drafting_service, message_service, preflight_service, sequence_service
 from django_communicator.services.drafting_service import DraftOutputError
 from django_communicator.services.exceptions import ClientError
 from django_communicator.services.send_service import initial_slot
@@ -51,8 +51,10 @@ def get_message(channel: Channel, pk: int) -> Message:
 def accept(message: Message, *, user) -> Message:
     """`approved` with reviewer, timestamp and `scheduled_at` = next policy slot (none without a policy).
 
-    Signals once, on commit.
+    Signals once, on commit. Raises `ReviewError` when the preflight finds a problem (a missing legal footer).
     """
+    if blocker := preflight_service.problem(message):
+        raise ReviewError(blocker[1])
     with transaction.atomic():
         slot = initial_slot(message.thread.channel)
         message_service.transition(message, MessageStatus.APPROVED, user=user, fields={"scheduled_at": slot})
@@ -66,6 +68,24 @@ def skip(message: Message, *, user, reason: str = "") -> Message:
         message_service.transition(message, MessageStatus.REJECTED, user=user, reason=reason)
         sequence_service.on_follow_up_finished(message, MessageStatus.REJECTED)
     return message
+
+
+def withdraw(channel: Channel, email: str, *, reason: str) -> list[Message]:
+    """Every draft to `email` in the channel that waits for review becomes `rejected` with `reason` and no reviewer:
+    nobody may send it. Unlike `skip`, no sequence is re-armed. A draft changed meanwhile is left alone."""
+    waiting = Message.objects.filter(
+        thread__channel=channel,
+        thread__recipient_email__iexact=email,
+        direction=Direction.OUT,
+        status=MessageStatus.REVIEW_REQUIRED,
+    )
+    withdrawn = []
+    for message in waiting.order_by("pk"):
+        try:
+            withdrawn.append(message_service.transition(message, MessageStatus.REJECTED, reason=reason))
+        except message_service.InvalidTransitionError:
+            continue
+    return withdrawn
 
 
 def skip_company(message: Message, *, user, reason: str = "") -> Message:

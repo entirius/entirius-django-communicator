@@ -2,24 +2,29 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Read side of the inbound flow for the admin API: threads with their timeline, replies, mailbox config."""
+"""Read side of the inbound flow for the admin API: threads with their timeline, replies."""
 
 from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime
 from itertools import chain
 
 from django.db.models import Count, Exists, OuterRef, Q, QuerySet, Subquery
 from django.db.models.functions import Coalesce, Greatest
 
-from django_communicator.enums import Direction, MessageStatus, ThreadStatus
-from django_communicator.models import Channel, MailboxConfig, Message, Reply, SendPolicy, Thread
+from django_communicator.enums import Direction, MessageStatus, ReplyKind, ThreadStatus
+from django_communicator.models import Channel, Message, Reply, SendPolicy, Thread
+from django_communicator.services import mail_builder
 from django_communicator.services.send_service import DUE_STATUSES, next_slot_for
 
-TIMELINE_HIDDEN_STATUSES = (MessageStatus.SUPERSEDED, MessageStatus.REJECTED)
-MAILBOX_IDENTITY = ("imap_host", "imap_user", "folder")
+TIMELINE_HIDDEN_STATUSES = (MessageStatus.SUPERSEDED,)
+# An inbox row never shows a draft nobody sent: its text and subject come from what went out or waits.
+ROW_HIDDEN_STATUSES = (MessageStatus.SUPERSEDED, MessageStatus.REJECTED)
 # What an inbox list filters on: a draft waiting for review, a mail waiting for the send beat, a reply.
 THREAD_STATES = ("draft", "waiting", "replied")
 THREAD_SORTS = ("created", "activity")
 LAST_TEXT_MAX = 300
+HUMAN_KINDS = (ReplyKind.REPLY, ReplyKind.SUSPECTED_OPTOUT)
 
 
 def list_threads(
@@ -34,12 +39,13 @@ def list_threads(
     return threads.order_by("-created_at", "-pk")
 
 
-def list_conversations(channel: Channel, *, state: str | None = None) -> QuerySet[Thread]:
+def list_conversations(channel: Channel, *, state: str | None = None, needs_review: bool = False) -> QuerySet[Thread]:
     """The newest thread of every `subject_ref` (a conversation), latest activity of the conversation first.
 
-    Each carries `activity_at` and `thread_count` of its conversation; `state` holds when any of its threads is in it.
+    Each carries `activity_at` and `thread_count` of its conversation; `state` holds when any of its threads is in it,
+    `needs_review` when the newest human reply of the conversation is flagged for a person.
     """
-    threads = _scoped(channel, None)
+    threads = _conversation_threads(channel, needs_review)
     newest = threads.order_by("subject_ref", "-created_at", "-pk").distinct("subject_ref").values("pk")
     conversations = Thread.objects.filter(pk__in=newest)
     if state:
@@ -51,14 +57,27 @@ def list_conversations(channel: Channel, *, state: str | None = None) -> QuerySe
     return annotated.order_by("-activity_at", "-pk")
 
 
-def count_conversations(channel: Channel) -> dict[str, int]:
-    """Conversations per inbox state — a conversation counts in a state when any of its threads is in it."""
-    threads = _scoped(channel, None).order_by()
+def count_conversations(channel: Channel, *, needs_review: bool = False) -> dict[str, int]:
+    """Conversations per inbox state — a conversation counts in a state when any of its threads is in it; with
+    `needs_review` only the conversations whose newest human reply is flagged count."""
+    threads = _conversation_threads(channel, needs_review).order_by()
 
     def total(queryset: QuerySet[Thread]) -> int:
         return queryset.values("subject_ref").distinct().count()
 
     return {"all": total(threads), **{state: total(threads.filter(_state_filter(state))) for state in THREAD_STATES}}
+
+
+def _conversation_threads(channel: Channel, needs_review: bool) -> QuerySet[Thread]:
+    threads = _scoped(channel, None)
+    return threads.filter(subject_ref__in=_flagged_refs(channel)) if needs_review else threads
+
+
+def _flagged_refs(channel: Channel) -> QuerySet[Reply]:
+    """`subject_ref` of every conversation whose newest human reply (any of its threads) is flagged for a person."""
+    human = Reply.objects.filter(thread__channel=channel, kind__in=HUMAN_KINDS)
+    newest = human.order_by("thread__subject_ref", "-received_at", "-pk").distinct("thread__subject_ref")
+    return Reply.objects.filter(pk__in=newest.values("pk"), needs_review=True).values("thread__subject_ref")
 
 
 def count_states(channel: Channel, *, subject_ref: str | None = None) -> dict[str, int]:
@@ -122,7 +141,11 @@ def _merged(events: dict[int, list], ref_of: dict[int, str], key) -> dict[str, l
 def _events(ids: list[int]) -> tuple[dict[int, list[Message]], dict[int, list[Reply]]]:
     """Visible messages and replies of these threads, oldest first, by thread id — two queries."""
     messages, replies = defaultdict(list), defaultdict(list)
-    visible = Message.objects.filter(thread_id__in=ids).exclude(status__in=TIMELINE_HIDDEN_STATUSES)
+    visible = (
+        Message.objects.filter(thread_id__in=ids)
+        .exclude(status__in=ROW_HIDDEN_STATUSES)
+        .select_related("thread__channel", "thread__mailbox")
+    )
     for message in visible.order_by("created_at", "pk"):
         messages[message.thread_id].append(message)
     for reply in Reply.objects.filter(thread_id__in=ids).order_by("received_at", "pk"):
@@ -165,9 +188,21 @@ def _row(thread: Thread, messages: list[Message], replies: list[Reply], policy: 
         "activity_at": getattr(thread, "activity_at", None) or thread.last_message_at or thread.created_at,
         "subject": _subject(messages, replies),
         "last_text": entries[-1][1][:LAST_TEXT_MAX] if entries else "",
-        "draft": {"id": draft.pk, "subject": draft.subject} if draft else None,
+        "draft": _draft(draft) if draft else None,
         "waiting": _waiting(waiting, policy) if waiting else None,
+        **_reply_class(replies),
     }
+
+
+def _draft(draft: Message) -> dict:
+    fields = {"id": draft.pk, "subject": draft.subject, "composed": draft.composed}
+    return fields | {"from_email": mail_builder.sender_address(draft.thread)}
+
+
+def _reply_class(replies: list[Reply]) -> dict:
+    """Class and review flag of the newest human reply (oldest first in `replies`)."""
+    human = next((reply for reply in reversed(replies) if reply.kind in HUMAN_KINDS), None)
+    return {"reply_intent": human.intent if human else "", "needs_review": bool(human and human.needs_review)}
 
 
 def _waiting(message: Message, policy: SendPolicy | None) -> dict:
@@ -180,36 +215,64 @@ def _waiting(message: Message, policy: SendPolicy | None) -> dict:
 
 
 def get_thread(channel_idx: str, pk: int) -> Thread:
-    """One query (channel and sequence state joined). Raises `Thread.DoesNotExist`."""
-    return Thread.objects.select_related("sequence_state").get(channel__idx=channel_idx, pk=pk)
+    """One query (channel, mailbox and sequence state joined). Raises `Thread.DoesNotExist`."""
+    return Thread.objects.select_related("sequence_state", "channel", "mailbox").get(channel__idx=channel_idx, pk=pk)
 
 
 def timeline(thread: Thread) -> list[dict]:
-    """Messages (without superseded/rejected versions) and replies, oldest first — two queries."""
-    messages = Message.objects.filter(thread=thread).exclude(status__in=TIMELINE_HIDDEN_STATUSES)
-    entries = [_message_entry(message) for message in messages]
+    """Messages (without superseded versions; a rejected draft with who rejected it and why, dated by its rejection)
+    and replies, oldest first — two queries with the thread's `channel` and `mailbox` loaded (`get_thread`)."""
+    messages = (
+        Message.objects.filter(thread=thread).exclude(status__in=TIMELINE_HIDDEN_STATUSES).select_related("reviewed_by")
+    )
+    sender = mail_builder.sender_address(thread)
+    entries = [_message_entry(message, sender) for message in messages]
     entries += [_reply_entry(reply) for reply in Reply.objects.filter(thread=thread)]
     return sorted(entries, key=lambda entry: entry["at"])
 
 
-def _message_entry(message: Message) -> dict:
+def _message_entry(message: Message, sender: str) -> dict:
+    """`from_email` of an outbound message: the address it left or will leave from (`sender`)."""
     return {
         "kind": "message",
         "message_id": message.pk,
-        "at": message.sent_at or message.created_at,
+        "reply_id": None,
+        "composed": message.composed,
+        "at": _message_at(message),
         "direction": message.direction,
         "status": message.status,
         "subject": message.subject,
         "body_text": message.body_text,
-        "from_email": "",
+        "from_email": sender if message.direction == Direction.OUT else "",
         "reply_kind": "",
+        "intent": "",
+        "intent_confidence": None,
+        "intent_return_date": None,
+        "needs_review": False,
+        **_rejection(message),
     }
+
+
+def _message_at(message: Message) -> datetime:
+    """A rejected draft is dated by its rejection, a sent mail by its sending, every other message by its writing."""
+    if message.status == MessageStatus.REJECTED:
+        return message.reviewed_at or message.created_at
+    return message.sent_at or message.created_at
+
+
+def _rejection(message: Message) -> dict:
+    """Who rejected the draft (a user, None when withdrawn) and why; None and "" for every other message."""
+    if message.status != MessageStatus.REJECTED:
+        return {"rejected_by": None, "reject_reason": ""}
+    return {"rejected_by": message.reviewed_by, "reject_reason": message.reject_reason}
 
 
 def _reply_entry(reply: Reply) -> dict:
     return {
         "kind": "reply",
         "message_id": None,
+        "reply_id": reply.pk,
+        "composed": False,
         "at": reply.received_at,
         "direction": Direction.IN,
         "status": "",
@@ -217,39 +280,35 @@ def _reply_entry(reply: Reply) -> dict:
         "body_text": reply.body_text,
         "from_email": reply.from_email,
         "reply_kind": reply.kind,
+        "intent": reply.intent,
+        "intent_confidence": reply.intent_confidence,
+        "intent_return_date": reply.intent_return_date,
+        "needs_review": reply.needs_review,
+        "rejected_by": None,
+        "reject_reason": "",
     }
 
 
-def list_replies(channel: Channel, *, kind: str | None = None, thread_id: int | None = None) -> QuerySet[Reply]:
-    replies = Reply.objects.filter(thread__channel=channel)
-    if kind:
-        replies = replies.filter(kind=kind)
-    if thread_id is not None:
-        replies = replies.filter(thread_id=thread_id)
-    return replies.order_by("-received_at", "-pk")
+@dataclass(frozen=True)
+class ReplyFilter:
+    kind: str | None = None
+    thread_id: int | None = None
+    intent: str | None = None
+    needs_review: bool | None = None
+
+
+def list_replies(channel: Channel, filters: ReplyFilter | None = None) -> QuerySet[Reply]:
+    filters = filters or ReplyFilter()
+    lookups = {
+        "kind": filters.kind or None,
+        "thread_id": filters.thread_id,
+        "intent": filters.intent or None,
+        "needs_review": filters.needs_review,
+    }
+    chosen = {field: value for field, value in lookups.items() if value is not None}
+    return Reply.objects.filter(thread__channel=channel, **chosen).order_by("-received_at", "-pk")
 
 
 def get_reply(channel: Channel, pk: int) -> Reply:
     """Raises `Reply.DoesNotExist` when the reply is not in this channel."""
     return Reply.objects.get(thread__channel=channel, pk=pk)
-
-
-def get_mailbox(channel: Channel) -> MailboxConfig | None:
-    return MailboxConfig.objects.filter(channel=channel).first()
-
-
-def save_mailbox(channel: Channel, *, imap_password: str | None = None, **fields) -> MailboxConfig:
-    """Create or update the channel's mailbox; a missing password keeps the stored one.
-
-    Another host, user or folder is another mailbox: the cursor and its UIDVALIDITY start over.
-    """
-    config = get_mailbox(channel) or MailboxConfig(channel=channel)
-    identity = [getattr(config, name) for name in MAILBOX_IDENTITY]
-    for name, value in fields.items():
-        setattr(config, name, value)
-    if config.pk and identity != [getattr(config, name) for name in MAILBOX_IDENTITY]:
-        config.last_uid, config.uid_validity = 0, None
-    if imap_password is not None:
-        config.imap_password = imap_password
-    config.save()
-    return config

@@ -4,14 +4,28 @@
 """Request schemas of the communicator admin API v2."""
 
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from django_communicator.enums import ChannelMode, MessageStatus, ReplyKind, SuppressionKind, TemplateKind
+from django_communicator.enums import (
+    AlertSeverity,
+    ChannelMode,
+    MessageStatus,
+    ReplyIntent,
+    ReplyKind,
+    ReplySequenceAction,
+    SmtpSecurity,
+    SuppressionScope,
+    SuppressionSource,
+    TemplateKind,
+)
 from django_communicator.services.communicate_service import RecipientData
 
 AUDIENCE_PATTERN = r"^[A-Z0-9_]*$"
+EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+OPTIONAL_EMAIL_PATTERN = r"^([^@\s]+@[^@\s]+\.[^@\s]+)?$"
 
 
 class ReviewListQuery(BaseModel):
@@ -84,9 +98,34 @@ class TestGenerateRequest(BaseModel):
 class SuppressionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    kind: SuppressionKind = Field(description="email or domain.", examples=["domain"])
+    kind: Literal["email", "domain"] = Field(
+        description="email or domain (`email_token` rows are written by erasure only).", examples=["domain"]
+    )
     value: str = Field(min_length=1, max_length=254, description="Email, or a domain / host.", examples=["shop.test"])
     reason: str = Field(default="", max_length=255, description="Why.", examples=["Asked not to be contacted"])
+    scope: SuppressionScope | None = Field(
+        default=None,
+        description="channel: this channel only · install: every channel · null: the configured scope.",
+        examples=["install"],
+    )
+
+
+class SuppressionListQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    value: str = Field(default="", max_length=254, description="Only rows with this value (lower-cased).")
+    scope: SuppressionScope | None = Field(default=None, description="channel: rows of the channel · install: global.")
+    source: SuppressionSource | None = Field(default=None, description="Only rows written by this source.")
+    search: str = Field(default="", max_length=254, description="Part of the value, case-insensitive.")
+
+
+class AddressStatusQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    email: str = Field(min_length=3, max_length=254, description="The address to explain.", examples=["jan@shop.test"])
+
+
+SUBJECT_LABEL_HELP = "What the thread is about, in the caller's words; blank keeps the thread's label."
 
 
 class DevCommunicateRequest(BaseModel):
@@ -100,6 +139,20 @@ class DevCommunicateRequest(BaseModel):
     audience: str = Field(
         default="", max_length=64, pattern=AUDIENCE_PATTERN, description="Audience code.", examples=["RETAILER"]
     )
+    subject_label: str = Field(default="", max_length=200, description=SUBJECT_LABEL_HELP, examples=["Shop Ltd"])
+
+
+class DevComposeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recipient: RecipientData = Field(description="Who the message is for; `legal_footer` is required.")
+    subject: str = Field(description="Subject as written (limits checked by the service).", examples=["Your offer"])
+    body_text: str = Field(description="Body as written, plain text.", examples=["Hello Jan,\n\nthanks for the call."])
+    subject_ref: str = Field(min_length=1, max_length=200, description="Opaque reference.", examples=["bdd:c-01"])
+    thread_id: int | None = Field(default=None, description="Thread to write in; null = the reuse rule.")
+    in_reply_to_id: int | None = Field(default=None, description="Reply of the thread being answered.")
+    mailbox_user_id: int | None = Field(default=None, description="Staff user whose mailbox a new thread uses.")
+    subject_label: str = Field(default="", max_length=200, description=SUBJECT_LABEL_HELP, examples=["Shop Ltd"])
 
 
 class WindowRequest(BaseModel):
@@ -146,6 +199,12 @@ class SequenceRequest(BaseModel):
         min_length=1, max_length=64, pattern=r"^[-a-zA-Z0-9_]+$", description="Slug.", examples=["followup"]
     )
     is_active: bool = Field(default=True, description="Schedules follow-ups.", examples=[True])
+    autostart: bool = Field(
+        default=False,
+        description="Starts by itself after the first delivered templated message of a thread that never had a "
+        "sequence. One per channel.",
+        examples=[False],
+    )
     steps: list[SequenceStepRequest] = Field(min_length=1, description="Steps with unique numbers.", examples=[[]])
 
     @model_validator(mode="after")
@@ -211,6 +270,15 @@ class DevResetCountersRequest(BaseModel):
     )
 
 
+class SequenceUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_active: bool | None = Field(default=None, description="Schedules follow-ups.", examples=[True])
+    autostart: bool | None = Field(
+        default=None, description="The channel's autostart sequence. One per channel.", examples=[True]
+    )
+
+
 class DevStartSequenceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -237,6 +305,9 @@ class ConversationListQuery(BaseModel):
     state: Literal["draft", "waiting", "replied"] | None = Field(
         default=None, description="A conversation is in a state when any of its threads is (see ThreadListQuery)."
     )
+    needs_review: Literal["true"] | None = Field(
+        default=None, description="true: only conversations whose newest human reply is flagged for a person."
+    )
 
 
 class ReplyListQuery(BaseModel):
@@ -244,20 +315,105 @@ class ReplyListQuery(BaseModel):
 
     kind: ReplyKind | None = Field(default=None, description="Only replies of this kind.")
     thread: int | None = Field(default=None, description="Only replies of this thread.")
+    intent: ReplyIntent | None = Field(default=None, description="Only replies of this class.")
+    needs_review: bool | None = Field(default=None, description="Only replies flagged (true) or not (false).")
 
 
-class MailboxRequest(BaseModel):
+class ReplyClassProfileRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    imap_host: str = Field(min_length=1, max_length=255, description="IMAP host.", examples=["imap.mail.test"])
-    imap_port: int = Field(default=993, ge=1, le=65535, description="IMAP port.", examples=[993])
-    imap_use_ssl: bool = Field(default=True, description="IMAP over TLS.", examples=[True])
-    imap_user: str = Field(min_length=1, max_length=255, description="IMAP login.", examples=["outreach"])
-    imap_password: str | None = Field(
-        default=None, max_length=1024, description="Write-only; omitted or null keeps the stored one."
+    prompt_text: str = Field(min_length=1, max_length=20000, description="System prompt naming the classes.")
+    model: str = Field(min_length=1, max_length=128, description="Toolbox model id.", examples=["fake-chat"])
+    min_confidence: float = Field(default=0.7, ge=0, le=1, description="Below it the class is unclear.")
+    max_chars: int = Field(default=3000, ge=100, le=20000, description="Reply characters sent to the model.")
+    is_active: bool = Field(default=True, description="False switches classification off.", examples=[True])
+
+
+class ReplyClassPlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sequence: ReplySequenceAction = Field(description="stop, pause or pause_until_return (out_of_office only).")
+    notify: AlertSeverity = Field(description="Severity of the alert.", examples=["medium"])
+    needs_review: bool = Field(default=False, description="Flag the reply for a person.", examples=[False])
+
+
+class DevIngestReplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    thread_id: int = Field(description="Thread of the channel.", examples=[3])
+    body: str = Field(min_length=1, max_length=20000, description="Reply text.", examples=["Chętnie, proszę o cennik."])
+    intent: ReplyIntent | None = Field(default=None, description="Class to store; omitted = no class.")
+    confidence: float = Field(default=1.0, ge=0, le=1, description="Confidence of the class.", examples=[0.9])
+    return_date: date | None = Field(default=None, description="Return date (out_of_office).", examples=[None])
+
+
+_MAILBOX_NULLABLE = frozenset({"user_id", "daily_cap", "warmup_start_cap", "warmup_started_on"})
+
+
+class MailboxUpdateRequest(BaseModel):
+    """Every field optional: only the fields sent change. A password is write-only; omitted or null keeps it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    address: str | None = Field(
+        default=None, max_length=254, pattern=EMAIL_PATTERN, description="From address.", examples=["anna@mail.test"]
     )
-    folder: str = Field(default="INBOX", min_length=1, max_length=64, description="Folder polled.", examples=["INBOX"])
-    is_active: bool = Field(default=True, description="Polled by the beat.", examples=[True])
+    display_name: str | None = Field(default=None, max_length=128, description="From name.", examples=["Anna Nowak"])
+    cc_address: str | None = Field(
+        default=None, max_length=254, pattern=OPTIONAL_EMAIL_PATTERN, description="Copy of every mail; empty: none."
+    )
+    user_id: int | None = Field(default=None, description="Staff member whose mailbox this is; null: nobody.")
+    is_default: bool | None = Field(default=None, description="Used when the caller names no user with a mailbox.")
+    smtp_host: str | None = Field(default=None, max_length=255, description="SMTP host.", examples=["smtp.mail.test"])
+    smtp_port: int | None = Field(default=None, ge=1, le=65535, description="SMTP port.", examples=[587])
+    smtp_security: SmtpSecurity | None = Field(default=None, description="starttls or ssl.", examples=["starttls"])
+    smtp_user: str | None = Field(default=None, max_length=255, description="SMTP login; empty: the address.")
+    smtp_password: str | None = Field(default=None, min_length=1, max_length=1024, description="Write-only.")
+    send_enabled: bool | None = Field(default=None, description="Mail of new threads may leave from it.")
+    imap_host: str | None = Field(default=None, max_length=255, description="IMAP host.", examples=["imap.mail.test"])
+    imap_port: int | None = Field(default=None, ge=1, le=65535, description="IMAP port.", examples=[993])
+    imap_use_ssl: bool | None = Field(default=None, description="IMAP over TLS.", examples=[True])
+    imap_user: str | None = Field(default=None, max_length=255, description="IMAP login; empty: the address.")
+    imap_password: str | None = Field(default=None, min_length=1, max_length=1024, description="Write-only.")
+    folder: str | None = Field(default=None, min_length=1, max_length=64, description="Folder polled.")
+    receive_enabled: bool | None = Field(default=None, description="Polled by the beat.")
+    daily_cap: int | None = Field(default=None, ge=0, le=100000, description="Mails a day; null: only the channel cap.")
+    warmup_start_cap: int | None = Field(default=None, ge=0, le=100000, description="Warm-up: cap of day 0.")
+    warmup_step: int | None = Field(default=None, ge=0, le=100000, description="Warm-up: added per day.")
+    warmup_started_on: date | None = Field(default=None, description="Warm-up day 0; empty with a warm-up: today.")
+
+    def changes(self) -> dict[str, Any]:
+        """The fields the client sent. Null clears `user_id`, `daily_cap` and the warm-up; on any other field (a
+        password included) it keeps the stored value."""
+        sent = self.model_dump(exclude_unset=True)
+        return {name: value for name, value in sent.items() if value is not None or name in _MAILBOX_NULLABLE}
+
+
+class MailboxCreateRequest(MailboxUpdateRequest):
+    address: str = Field(
+        max_length=254, pattern=EMAIL_PATTERN, description="From address.", examples=["anna@mail.test"]
+    )
+
+
+class MailboxPauseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(
+        min_length=1, max_length=255, description="Why; logged.", examples=["Bounces after a list import"]
+    )
+
+
+class HealthPolicyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(default=False, description="Auto-pause on live channels.", examples=[True])
+    window_hours: int = Field(default=168, ge=1, le=24 * 90, description="Counting window.", examples=[168])
+    min_sample: int = Field(default=50, ge=1, le=100000, description="Sent mails before a mailbox is judged.")
+    max_bounce_pct: Decimal = Field(default=Decimal(2), ge=0, le=100, decimal_places=2, description="Hard bounces %.")
+    max_optout_pct: Decimal = Field(default=Decimal(3), ge=0, le=100, decimal_places=2, description="Opt-outs %.")
+    max_complaint_pct: Decimal = Field(
+        default=Decimal("0.1"), ge=0, le=100, decimal_places=2, description="Spam complaints %."
+    )
 
 
 class FooterRequest(BaseModel):
@@ -269,3 +425,25 @@ class FooterRequest(BaseModel):
         description="Footer HTML with `{{ legal }}` exactly once; sanitised to an allowlist on save.",
         examples=["<p><strong>Jan Kowalski</strong><br>Example sp. z o.o.</p><div>{{ legal }}</div>"],
     )
+
+
+class ApprovalQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    channel: str = Field(default="", max_length=128, description="Only drafts of this channel idx.")
+    template_key: str = Field(default="", max_length=128, description="Only drafts of this template key.")
+    search: str = Field(
+        default="", max_length=200, description="Substring of the subject reference, recipient or subject."
+    )
+    min_age_hours: float | None = Field(default=None, ge=0, le=24 * 365, description="Drafts at least this old.")
+    mailbox: int | None = Field(default=None, description="Only drafts of threads that send from this mailbox id.")
+
+
+class BulkApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["approve", "reject"] = Field(description="What to do with every id.", examples=["approve"])
+    ids: list[int] = Field(
+        min_length=1, description="Message ids; at most COMMUNICATOR_BULK_APPROVAL_MAX (100).", examples=[[12, 13]]
+    )
+    reason: str = Field(default="", max_length=255, description="Rejection reason, logged.", examples=[""])

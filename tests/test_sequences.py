@@ -30,7 +30,7 @@ from django_communicator.services import (
     sequence_service,
 )
 from django_communicator.signals import sequence_finished
-from tests.conftest import MONDAY_10, approved_message
+from tests.conftest import MONDAY_10, api_url, approved_message
 
 THURSDAY_10 = MONDAY_10 + timedelta(days=3)
 
@@ -201,3 +201,103 @@ def test_follow_up_whose_text_was_deleted_meanwhile_retries_next_tick(policy, sa
     assert (state.step, state.next_due_at) == (0, THURSDAY_10)
     assert not Message.objects.filter(thread=state.thread, sequence_step__isnull=False).exists()
     assert sequence_service.run_follow_ups(random.Random(0)) == 1
+
+
+# Autostart: a sequence flagged `autostart` starts by itself after the first templated delivery of a thread.
+
+
+def _send_cold(email: str = "jan@example-shop-1.test", subject_ref: str = "send:1") -> Thread:
+    cold = approved_message(email=email, subject_ref=subject_ref, footer="Footer.", context={"body": "Cold."})
+    send_service.run_send_due()
+    return Thread.objects.get(pk=cold.thread_id)
+
+
+def test_autostart_sequence_starts_after_first_delivery(policy, sandbox, body_template, sequence):
+    Sequence.objects.filter(pk=sequence.pk).update(autostart=True)
+
+    thread = _send_cold()
+
+    state = ThreadSequenceState.objects.get(thread=thread)
+    assert (state.sequence_id, state.step, state.stopped_at) == (sequence.pk, 0, None)
+    assert state.next_due_at == MONDAY_10 + timedelta(days=3)
+
+
+def test_autostart_follow_up_is_scheduled_in_sandbox(policy, sandbox, body_template, sequence):
+    Sequence.objects.filter(pk=sequence.pk).update(autostart=True)
+    thread = _send_cold()
+    clock_service.set_override(policy.channel, THURSDAY_10)
+
+    created = sequence_service.run_follow_ups(random.Random(0))
+
+    assert created == 1 and thread.messages.filter(sequence_step=1).exists()
+
+
+def test_autostart_off_nothing_starts(policy, sandbox, body_template, sequence):
+    thread = _send_cold()
+
+    assert not ThreadSequenceState.objects.filter(thread=thread).exists()
+
+
+def test_autostart_inactive_sequence_is_ignored(policy, sandbox, body_template, sequence):
+    Sequence.objects.filter(pk=sequence.pk).update(autostart=True, is_active=False)
+
+    thread = _send_cold()
+
+    assert not ThreadSequenceState.objects.filter(thread=thread).exists()
+
+
+def test_autostart_never_fires_for_a_template_less_message(policy, sandbox, body_template, sequence):
+    Sequence.objects.filter(pk=sequence.pk).update(autostart=True)
+    cold = approved_message(footer="Footer.", context={"body": "Cold."})
+    Message.objects.filter(pk=cold.pk).update(template_version=None)
+
+    send_service.run_send_due()
+
+    assert not ThreadSequenceState.objects.filter(thread_id=cold.thread_id).exists()
+
+
+def test_autostart_follow_up_delivery_does_not_restart_the_sequence(policy, sandbox, body_template, sequence):
+    Sequence.objects.filter(pk=sequence.pk).update(autostart=True)
+    thread = _send_cold()
+    clock_service.set_override(policy.channel, THURSDAY_10)
+
+    sequence_service.run_follow_ups(random.Random(0))
+    send_service.run_send_due()
+
+    state = ThreadSequenceState.objects.get(thread=thread)
+    assert state.step == 1 and state.next_due_at == THURSDAY_10 + timedelta(days=5)
+
+
+@pytest.mark.parametrize("reason", [SequenceStopReason.PAUSED, SequenceStopReason.FINISHED])
+def test_autostart_never_restarts_a_thread_that_had_a_state(policy, sandbox, body_template, sequence, reason):
+    Sequence.objects.filter(pk=sequence.pk).update(autostart=True)
+    thread = _send_cold()
+    sequence_service.stop_sequence(thread, reason)
+
+    approved_message(footer="Footer.", context={"body": "Again."})
+    send_service.run_send_due()
+
+    assert ThreadSequenceState.objects.get(thread=thread).stop_reason == reason
+
+
+def test_autostart_api_one_per_channel_and_patch(channel, admin_api):
+    url = api_url("sequences/")
+    body = {"key": "a", "autostart": True, "steps": [{"number": 1, "days_after_previous": 2, "template_key": "f"}]}
+    first = admin_api.post(url, body, format="json")
+    second = admin_api.post(url, {**body, "key": "b"}, format="json")
+    other = admin_api.post(url, {**body, "key": "c", "autostart": False}, format="json")
+
+    assert (first.status_code, second.status_code, other.status_code) == (201, 409, 201)
+    assert first.json()["autostart"] is True
+    detail = api_url(f"sequences/{other.json()['id']}/")
+    assert admin_api.patch(detail, {"autostart": True}, format="json").status_code == 409
+    released = admin_api.patch(api_url(f"sequences/{first.json()['id']}/"), {"autostart": False}, format="json")
+    assert released.json()["autostart"] is False
+    taken = admin_api.patch(detail, {"autostart": True, "is_active": False}, format="json").json()
+    assert (taken["autostart"], taken["is_active"]) == (True, False)
+
+
+def test_autostart_api_patch_rejects_unknown_fields(channel, admin_api, sequence):
+    response = admin_api.patch(api_url(f"sequences/{sequence.pk}/"), {"key": "x"}, format="json")
+
+    assert response.status_code == 400

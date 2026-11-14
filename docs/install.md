@@ -18,8 +18,8 @@ Read this once before `migrate`. Day-2 work, alerts and the live checklist: `ope
 | celery-once backend on the Celery app (`app.conf.ONCE`) | `send_due`, `poll_inbox`, `schedule_follow_ups` run at most once at a time (C-18) | `AppConfig.ready()` raises `ImproperlyConfigured` without it — in every process that loads the app, web included |
 | Workers consuming `communicator_default`, `communicator_send`, `communicator_inbound` | every task routes to one of them | `celery inspect active_queues` |
 | An AI toolbox (`AI_TOOLBOX_*`, django_utils) | `ai_prompt` templates, rewrites, `models/`, `test-generate/` | `GET models/` lists the catalogue |
-| `EMAIL_SMTP_CONFIGURATION_CHANNELS[<channel idx>]` (django_email) | the SMTP connection and `DEFAULT_FROM_EMAIL` of a sending channel | `manage.py check --database default --tag communicator.smtp`; missing → messages stay, `high` alert once a day |
-| A stable `SECRET_KEY` | the IMAP password is encrypted with a key derived from it | rotating it empties stored passwords |
+| `EMAIL_SMTP_CONFIGURATION_CHANNELS[<channel idx>]` (django_email), or a sending default mailbox | the SMTP connection and `DEFAULT_FROM_EMAIL` of threads without a mailbox | `manage.py check --database default --tag communicator.smtp` (quiet for a channel with a sending default mailbox); missing → those messages stay, `high` alert once a day |
+| A stable `SECRET_KEY` | mailbox passwords are encrypted with a key derived from it | rotating it makes stored passwords unreadable (`needs_login`) |
 
 ## Settings
 
@@ -41,8 +41,18 @@ The only settings table. Defaults live in `django_communicator/settings.py` and 
 | `COMMUNICATOR_INBOUND_MAX_BYTES` | `10 MB` | larger mails are quarantined unfetched |
 | `COMMUNICATOR_INBOUND_BODY_MAX_CHARS` | `100000` | stored reply body cut |
 | `COMMUNICATOR_SOFT_BOUNCE_RETRY_H` | `24` | delay of the one soft-bounce retry |
-| `COMMUNICATOR_OPTOUT_PHRASES` | `pl`, `en` lists | per-language opt-out phrases |
+| `COMMUNICATOR_OPTOUT_PHRASES` | `pl`, `en` lists | per-language opt-out phrases; matched on folded text (lower case, no diacritics, other characters = one space), so a phrase is a stem |
+| `COMMUNICATOR_COMPLAINT_FEEDBACK` | `False` | ingest ARF spam complaints (`abuse`, `fraud`) for our messages |
+| `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` | `""` | public base URL of the service (`https://api.example.com`); empty = no one-click unsubscribe headers and no link |
+| `COMMUNICATOR_BULK_APPROVAL_MAX` | `100` | ids per bulk approve / reject request |
+| `COMMUNICATOR_COMPOSE_MAX_CHARS` | `20000` | longest body of a hand-written message (`compose()`) |
+| `DEFAULT_THROTTLE_RATES["communicator_unsubscribe"]` | `60/min` (fallback) | per client address on the public unsubscribe route |
 | `COMMUNICATOR_AUTOREPLY_SUBJECT_PATTERNS` | out-of-office patterns (en, pl) | autoresponder subjects |
+| `COMMUNICATOR_SUPPRESSION_SCOPE` | `"channel"` | `channel`: a new email / domain suppression holds in its channel; `install`: in every channel (global row). Global rows hold under both; switching rewrites nothing (`communicator_suppressions --to-install`) |
+| `COMMUNICATOR_VERIFY_ENABLED` | `False` | address verification (syntax, disposable domain, DNS; needs the extra `verify`) before `communicate()` drafts, and in `reverify_addresses` |
+| `COMMUNICATOR_VERIFY_MAX_AGE_DAYS` | `30` | an address checked longer ago is checked again |
+| `COMMUNICATOR_VERIFY_BATCH` | `200` | addresses per `reverify_addresses` run |
+| `COMMUNICATOR_DISPOSABLE_DOMAINS` | 10 known throwaway domains | an address at one of them (or a subdomain) is `invalid / disposable` |
 | `LEADS_ANONYMISED_DOMAIN` | `anonymised.invalid` | domain of token addresses — keep equal to django_leads |
 
 ## Celery beat
@@ -58,6 +68,16 @@ app.conf.beat_schedule |= {
         "task": "django_communicator.retry_failed_drafts",
         "schedule": crontab(minute="*/10"),
     },
+    # only with COMMUNICATOR_VERIFY_ENABLED; a no-op otherwise
+    "communicator-reverify-addresses": {
+        "task": "django_communicator.reverify_addresses",
+        "schedule": crontab(minute=30, hour=3),
+    },
+    # sequences paused until an out-of-office recipient is back
+    "communicator-resume-sequences": {
+        "task": "django_communicator.resume_paused_sequences",
+        "schedule": crontab(minute=15),
+    },
 }
 ```
 
@@ -72,8 +92,9 @@ manage.py migrate
 #   MessageTemplate(s) — static and/or ai_prompt
 #   SendPolicy + SendWindow(s)          PUT policy/        (no policy = the channel never sends)
 #   Suppressions                        POST suppressions/
-#   MailboxConfig                       PUT mailbox/       (before sandbox, and for replies)
-#   EMAIL_SMTP_CONFIGURATION_CHANNELS[<idx>] in settings
+#   Mailbox(es)                         POST mailboxes/    (replies; sending from a person's address)
+#   Reply class profile (optional)      PUT reply-classes/profile/  (body: fixtures/reply_class_profile.json)
+#   EMAIL_SMTP_CONFIGURATION_CHANNELS[<idx>] in settings (threads without a mailbox)
 #   django_notifications Channel with the same idx (alerts are lost without it)
 # then PATCH channel/ {"mode": "sandbox", "sandbox_mailbox": "..."}
 ```
