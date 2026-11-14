@@ -140,9 +140,13 @@ def reply_type_label(intent: str) -> str:
     return ReplyIntent(intent).label if intent in ReplyIntent.values else ""
 
 
-def reply_title(sender: str, intent: str) -> str:
-    """`Reply from <sender> — <class words>`; `Reply from <sender>` without a class."""
-    label = reply_type_label(intent)
+NEEDS_REVIEW_WORDS = "Needs review"
+
+
+def reply_title(sender: str, reply: Reply) -> str:
+    """Every reply title: `Reply from <sender> — <class words>`; without a class `Reply from <sender> — Needs review`
+    when the reply is flagged for a person, else `Reply from <sender>`."""
+    label = reply_type_label(reply.intent) or (NEEDS_REVIEW_WORDS if reply.needs_review else "")
     return f"Reply from {sender} — {label}" if label else f"Reply from {sender}"
 
 
@@ -155,7 +159,7 @@ def announce(reply: Reply, plan: Plan) -> None:
     unless a receiver raised one and said so with `REPLY_ALERTED`: one bell entry per reply."""
     responses = reply_received.send_robust(sender=Thread, thread=reply.thread, reply=reply)
     if not any(response == REPLY_ALERTED for _, response in responses):
-        notify(reply, plan, title=reply_title(reply.from_email, reply.intent))
+        notify(reply, plan, title=reply_title(reply.from_email, reply))
 
 
 def notify(reply: Reply, plan: Plan, *, title: str) -> None:

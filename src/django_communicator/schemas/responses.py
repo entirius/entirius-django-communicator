@@ -351,6 +351,7 @@ class ThreadSummaryResponse(BaseModel):
 class ThreadDraftResponse(BaseModel):
     id: int = Field(description="Message id of the draft waiting for review.", examples=[11])
     subject: str = Field(description="Draft subject.", examples=["Quick question"])
+    composed: bool = Field(description="Written by hand (`compose`), not drafted from a template.", examples=[False])
 
 
 class ThreadWaitingResponse(BaseModel):
@@ -419,12 +420,16 @@ class ConversationListResponse(BaseModel):
     next: str | None = Field(description="Next page URL.", examples=[None])
     previous: str | None = Field(description="Previous page URL.", examples=[None])
     results: list[ConversationRowResponse] = Field(description="Latest conversation activity first.", examples=[[]])
-    counts: ConversationCountsResponse = Field(description="Conversations per state, ignoring the `state` filter.")
+    counts: ConversationCountsResponse = Field(
+        description="Conversations per state, ignoring the `state` filter and following `needs_review`."
+    )
 
 
 class TimelineEntryResponse(BaseModel):
     kind: str = Field(description="message or reply.", examples=["reply"])
     message_id: int | None = Field(description="Message id; null for a reply.", examples=[None])
+    reply_id: int | None = Field(description="Reply id of an inbound entry; null for a message.", examples=[5])
+    composed: bool = Field(description="A message written by hand (`compose`); false for a reply.", examples=[False])
     at: datetime = Field(description="Sent, received or created.", examples=["2026-09-14T10:15:00Z"])
     direction: str = Field(description="out or in.", examples=["in"])
     status: str = Field(description="Message status; empty for a reply.", examples=[""])
@@ -442,6 +447,9 @@ class TimelineEntryResponse(BaseModel):
 
 
 class ThreadDetailResponse(ThreadSummaryResponse):
+    subject_label: str = Field(
+        description="What the thread is about, in the caller's words; empty when unknown.", examples=["Shop Ltd"]
+    )
     sequence: SequenceStateResponse | None = Field(description="Follow-up sequence of the thread.", examples=[None])
     timeline: list[TimelineEntryResponse] = Field(description="Messages and replies, oldest first.", examples=[[]])
 

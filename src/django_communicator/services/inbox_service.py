@@ -35,12 +35,13 @@ def list_threads(
     return threads.order_by("-created_at", "-pk")
 
 
-def list_conversations(channel: Channel, *, state: str | None = None) -> QuerySet[Thread]:
+def list_conversations(channel: Channel, *, state: str | None = None, needs_review: bool = False) -> QuerySet[Thread]:
     """The newest thread of every `subject_ref` (a conversation), latest activity of the conversation first.
 
-    Each carries `activity_at` and `thread_count` of its conversation; `state` holds when any of its threads is in it.
+    Each carries `activity_at` and `thread_count` of its conversation; `state` holds when any of its threads is in it,
+    `needs_review` when the newest human reply of the conversation is flagged for a person.
     """
-    threads = _scoped(channel, None)
+    threads = _conversation_threads(channel, needs_review)
     newest = threads.order_by("subject_ref", "-created_at", "-pk").distinct("subject_ref").values("pk")
     conversations = Thread.objects.filter(pk__in=newest)
     if state:
@@ -52,14 +53,27 @@ def list_conversations(channel: Channel, *, state: str | None = None) -> QuerySe
     return annotated.order_by("-activity_at", "-pk")
 
 
-def count_conversations(channel: Channel) -> dict[str, int]:
-    """Conversations per inbox state — a conversation counts in a state when any of its threads is in it."""
-    threads = _scoped(channel, None).order_by()
+def count_conversations(channel: Channel, *, needs_review: bool = False) -> dict[str, int]:
+    """Conversations per inbox state — a conversation counts in a state when any of its threads is in it; with
+    `needs_review` only the conversations whose newest human reply is flagged count."""
+    threads = _conversation_threads(channel, needs_review).order_by()
 
     def total(queryset: QuerySet[Thread]) -> int:
         return queryset.values("subject_ref").distinct().count()
 
     return {"all": total(threads), **{state: total(threads.filter(_state_filter(state))) for state in THREAD_STATES}}
+
+
+def _conversation_threads(channel: Channel, needs_review: bool) -> QuerySet[Thread]:
+    threads = _scoped(channel, None)
+    return threads.filter(subject_ref__in=_flagged_refs(channel)) if needs_review else threads
+
+
+def _flagged_refs(channel: Channel) -> QuerySet[Reply]:
+    """`subject_ref` of every conversation whose newest human reply (any of its threads) is flagged for a person."""
+    human = Reply.objects.filter(thread__channel=channel, kind__in=HUMAN_KINDS)
+    newest = human.order_by("thread__subject_ref", "-received_at", "-pk").distinct("thread__subject_ref")
+    return Reply.objects.filter(pk__in=newest.values("pk"), needs_review=True).values("thread__subject_ref")
 
 
 def count_states(channel: Channel, *, subject_ref: str | None = None) -> dict[str, int]:
@@ -166,7 +180,7 @@ def _row(thread: Thread, messages: list[Message], replies: list[Reply], policy: 
         "activity_at": getattr(thread, "activity_at", None) or thread.last_message_at or thread.created_at,
         "subject": _subject(messages, replies),
         "last_text": entries[-1][1][:LAST_TEXT_MAX] if entries else "",
-        "draft": {"id": draft.pk, "subject": draft.subject} if draft else None,
+        "draft": {"id": draft.pk, "subject": draft.subject, "composed": draft.composed} if draft else None,
         "waiting": _waiting(waiting, policy) if waiting else None,
         **_reply_class(replies),
     }
@@ -204,6 +218,8 @@ def _message_entry(message: Message) -> dict:
     return {
         "kind": "message",
         "message_id": message.pk,
+        "reply_id": None,
+        "composed": message.composed,
         "at": message.sent_at or message.created_at,
         "direction": message.direction,
         "status": message.status,
@@ -222,6 +238,8 @@ def _reply_entry(reply: Reply) -> dict:
     return {
         "kind": "reply",
         "message_id": None,
+        "reply_id": reply.pk,
+        "composed": False,
         "at": reply.received_at,
         "direction": Direction.IN,
         "status": "",

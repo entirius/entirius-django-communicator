@@ -100,6 +100,13 @@ def is_invalid(email: str) -> bool:
     return AddressStatus.objects.filter(email=normalize_email(email), status=AddressState.INVALID).exists()
 
 
+def invalid_among(emails: list[str]) -> set[str]:
+    """The normalised addresses of `emails` whose status is invalid — one query."""
+    normalised = {normalize_email(email) for email in emails}
+    rows = AddressStatus.objects.filter(email__in=normalised, status=AddressState.INVALID)
+    return set(rows.values_list("email", flat=True))
+
+
 def check(email: str, *, resolver: Resolver | None = None) -> tuple[str, str]:
     """(status, reason) of one address; pure apart from the resolver."""
     email = normalize_email(email)

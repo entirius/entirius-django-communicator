@@ -34,6 +34,7 @@ class Message(BaseModel):
         default=0, help_text="Automatic retries of a draft that failed transiently (toolbox down, timeout, 5xx)."
     )
     edited_by_human = models.BooleanField(default=False)
+    composed = models.BooleanField(default=False, help_text="Written by hand through `compose()`.")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )

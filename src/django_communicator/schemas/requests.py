@@ -300,6 +300,9 @@ class ConversationListQuery(BaseModel):
     state: Literal["draft", "waiting", "replied"] | None = Field(
         default=None, description="A conversation is in a state when any of its threads is (see ThreadListQuery)."
     )
+    needs_review: Literal["true"] | None = Field(
+        default=None, description="true: only conversations whose newest human reply is flagged for a person."
+    )
 
 
 class ReplyListQuery(BaseModel):

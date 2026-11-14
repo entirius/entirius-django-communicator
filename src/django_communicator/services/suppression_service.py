@@ -57,13 +57,19 @@ def _owner(channel: Channel) -> Channel | None:
     return None if scope() == SuppressionScope.INSTALL else channel
 
 
-def _matching(channel: Channel, email: str) -> Q:
-    """The token row of the address, and email / domain rows of the channel or global."""
+def _keys(email: str) -> tuple[str, str, str]:
+    """(token, address, domain) a suppression row of a normalised address may hold."""
     try:
         domain = email_domain(email)
     except ValueError:
         domain = ""
-    erased = Q(channel=None, kind=SuppressionKind.EMAIL_TOKEN, value=anonymised_address(email))
+    return anonymised_address(email), email, domain
+
+
+def _matching(channel: Channel, email: str) -> Q:
+    """The token row of the address, and email / domain rows of the channel or global."""
+    token, email, domain = _keys(email)
+    erased = Q(channel=None, kind=SuppressionKind.EMAIL_TOKEN, value=token)
     listed = Q(kind=SuppressionKind.EMAIL, value=email) | Q(kind=SuppressionKind.DOMAIN, value=domain)
     return erased | (listed & (Q(channel=channel) | Q(channel=None)))
 
@@ -80,6 +86,34 @@ def can_mail(channel: Channel, email: str) -> str | None:
     if address_service.is_invalid(email):
         return ADDRESS_INVALID
     return SUPPRESSED if is_suppressed(channel, email) else None
+
+
+def can_mail_many(channel: Channel, emails: list[str]) -> dict[str, str | None]:
+    """`can_mail` of every address, keyed by the address as given — two queries for any number of addresses."""
+    keys = {email: _keys(normalize_email(email)) for email in emails}
+    invalid = address_service.invalid_among(emails)
+    listed = _listed(channel, list(keys.values()))
+
+    def refusal(token: str, address: str, domain: str) -> str | None:
+        if address in invalid:
+            return ADDRESS_INVALID
+        rows = {
+            (SuppressionKind.EMAIL_TOKEN, token),
+            (SuppressionKind.EMAIL, address),
+            (SuppressionKind.DOMAIN, domain),
+        }
+        return SUPPRESSED if is_anonymised(address) or rows & listed else None
+
+    return {email: refusal(*key) for email, key in keys.items()}
+
+
+def _listed(channel: Channel, keys: list[tuple[str, str, str]]) -> set[tuple[str, str]]:
+    """(kind, value) of every suppression row matching one of the addresses' keys."""
+    tokens, addresses, domains = ({key[index] for key in keys} for index in range(3))
+    erased = Q(channel=None, kind=SuppressionKind.EMAIL_TOKEN, value__in=tokens)
+    listed = Q(kind=SuppressionKind.EMAIL, value__in=addresses) | Q(kind=SuppressionKind.DOMAIN, value__in=domains)
+    rows = Suppression.objects.filter(erased | (listed & (Q(channel=channel) | Q(channel=None))))
+    return set(rows.values_list("kind", "value"))
 
 
 def explain(channel: Channel, email: str) -> dict[str, Any]:

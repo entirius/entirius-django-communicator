@@ -71,7 +71,9 @@ def compose(
     mailbox_service.assign(thread, mailbox_user_id)
     label_thread(thread, subject_label)
     fields = {"subject": subject, "body_text": body_text, "legal_footer": recipient.legal_footer}
-    fields.update(created_by=author, edited_by_human=True, requires_review=False, in_reply_to=in_reply_to)
+    fields.update(
+        created_by=author, composed=True, edited_by_human=True, requires_review=False, in_reply_to=in_reply_to
+    )
     if refusal:
         return message_service.create_message(
             thread=thread, status=MessageStatus.SUPPRESSED, failure_detail=refusal, **fields
