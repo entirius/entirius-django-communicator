@@ -55,6 +55,9 @@ class MessageResponse(BaseModel):
     parent_id: int | None = Field(description="Previous version.", examples=[None])
     automated_rewrites: int = Field(description="Automated rewrites in the chain.", examples=[0])
     edited_by_human: bool = Field(description="Written by a reviewer.", examples=[False])
+    referral_request: bool = Field(
+        description="The answer to a wrong-person reply asking who the right person is.", examples=[False]
+    )
     requires_review: bool = Field(description="The caller asked for review.", examples=[True])
     reviewed_by_id: int | None = Field(description="Reviewer user id.", examples=[None])
     reviewed_at: datetime | None = Field(description="When reviewed.", examples=[None])
