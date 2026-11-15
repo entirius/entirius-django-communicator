@@ -47,6 +47,7 @@ from django_communicator.services import (
     dsn_service,
     mail_parser,
     message_service,
+    referral_service,
     reply_class_service,
     reply_plan_service,
     sequence_service,
@@ -276,6 +277,8 @@ def _plain_reply(
     plan = reply_plan_service.plan_for(channel, reply.intent)
     reply_plan_service.apply(reply, plan)
     transaction.on_commit(lambda: reply_plan_service.announce(reply, plan))
+    # After `announce`: the owner's receivers withdraw the drafts to a wrong person first, then the referral is drafted.
+    transaction.on_commit(lambda: referral_service.after_reply(reply))
     return reply
 
 

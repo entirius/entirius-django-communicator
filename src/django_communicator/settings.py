@@ -116,3 +116,6 @@ COMMUNICATOR_DISPOSABLE_DOMAINS = getattr(
 )  # fmt: skip
 # Hand-written messages (`compose_service.compose`): the longest body accepted, in characters.
 COMMUNICATOR_COMPOSE_MAX_CHARS = getattr(settings, "COMMUNICATOR_COMPOSE_MAX_CHARS", 20_000)
+
+# A `wrong_person` reply gets a draft answer asking for the right person, waiting for review like every draft.
+COMMUNICATOR_REFERRAL_REQUEST = getattr(settings, "COMMUNICATOR_REFERRAL_REQUEST", True)

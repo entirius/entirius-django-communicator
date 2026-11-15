@@ -351,6 +351,14 @@ it is a plain pause. `plan_applied` is the snapshot of what ran (`sequence`, `no
 `reply.needs_review` and `reply.plan_applied["notify"]`. Nothing here suppresses, reminds or moves a stage — no
 plan can confirm an opt-out.
 
+**Referral request.** A human `wrong_person` reply (not a suspected opt-out) gets one draft answer per thread asking
+who the right person is (`referral_service`, after the commit and after `reply_received`, so a receiver that
+withdraws the drafts to a wrong person runs first). A fixed text in the thread's language (Polish, else English), no
+template and no AI, `review_required` like every draft, `in_reply_to` the reply, the legal footer of the thread's last
+outbound message, and `Message.referral_request = True` — the flag the owner of the subject reads in
+`recipient_check` to let the answer reach a contact it flagged as the wrong person. `COMMUNICATOR_REFERRAL_REQUEST =
+False` turns it off. A failure is logged and never breaks the poll.
+
 Unreadable mail (oversized, unparseable, data error) is recorded in `InboundQuarantine` (no body) and
 the cursor moves on; transient failures leave the cursor for the next beat. Mail is never deleted or
 flagged.
