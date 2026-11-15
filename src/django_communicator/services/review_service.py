@@ -15,7 +15,7 @@ from django_communicator.services import drafting_service, message_service, pref
 from django_communicator.services.drafting_service import DraftOutputError
 from django_communicator.services.exceptions import ClientError
 from django_communicator.services.send_service import initial_slot
-from django_communicator.signals import company_skipped, message_approved
+from django_communicator.signals import company_skipped, message_approved, message_skipped
 
 REWRITE_TAG = "communicator.rewrite"
 
@@ -63,10 +63,14 @@ def accept(message: Message, *, user) -> Message:
 
 
 def skip(message: Message, *, user, reason: str = "") -> Message:
-    """Rejected; a rejected follow-up re-arms its sequence."""
+    """Rejected; a rejected follow-up re-arms its sequence. Signals `message_skipped` once, on commit."""
+    subject_ref = message.thread.subject_ref
     with transaction.atomic():
         message_service.transition(message, MessageStatus.REJECTED, user=user, reason=reason)
         sequence_service.on_follow_up_finished(message, MessageStatus.REJECTED)
+        transaction.on_commit(
+            lambda: message_skipped.send(sender=Message, message=message, subject_ref=subject_ref, reason=reason)
+        )
     return message
 
 

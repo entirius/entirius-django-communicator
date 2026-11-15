@@ -6,6 +6,9 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
 
 ### Added
 
+- **A skipped draft is announced.** New signal `message_skipped(sender=Message, message=..., subject_ref=...,
+  reason="")`, sent on commit whenever a reviewer skips a draft (review queue, bulk approval, and before
+  `company_skipped` on a skip of the whole subject). A draft withdrawn because nobody may send it sends none.
 - **Our mail names its sender.** A timeline entry of an outbound message carries `from_email`: the bare address it
   left or will leave from — the thread's mailbox, else the channel's sender address, from the same function as the
   From of the mail (`mail_builder.sender`). The draft of an inbox row carries it too (`draft.from_email`). No query
