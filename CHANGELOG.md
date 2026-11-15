@@ -13,7 +13,7 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
   (`referral_service`, fixed Polish / English text, `review_required`, `in_reply_to` the reply), drafted after
   `reply_received` so receivers that withdraw drafts run first. `Message.referral_request` (migration `0026`, in
   `MessageResponse`) lets the owner of the subject pass it through `recipient_check`. Setting
-  `COMMUNICATOR_REFERRAL_REQUEST` (default `True`). `docs/openapi.yaml` is regenerated at the release.
+  `COMMUNICATOR_REFERRAL_REQUEST` (default `True`).
 - **Our mail names its sender.** A timeline entry of an outbound message carries `from_email`: the bare address it
   left or will leave from — the thread's mailbox, else the channel's sender address, from the same function as the
   From of the mail (`mail_builder.sender`). The draft of an inbox row carries it too (`draft.from_email`). No query

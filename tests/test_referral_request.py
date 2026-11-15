@@ -9,7 +9,7 @@ from django.test import override_settings
 
 from django_communicator.enums import MessageStatus, ReplyIntent
 from django_communicator.models import Message
-from django_communicator.services import referral_service, review_service
+from django_communicator.services import referral_service, review_service, suppression_service
 from django_communicator.signals import reply_received
 from tests.conftest import api_url
 from tests.test_reply_classes import given, ingest_given, sent
@@ -95,3 +95,22 @@ def test_review_api_shows_the_flag(channel, admin_api):
     draft = referrals().get()
     body = admin_api.get(api_url(f"review/{draft.pk}/")).json()
     assert body["referral_request"] is True
+
+
+def test_edit_keeps_the_referral_flag_and_the_reply_it_answers(channel):
+    reply, _ = ingest_given(sent(channel), "Not me.", given(ReplyIntent.WRONG_PERSON))
+    draft = referrals().get()
+    edited = review_service.edit(draft, subject=draft.subject, body_text=f"{draft.body_text}\n\nThanks.")
+    assert (edited.referral_request, edited.in_reply_to_id) == (True, reply.pk)
+
+
+def test_a_long_reply_subject_is_trimmed_to_the_field_limit():
+    assert len(referral_service.subject_for("Re: " + "x" * 400)) == 255
+    assert len(referral_service.subject_for("x" * 400)) == 255
+
+
+def test_no_referral_for_an_address_that_can_no_longer_be_mailed(channel):
+    message = sent(channel)
+    suppression_service.create_suppression(channel, kind="email", value=message.thread.recipient_email)
+    ingest_given(message, "Not me.", given(ReplyIntent.WRONG_PERSON))
+    assert not referrals().exists()

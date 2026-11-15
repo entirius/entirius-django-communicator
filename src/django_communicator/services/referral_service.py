@@ -14,9 +14,11 @@ import logging
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import Direction, MessageStatus, ReplyIntent
 from django_communicator.models import Message, Reply
-from django_communicator.services import message_service
+from django_communicator.services import message_service, suppression_service
 
 logger = logging.getLogger(__name__)
+
+SUBJECT_MAX_LENGTH = 255  # Message.subject; Reply.subject allows 998
 
 TEXTS = {
     "pl": (
@@ -39,7 +41,8 @@ def language_of(reply: Reply) -> str:
 
 def subject_for(subject: str) -> str:
     subject = subject.strip()
-    return subject if subject.lower().startswith("re:") else f"Re: {subject}".strip()[:255]
+    result = subject if subject.lower().startswith("re:") else f"Re: {subject}".strip()
+    return result[:SUBJECT_MAX_LENGTH]
 
 
 def after_reply(reply: Reply) -> Message | None:
@@ -52,10 +55,13 @@ def after_reply(reply: Reply) -> Message | None:
 
 
 def request_referral(reply: Reply) -> Message | None:
-    """The draft, or None for another class, a disabled setting or a thread that already has one."""
+    """The draft, or None for another class, a disabled setting or a thread that already has one;
+    also None when the address can no longer be mailed (suppressed or invalid)."""
     if reply.intent != ReplyIntent.WRONG_PERSON or not communicator_settings.COMMUNICATOR_REFERRAL_REQUEST:
         return None
     thread = reply.thread
+    if suppression_service.can_mail(thread.channel, thread.recipient_email):
+        return None
     outbound = Message.objects.filter(thread=thread, direction=Direction.OUT)
     if outbound.filter(referral_request=True).exists():
         return None
