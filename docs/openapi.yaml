@@ -4409,6 +4409,12 @@ components:
           - false
           title: Edited By Human
           type: boolean
+        referral_request:
+          description: The answer to a wrong-person reply asking who the right person is.
+          examples:
+          - false
+          title: Referral Request
+          type: boolean
         requires_review:
           description: The caller asked for review.
           examples:
@@ -4537,6 +4543,7 @@ components:
       - parent_id
       - automated_rewrites
       - edited_by_human
+      - referral_request
       - requires_review
       - reviewed_by_id
       - reviewed_at
@@ -4780,6 +4787,12 @@ components:
           - false
           title: Edited By Human
           type: boolean
+        referral_request:
+          description: The answer to a wrong-person reply asking who the right person is.
+          examples:
+          - false
+          title: Referral Request
+          type: boolean
         requires_review:
           description: The caller asked for review.
           examples:
@@ -4917,6 +4930,7 @@ components:
       - parent_id
       - automated_rewrites
       - edited_by_human
+      - referral_request
       - requires_review
       - reviewed_by_id
       - reviewed_at
