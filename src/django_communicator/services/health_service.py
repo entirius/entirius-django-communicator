@@ -92,9 +92,14 @@ def _sent(channel: Channel) -> QuerySet[Message]:
     return Message.objects.filter(sent, thread__channel=channel, direction=Direction.OUT)
 
 
+def day_start(now: datetime) -> datetime:
+    """00:00 of the channel's current day (`now` on the channel clock): where `sent_today` starts counting."""
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
 def _sent_today(channel: Channel, now: datetime) -> dict[int | None, int]:
     """{mailbox id: deliveries} of the channel's current day (`now` on the channel clock) — one query."""
-    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = day_start(now)
     today = _sent(channel).filter(sent_at__gte=start, sent_at__lt=start + timedelta(days=1))
     return dict(today.values("thread__mailbox").annotate(n=Count("pk")).values_list("thread__mailbox", "n"))
 
@@ -141,7 +146,8 @@ def metrics(raw: dict[str, int]) -> dict:
 
 def report(channel: Channel, now: datetime) -> dict:
     """Health of the channel (every mailbox and the channel SMTP entry together) and of each mailbox, per window;
-    `now` is on the channel clock."""
+    `now` is on the channel clock. The windows (`24h`, `7d`) roll back from `now`; `sent_today` counts from 00:00 of
+    the channel day (`today_since`, in the channel `timezone`), so the two answer different questions."""
     by_window = {name: counts(channel, now - span) for name, span in WINDOWS.items()}
     totals = {
         name: metrics({c: sum(r[c] for r in found.values()) for c in COUNTERS}) for name, found in by_window.items()
@@ -149,7 +155,13 @@ def report(channel: Channel, now: datetime) -> dict:
     mailboxes = mailbox_service.list_mailboxes(channel)
     today = _sent_today(channel, now)
     rows = [{**_row(m, by_window, now), "sent_today": today.get(m.pk, 0)} for m in mailboxes]
-    return {"channel": {"windows": totals}, "mailboxes": rows}
+    return {
+        "channel": {"windows": totals},
+        "mailboxes": rows,
+        "timezone": channel.timezone,
+        "now": now,
+        "today_since": day_start(now),
+    }
 
 
 def _row(mailbox: Mailbox, by_window: dict[str, Counts], now: datetime) -> dict:

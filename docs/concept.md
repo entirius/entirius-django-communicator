@@ -122,7 +122,9 @@ channel. Counts are per mailbox by `Thread.mailbox`: sent (every delivery, `woul
 `min_sample` sent mails over a limit is paused, `MailboxPauseLog` records the measured rates and a `high` alert goes
 out. Only a person resumes it (`resume/`, logged); the policy then counts events after the resume only.
 A mailbox row's `sent_today` counts its deliveries of the channel's current day the same way; the cap is enforced with
-the reservation counter of `counter_service`, which is not shown.
+the reservation counter of `counter_service`, which is not shown. The `24h` and `7d` windows roll back from the
+report's `now`, while `sent_today` starts at 00:00 of the channel day (`today_since`, in the channel `timezone`): late
+in the day the two agree, early in the morning `24h` still holds most of yesterday.
 
 ## Message lifecycle
 

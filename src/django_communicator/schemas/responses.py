@@ -626,6 +626,15 @@ class MailboxHealthResponse(BaseModel):
 class HealthReportResponse(BaseModel):
     channel: ChannelHealthResponse = Field(description="The whole channel.")
     mailboxes: list[MailboxHealthResponse] = Field(description="Each mailbox by address.", examples=[[]])
+    timezone: str = Field(description="The channel timezone: the clock of `today_since`.", examples=["Europe/Warsaw"])
+    now: datetime = Field(
+        description="When the report was counted (channel clock); `24h` and `7d` roll back from here.",
+        examples=["2026-11-16T14:30:00+01:00"],
+    )
+    today_since: datetime = Field(
+        description="00:00 of the channel day: `sent_today` counts from here, not over the rolling `24h` window.",
+        examples=["2026-11-16T00:00:00+01:00"],
+    )
 
     @classmethod
     def of(cls, report: dict) -> "HealthReportResponse":
@@ -634,7 +643,8 @@ class HealthReportResponse(BaseModel):
             | {"pause_reason": row["mailbox"].pause_reason}
             for row in report["mailboxes"]
         ]
-        return cls.model_validate({"channel": report["channel"], "mailboxes": rows})
+        times = {key: report[key] for key in ("timezone", "now", "today_since")}
+        return cls.model_validate({"channel": report["channel"], "mailboxes": rows, **times})
 
 
 class HealthPolicyResponse(BaseModel):

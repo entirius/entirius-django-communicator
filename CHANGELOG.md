@@ -6,6 +6,10 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
 
 ### Added
 
+- **Sending health names its clock (U15).** `GET health/` carries `timezone` (the channel's), `now` (when it was
+  counted; the `24h` and `7d` windows roll back from here) and `today_since` (00:00 of the channel day, where
+  `sent_today` starts). The numbers keep their meaning: the windows roll, `sent_today` is the calendar day.
+
 - **A skipped draft is announced.** New signal `message_skipped(sender=Message, message=..., subject_ref=...,
   reason="")`, sent on commit whenever a reviewer skips a draft (review queue, bulk approval, and before
   `company_skipped` on a skip of the whole subject). A draft withdrawn because nobody may send it sends none.
