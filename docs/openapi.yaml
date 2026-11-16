@@ -2754,8 +2754,8 @@ components:
           title: By Mailbox
           type: object
         mailboxes:
-          description: The mailboxes of the drafts the other filters leave (every key of `by_mailbox` but none, whatever `mailbox`
-            is), by address: what a mailbox filter shows.
+          description: 'The mailboxes of the drafts the other filters leave (every key of `by_mailbox` but none, whatever `mailbox`
+            is), by address: what a mailbox filter shows.'
           examples:
           - []
           items:
