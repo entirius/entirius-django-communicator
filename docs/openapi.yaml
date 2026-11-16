@@ -313,8 +313,9 @@ paths:
   /api/communicator/v2/admin/{channel_idx}/health/:
     get:
       operationId: api_communicator_v2_admin_health_retrieve
-      description: Counts and percent rates for the last 24 h and 7 d; per mailbox also its state and today's use of its cap
-        (`sent_today` / `cap_today`, the warm-up included).
+      description: Counts and percent rates for the last 24 h and 7 d, both rolling back from `now`; per mailbox also its
+        state and today's use of its cap (`sent_today` / `cap_today`, the warm-up included). `sent_today` counts the channel's
+        calendar day, from `today_since` (00:00 in the channel `timezone`).
       summary: Sending health of the channel and each mailbox
       parameters:
       - in: path
@@ -2472,7 +2473,8 @@ paths:
       description: 'Oldest first, paginated (`page`, `page_size` ≤ 100). `counts` covers the whole filtered set. `blocker`
         says why approving a row would be refused (null: it may be approved): a missing legal footer, a mailbox that is paused,
         disabled or needs a login, or a recipient who may not be mailed (opted out, on the do-not-contact list, an invalid
-        address, or refused by the owner of the thread''s subject).'
+        address, or refused by the owner of the thread''s subject). `mailbox_id` of a row points into `counts.mailboxes`:
+        address, owner and `hold` of every mailbox of the filtered set.'
       summary: Every outbound draft waiting for approval, all channels
       parameters:
       - in: query
@@ -2750,10 +2752,19 @@ components:
             none: 2
           title: By Mailbox
           type: object
+        mailboxes:
+          description: 'The mailboxes of `by_mailbox` (every key but none), by address: what a mailbox filter shows.'
+          examples:
+          - []
+          items:
+            $ref: '#/components/schemas/ApprovalMailboxResponse'
+          title: Mailboxes
+          type: array
       required:
       - total
       - by_channel
       - by_mailbox
+      - mailboxes
       title: ApprovalCountsResponse
       type: object
     ApprovalListResponse:
@@ -2798,6 +2809,42 @@ components:
       - results
       - counts
       title: ApprovalListResponse
+      type: object
+    ApprovalMailboxResponse:
+      properties:
+        id:
+          description: Mailbox id, the key of `by_mailbox` and the `mailbox` filter.
+          examples:
+          - 2
+          title: Id
+          type: integer
+        address:
+          description: The From address.
+          examples:
+          - sales1@shop.test
+          title: Address
+          type: string
+        user_name:
+          description: Staff member whose mailbox this is; empty when nobody's.
+          examples:
+          - Anna Nowak
+          title: User Name
+          type: string
+        hold:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Why the mailbox holds its mail (paused, disabled, needs_login); null when it can send. A draft of a
+            mailbox on hold is refused at approval.
+          examples:
+          - null
+          title: Hold
+      required:
+      - id
+      - address
+      - user_name
+      - hold
+      title: ApprovalMailboxResponse
       type: object
     ApprovalRowResponse:
       properties:
@@ -2880,6 +2927,14 @@ components:
           - type: 'null'
           description: Why approving would be refused; null when it may be approved.
           title: Blocker
+        mailbox_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Mailbox the draft leaves from (see `counts.mailboxes`); null = the channel SMTP entry.
+          examples:
+          - 2
+          title: Mailbox Id
       required:
       - id
       - channel
@@ -2894,6 +2949,7 @@ components:
       - created_at
       - age_hours
       - blocker
+      - mailbox_id
       title: ApprovalRowResponse
       type: object
     BulkApprovalLogListResponse:
@@ -3700,9 +3756,32 @@ components:
             $ref: '#/components/schemas/MailboxHealthResponse'
           title: Mailboxes
           type: array
+        timezone:
+          description: 'The channel timezone: the clock of `today_since`.'
+          examples:
+          - Europe/Warsaw
+          title: Timezone
+          type: string
+        now:
+          description: When the report was counted (channel clock); `24h` and `7d` roll back from here.
+          examples:
+          - '2026-11-16T14:30:00+01:00'
+          format: date-time
+          title: Now
+          type: string
+        today_since:
+          description: '00:00 of the channel day: `sent_today` counts from here, not over the rolling `24h` window.'
+          examples:
+          - '2026-11-16T00:00:00+01:00'
+          format: date-time
+          title: Today Since
+          type: string
       required:
       - channel
       - mailboxes
+      - timezone
+      - now
+      - today_since
       title: HealthReportResponse
       type: object
     HealthWindowsResponse:

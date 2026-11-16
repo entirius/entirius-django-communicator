@@ -139,6 +139,22 @@ def test_sent_today_counts_the_deliveries_of_the_channel_day(policy, sandbox, st
     assert row["sent_today"] == 1
 
 
+def test_the_report_names_its_clock_the_24h_window_rolls_and_sent_today_starts_at_midnight(policy, two, admin_api):
+    """U15: `24h` and `sent_today` count different periods — the report says which, in the channel timezone."""
+    first, _ = two
+    yesterday = sent_mail(first, 3)
+    Message.objects.filter(pk__in=[m.pk for m in yesterday]).update(sent_at=MONDAY_10 - timedelta(hours=12))
+    sent_mail(first, 1, start=3)
+
+    body = admin_api.get(api_url("health/")).json()
+
+    row = next(row for row in body["mailboxes"] if row["id"] == first.pk)
+    assert (row["windows"]["24h"]["sent"], row["sent_today"]) == (4, 1)
+    assert body["timezone"] == "Europe/Warsaw"
+    assert body["now"] == "2026-09-14T10:00:00+02:00"
+    assert body["today_since"] == "2026-09-14T00:00:00+02:00"
+
+
 def test_sent_today_asks_one_query_for_every_mailbox(channel, two, django_assert_num_queries):
     sent_mail(two[0], 2)
     with CaptureQueriesContext(connection) as two_mailboxes:
