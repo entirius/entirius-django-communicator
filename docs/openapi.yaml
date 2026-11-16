@@ -3700,9 +3700,34 @@ components:
             $ref: '#/components/schemas/MailboxHealthResponse'
           title: Mailboxes
           type: array
+        timezone:
+          description: 'The channel timezone: the clock of `today_since`.'
+          examples:
+          - Europe/Warsaw
+          title: Timezone
+          type: string
+        now:
+          description: When the report was counted (channel clock); `24h` and `7d`
+            roll back from here.
+          examples:
+          - '2026-11-16T14:30:00+01:00'
+          format: date-time
+          title: Now
+          type: string
+        today_since:
+          description: '00:00 of the channel day: `sent_today` counts from here, not
+            over the rolling `24h` window.'
+          examples:
+          - '2026-11-16T00:00:00+01:00'
+          format: date-time
+          title: Today Since
+          type: string
       required:
       - channel
       - mailboxes
+      - timezone
+      - now
+      - today_since
       title: HealthReportResponse
       type: object
     HealthWindowsResponse:

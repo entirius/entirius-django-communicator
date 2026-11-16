@@ -27,8 +27,9 @@ class HealthView(AdminView):
     @extend_schema(
         tags=_TAGS,
         summary="Sending health of the channel and each mailbox",
-        description="Counts and percent rates for the last 24 h and 7 d; per mailbox also its state and today's use "
-        "of its cap (`sent_today` / `cap_today`, the warm-up included).",
+        description="Counts and percent rates for the last 24 h and 7 d, both rolling back from `now`; per mailbox "
+        "also its state and today's use of its cap (`sent_today` / `cap_today`, the warm-up included). `sent_today` "
+        "counts the channel's calendar day, from `today_since` (00:00 in the channel `timezone`).",
         responses={200: HealthReportResponse, **ERROR_RESPONSES},
     )
     def get(self, request: Request, channel_idx: str) -> Response:
