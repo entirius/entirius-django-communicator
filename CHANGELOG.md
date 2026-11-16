@@ -6,6 +6,11 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
 
 ### Added
 
+- **The approval inbox names its mailboxes (U13, U14).** Each row of `GET approvals/` carries `mailbox_id` (null = the
+  channel SMTP entry) and `counts.mailboxes` lists every mailbox of the filtered set — `{id, address, user_name,
+  hold}`, by address — so a mailbox filter shows addresses instead of ids and a screen can say before an approval
+  that a draft's mailbox is on hold (`hold`: `paused`, `disabled`, `needs_login`; null when it can send). One query
+  more per list. `docs/openapi.yaml` is regenerated at the release.
 - **A skipped draft is announced.** New signal `message_skipped(sender=Message, message=..., subject_ref=...,
   reason="")`, sent on commit whenever a reviewer skips a draft (review queue, bulk approval, and before
   `company_skipped` on a skip of the whole subject). A draft withdrawn because nobody may send it sends none.
