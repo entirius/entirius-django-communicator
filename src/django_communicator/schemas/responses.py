@@ -739,6 +739,27 @@ class ApprovalRowResponse(BaseModel):
     created_at: datetime = Field(description="Created.", examples=["2026-09-14T10:00:00Z"])
     age_hours: float = Field(description="Hours since it was created.", examples=[5.5])
     blocker: str | None = Field(description="Why approving would be refused; null when it may be approved.")
+    mailbox_id: int | None = Field(
+        description="Mailbox the draft leaves from (see `counts.mailboxes`); null = the channel SMTP entry.",
+        examples=[2],
+    )
+
+
+class ApprovalMailboxResponse(BaseModel):
+    id: int = Field(description="Mailbox id, the key of `by_mailbox` and the `mailbox` filter.", examples=[2])
+    address: str = Field(description="The From address.", examples=["sales1@shop.test"])
+    user_name: str = Field(
+        description="Staff member whose mailbox this is; empty when nobody's.", examples=["Anna Nowak"]
+    )
+    hold: str | None = Field(
+        description="Why the mailbox holds its mail (paused, disabled, needs_login); null when it can send. A draft "
+        "of a mailbox on hold is refused at approval.",
+        examples=[None],
+    )
+
+    @classmethod
+    def of(cls, mailbox, hold: str | None) -> "ApprovalMailboxResponse":
+        return cls(id=mailbox.pk, address=mailbox.address, user_name=_person_name(mailbox.user), hold=hold)
 
 
 class ApprovalCountsResponse(BaseModel):
@@ -746,6 +767,10 @@ class ApprovalCountsResponse(BaseModel):
     by_channel: dict[str, int] = Field(description="Matching drafts per channel idx.", examples=[{"default-europe": 3}])
     by_mailbox: dict[str, int] = Field(
         description='Matching drafts per mailbox id; "none" = the channel SMTP entry.', examples=[{"2": 1, "none": 2}]
+    )
+    mailboxes: list[ApprovalMailboxResponse] = Field(
+        description="The mailboxes of `by_mailbox` (every key but none), by address: what a mailbox filter shows.",
+        examples=[[]],
     )
 
 

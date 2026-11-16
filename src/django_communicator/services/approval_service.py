@@ -12,7 +12,7 @@ from django.db.models import Count, Q, QuerySet
 
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import Direction, MessageStatus
-from django_communicator.models import BulkApprovalLog, Message
+from django_communicator.models import BulkApprovalLog, Mailbox, Message
 from django_communicator.services import message_service, review_service
 from django_communicator.services.exceptions import ClientError
 
@@ -72,6 +72,12 @@ def counts_by_mailbox(rows: QuerySet[Message]) -> dict[str, int]:
     """Mailbox id (as text) → drafts; "none" for threads that send through the channel SMTP entry."""
     grouped = rows.order_by().values("thread__mailbox").annotate(n=Count("pk"))
     return {str(row["thread__mailbox"] or NO_MAILBOX): row["n"] for row in grouped}
+
+
+def mailboxes_of(rows: QuerySet[Message]) -> QuerySet[Mailbox]:
+    """The mailboxes the drafts leave from, by address (the keys of `counts_by_mailbox` but "none")."""
+    ids = rows.order_by().exclude(thread__mailbox=None).values("thread__mailbox")
+    return Mailbox.objects.select_related("user").filter(pk__in=ids).order_by("address", "pk")
 
 
 def bulk(*, user, action: str, ids: list[int], reason: str = "") -> BulkApprovalLog:
