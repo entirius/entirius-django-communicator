@@ -6,25 +6,29 @@
 
 Warnings only: a config gap must never stop ``runserver`` or ``migrate``. DB-bound checks read rows only when
 the caller passes ``databases`` (``manage.py check --database default``, munin's endpoint) — never at boot — and
-only once the table exists: ``migrate`` runs the checks with ``databases`` before it creates anything.
+only once every migration of this app is applied: ``migrate`` runs the checks with ``databases`` before it applies
+anything, so on a database upgraded from an older release the tables and columns the models name may not exist yet.
 """
 
 from django.core import checks
 from django.db import connections
+from django.db.migrations.executor import MigrationExecutor
 from django_email.domain import EmailDomain
 
 from django_communicator.enums import ChannelMode
 
+APP_LABEL = "django_communicator"
 SMTP_CODE = "communicator.smtp"
 SMTP_FIX_URL = "https://github.com/entirius/entirius-django-communicator/blob/master/docs/install.md#prerequisites"
 
 
 def _channels_readable(databases) -> bool:
-    """Only with `databases` (never at boot) and once the table exists (`migrate` checks before it creates it)."""
-    from django_communicator.models import Channel
-
-    tables = connections["default"].introspection.table_names() if "default" in (databases or ()) else []
-    return Channel._meta.db_table in tables
+    """Only with `databases` (never at boot) and on a schema at the models: `migrate` checks before it migrates, and
+    a database from an older release lacks tables and columns the queries below join."""
+    if "default" not in (databases or ()):
+        return False
+    executor = MigrationExecutor(connections["default"])
+    return not executor.migration_plan(executor.loader.graph.leaf_nodes(APP_LABEL))
 
 
 class _Subject(dict):

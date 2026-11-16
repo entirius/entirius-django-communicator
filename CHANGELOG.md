@@ -181,6 +181,14 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
 - GDPR erasure and the `contact_anonymised` receiver drop the address's `AddressStatus` row; the export lists it.
 - `docs/openapi.yaml` regenerated.
 
+### Fixed
+
+- **`migrate` no longer crashes on a database upgraded from 0.4.x.** The `entirius_config` checks (`communicator.smtp`,
+  `communicator.reserved_idx`) ran in `migrate`'s database checks, before any migration, and queried
+  `django_communicator_mailbox`, which only migration `0016` creates (`ProgrammingError`). They now read rows only
+  once every migration of the app is applied. Tested by upgrading from 0011 (the last migration of 0.4.0 and 0.4.1)
+  with a sending channel, a thread and a message.
+
 ### Removed
 
 - `MailboxConfig` and the singular `GET/PUT <channel_idx>/mailbox/` routes — use `mailboxes/`.

@@ -51,10 +51,10 @@ class TestSendingChannelsHaveSmtp:
         with django_assert_num_queries(0):
             assert sending_channels_have_smtp() == []
 
-    def test_before_migrate_the_missing_table_is_skipped(self):
+    def test_with_pending_migrations_it_is_skipped(self):
         with (
             _no_smtp_entries(),
-            patch("django.db.backends.base.introspection.BaseDatabaseIntrospection.table_names", return_value=[]),
+            patch("django.db.migrations.executor.MigrationExecutor.migration_plan", return_value=[(object(), False)]),
         ):
             assert sending_channels_have_smtp(databases=DB) == []
 
