@@ -4,6 +4,7 @@
 """Admin API v2 — the approval inbox across channels. Mounted before the `<channel_idx>/` include, at
 `api/communicator/v2/admin/approvals/`."""
 
+from dataclasses import replace
 from datetime import datetime
 
 from django.utils import timezone
@@ -17,13 +18,14 @@ from django_communicator.models import Message
 from django_communicator.schemas.requests import ApprovalQuery, BulkApprovalRequest
 from django_communicator.schemas.responses import (
     ApprovalCountsResponse,
+    ApprovalMailboxResponse,
     ApprovalRowResponse,
     BulkApprovalLogListResponse,
     BulkApprovalLogResponse,
     BulkApprovalResponse,
 )
 from django_communicator.schemas.responses import ApprovalListResponse as ListResponse
-from django_communicator.services import approval_service, preflight_service
+from django_communicator.services import approval_service, mailbox_service, preflight_service
 
 _TAGS = ["Communicator Approvals"]
 PREVIEW_CHARS = 300
@@ -46,6 +48,7 @@ def _row(message: Message, now: datetime) -> dict:
         created_at=message.created_at,
         age_hours=round((now - message.created_at).total_seconds() / 3600, 2),
         blocker=blocker[1] if blocker else None,
+        mailbox_id=thread.mailbox_id,
     ).model_dump(mode="json")
 
 
@@ -59,7 +62,9 @@ class ApprovalListView(AdminView):
         description="Oldest first, paginated (`page`, `page_size` ≤ 100). `counts` covers the whole filtered set. "
         "`blocker` says why approving a row would be refused (null: it may be approved): a missing legal footer, a "
         "mailbox that is paused, disabled or needs a login, or a recipient who may not be mailed (opted out, on the "
-        "do-not-contact list, an invalid address, or refused by the owner of the thread's subject).",
+        "do-not-contact list, an invalid address, or refused by the owner of the thread's subject). `mailbox_id` of a "
+        "row points into `counts.mailboxes`: address, owner and `hold` of every mailbox of the set the other filters "
+        "leave, whatever `mailbox` is (a mailbox filter can list all of them).",
         parameters=[
             OpenApiParameter("channel", str),
             OpenApiParameter("template_key", str),
@@ -78,6 +83,7 @@ class ApprovalListView(AdminView):
         )
         now = timezone.now()
         rows = approval_service.pending(filters, now)
+        any_mailbox = approval_service.pending(replace(filters, mailbox=None), now)
         paginator = AdminPagination()
         page = paginator.paginate_queryset(rows, request, view=self)
         response = paginator.get_paginated_response([_row(message, now) for message in page])
@@ -85,6 +91,10 @@ class ApprovalListView(AdminView):
             total=paginator.page.paginator.count,
             by_channel=approval_service.counts_by_channel(rows),
             by_mailbox=approval_service.counts_by_mailbox(rows),
+            mailboxes=[
+                ApprovalMailboxResponse.of(mailbox, mailbox_service.send_hold(mailbox))
+                for mailbox in approval_service.mailboxes_of(any_mailbox)
+            ],
         )
         response.data["counts"] = counts.model_dump()
         return response

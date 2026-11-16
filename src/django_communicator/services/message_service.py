@@ -23,6 +23,8 @@ VERSION_INHERITED_FIELDS = (
     "requires_review",
     "automated_rewrites",
     "sequence_step",
+    "referral_request",
+    "in_reply_to",
 )
 _REVIEW_STATUSES = frozenset({MessageStatus.APPROVED.value, MessageStatus.REJECTED.value})
 

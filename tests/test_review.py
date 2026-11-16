@@ -15,7 +15,7 @@ from django_communicator.models import Message
 from django_communicator.services import message_service, review_service
 from django_communicator.services.communicate_service import communicate
 from django_communicator.services.message_service import InvalidTransitionError
-from django_communicator.signals import company_skipped, message_approved
+from django_communicator.signals import company_skipped, message_approved, message_skipped
 from tests.conftest import CHANNEL_IDX
 from tests.factories import make_static
 
@@ -242,3 +242,58 @@ def test_failed_rewrite_on_approved_message_is_refused(draft, toolbox, admin_api
     with pytest.raises(InvalidTransitionError):
         review_service.rewrite(stale, notes="Shorter.")
     assert not Message.objects.filter(parent=draft).exists()
+
+
+def _listen_skipped(uid: str) -> list:
+    received = []
+    message_skipped.connect(
+        lambda sender, message, subject_ref, reason, **kw: received.append((message.pk, subject_ref, reason)),
+        weak=False,
+        dispatch_uid=uid,
+    )
+    return received
+
+
+def test_skip_emits_message_skipped_on_commit(draft, admin_api, django_capture_on_commit_callbacks):
+    received = _listen_skipped("ms1")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        review_service.skip(draft, user=admin_api.user, reason="Later")
+
+    message_skipped.disconnect(dispatch_uid="ms1")
+    assert received == [(draft.pk, "bdd:42", "Later")]
+
+
+def test_skip_company_emits_message_skipped_before_company_skipped(
+    draft, admin_api, django_capture_on_commit_callbacks
+):
+    order = []
+    message_skipped.connect(lambda sender, **kw: order.append("message"), weak=False, dispatch_uid="ms2")
+    company_skipped.connect(lambda sender, **kw: order.append("company"), weak=False, dispatch_uid="cs2")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        review_service.skip_company(draft, user=admin_api.user, reason="Not a fit")
+
+    message_skipped.disconnect(dispatch_uid="ms2")
+    company_skipped.disconnect(dispatch_uid="cs2")
+    assert order == ["message", "company"]
+
+
+def test_withdraw_emits_no_message_skipped(draft, django_capture_on_commit_callbacks):
+    received = _listen_skipped("ms3")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        withdrawn = review_service.withdraw(draft.thread.channel, draft.thread.recipient_email, reason="opted out")
+
+    message_skipped.disconnect(dispatch_uid="ms3")
+    assert (len(withdrawn), received) == (1, [])
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_skip_emits_message_skipped_once(draft, admin_api):
+    received = _listen_skipped("ms4")
+
+    outcomes = _race(review_service.skip, draft.pk, user=admin_api.user, reason="")
+
+    message_skipped.disconnect(dispatch_uid="ms4")
+    assert (outcomes, received) == (["conflict", "ok"], [(draft.pk, "bdd:42", "")])

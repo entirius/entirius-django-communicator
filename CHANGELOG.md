@@ -6,6 +6,23 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
 
 ### Added
 
+- **Sending health names its clock (U15).** `GET health/` carries `timezone` (the channel's), `now` (when it was
+  counted; the `24h` and `7d` windows roll back from here) and `today_since` (00:00 of the channel day, where
+  `sent_today` starts). The numbers keep their meaning: the windows roll, `sent_today` is the calendar day.
+
+- **The approval inbox names its mailboxes (U13, U14).** Each row of `GET approvals/` carries `mailbox_id` (null = the
+  channel SMTP entry) and `counts.mailboxes` lists every mailbox of the filtered set — `{id, address, user_name,
+  hold}`, by address — so a mailbox filter shows addresses instead of ids and a screen can say before an approval
+  that a draft's mailbox is on hold (`hold`: `paused`, `disabled`, `needs_login`; null when it can send). One query
+  more per list; `counts.mailboxes` ignores the `mailbox` filter itself, so the filter keeps listing every mailbox.
+- **A skipped draft is announced.** New signal `message_skipped(sender=Message, message=..., subject_ref=...,
+  reason="")`, sent on commit whenever a reviewer skips a draft (review queue, bulk approval, and before
+  `company_skipped` on a skip of the whole subject). A draft withdrawn because nobody may send it sends none.
+- **Referral request (U3).** A `wrong_person` reply gets one draft answer per thread asking who the right person is
+  (`referral_service`, fixed Polish / English text, `review_required`, `in_reply_to` the reply), drafted after
+  `reply_received` so receivers that withdraw drafts run first. `Message.referral_request` (migration `0026`, in
+  `MessageResponse`) lets the owner of the subject pass it through `recipient_check`. Setting
+  `COMMUNICATOR_REFERRAL_REQUEST` (default `True`).
 - **Our mail names its sender.** A timeline entry of an outbound message carries `from_email`: the bare address it
   left or will leave from — the thread's mailbox, else the channel's sender address, from the same function as the
   From of the mail (`mail_builder.sender`). The draft of an inbox row carries it too (`draft.from_email`). No query

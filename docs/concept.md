@@ -122,7 +122,9 @@ channel. Counts are per mailbox by `Thread.mailbox`: sent (every delivery, `woul
 `min_sample` sent mails over a limit is paused, `MailboxPauseLog` records the measured rates and a `high` alert goes
 out. Only a person resumes it (`resume/`, logged); the policy then counts events after the resume only.
 A mailbox row's `sent_today` counts its deliveries of the channel's current day the same way; the cap is enforced with
-the reservation counter of `counter_service`, which is not shown.
+the reservation counter of `counter_service`, which is not shown. The `24h` and `7d` windows roll back from the
+report's `now`, while `sent_today` starts at 00:00 of the channel day (`today_since`, in the channel `timezone`): late
+in the day the two agree, early in the morning `24h` still holds most of yesterday.
 
 ## Message lifecycle
 
@@ -350,6 +352,14 @@ it is a plain pause. `plan_applied` is the snapshot of what ran (`sequence`, `no
 `is_default`, `resume_at`); `reply_received` receivers read `reply.intent`, `reply.intent_return_date`,
 `reply.needs_review` and `reply.plan_applied["notify"]`. Nothing here suppresses, reminds or moves a stage — no
 plan can confirm an opt-out.
+
+**Referral request.** A human `wrong_person` reply (not a suspected opt-out) gets one draft answer per thread asking
+who the right person is (`referral_service`, after the commit and after `reply_received`, so a receiver that
+withdraws the drafts to a wrong person runs first). A fixed text in the thread's language (Polish, else English), no
+template and no AI, `review_required` like every draft, `in_reply_to` the reply, the legal footer of the thread's last
+outbound message, and `Message.referral_request = True` — the flag the owner of the subject reads in
+`recipient_check` to let the answer reach a contact it flagged as the wrong person. `COMMUNICATOR_REFERRAL_REQUEST =
+False` turns it off. A failure is logged and never breaks the poll.
 
 Unreadable mail (oversized, unparseable, data error) is recorded in `InboundQuarantine` (no body) and
 the cursor moves on; transient failures leave the cursor for the next beat. Mail is never deleted or

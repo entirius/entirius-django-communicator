@@ -57,7 +57,8 @@ src/django_communicator/
 │               resume_service (out-of-office resume)
 │               exceptions (ClientError: base of refusals shown to API clients)
 ├── signals/    __init__.py (message_approved, company_skipped, message_sent, sequence_finished,
-│               reply_received, optout_confirmed, message_bounced, draft_retry_requested, recipient_check)
+│               reply_received, optout_confirmed, message_bounced, draft_retry_requested, recipient_check,
+│               message_skipped)
 │               leads_receivers.py (contact_anonymised)
 ├── tasks/      send_due  schedule_follow_ups  poll_inbox  record_objection  retry_failed_drafts  reverify_addresses
 │               resume_paused_sequences

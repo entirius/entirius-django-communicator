@@ -4,6 +4,9 @@
 """Signals consumers connect to (all sent on commit, except `draft_retry_requested`).
 
 - `message_approved(sender=Message, message=...)` — a reviewer accepted the message.
+- `message_skipped(sender=Message, message=..., subject_ref=..., reason="")` — a reviewer skipped (rejected) one draft,
+  in the review queue or in a bulk approval; `company_skipped` sends it too, before its own signal. Not for a draft
+  withdrawn because nobody may send it.
 - `company_skipped(sender=Message, subject_ref=..., message=...)` — the reviewer skipped the whole subject.
 - `message_sent(sender=Message, message=...)`, `sequence_finished(sender=Thread, thread=...)`.
 - `reply_received(sender=Thread, thread=..., reply=...)` — a human reply (or a dismissed opt-out suspicion), sent with
@@ -25,6 +28,7 @@ from django.dispatch import Signal
 REPLY_ALERTED = "reply_alerted"
 
 message_approved = Signal()
+message_skipped = Signal()
 company_skipped = Signal()
 message_sent = Signal()
 sequence_finished = Signal()

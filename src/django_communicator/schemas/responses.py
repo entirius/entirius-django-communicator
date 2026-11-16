@@ -55,6 +55,9 @@ class MessageResponse(BaseModel):
     parent_id: int | None = Field(description="Previous version.", examples=[None])
     automated_rewrites: int = Field(description="Automated rewrites in the chain.", examples=[0])
     edited_by_human: bool = Field(description="Written by a reviewer.", examples=[False])
+    referral_request: bool = Field(
+        description="The answer to a wrong-person reply asking who the right person is.", examples=[False]
+    )
     requires_review: bool = Field(description="The caller asked for review.", examples=[True])
     reviewed_by_id: int | None = Field(description="Reviewer user id.", examples=[None])
     reviewed_at: datetime | None = Field(description="When reviewed.", examples=[None])
@@ -623,6 +626,15 @@ class MailboxHealthResponse(BaseModel):
 class HealthReportResponse(BaseModel):
     channel: ChannelHealthResponse = Field(description="The whole channel.")
     mailboxes: list[MailboxHealthResponse] = Field(description="Each mailbox by address.", examples=[[]])
+    timezone: str = Field(description="The channel timezone: the clock of `today_since`.", examples=["Europe/Warsaw"])
+    now: datetime = Field(
+        description="When the report was counted (channel clock); `24h` and `7d` roll back from here.",
+        examples=["2026-11-16T14:30:00+01:00"],
+    )
+    today_since: datetime = Field(
+        description="00:00 of the channel day: `sent_today` counts from here, not over the rolling `24h` window.",
+        examples=["2026-11-16T00:00:00+01:00"],
+    )
 
     @classmethod
     def of(cls, report: dict) -> "HealthReportResponse":
@@ -631,7 +643,8 @@ class HealthReportResponse(BaseModel):
             | {"pause_reason": row["mailbox"].pause_reason}
             for row in report["mailboxes"]
         ]
-        return cls.model_validate({"channel": report["channel"], "mailboxes": rows})
+        times = {key: report[key] for key in ("timezone", "now", "today_since")}
+        return cls.model_validate({"channel": report["channel"], "mailboxes": rows, **times})
 
 
 class HealthPolicyResponse(BaseModel):
@@ -726,6 +739,27 @@ class ApprovalRowResponse(BaseModel):
     created_at: datetime = Field(description="Created.", examples=["2026-09-14T10:00:00Z"])
     age_hours: float = Field(description="Hours since it was created.", examples=[5.5])
     blocker: str | None = Field(description="Why approving would be refused; null when it may be approved.")
+    mailbox_id: int | None = Field(
+        description="Mailbox the draft leaves from (see `counts.mailboxes`); null = the channel SMTP entry.",
+        examples=[2],
+    )
+
+
+class ApprovalMailboxResponse(BaseModel):
+    id: int = Field(description="Mailbox id, the key of `by_mailbox` and the `mailbox` filter.", examples=[2])
+    address: str = Field(description="The From address.", examples=["sales1@shop.test"])
+    user_name: str = Field(
+        description="Staff member whose mailbox this is; empty when nobody's.", examples=["Anna Nowak"]
+    )
+    hold: str | None = Field(
+        description="Why the mailbox holds its mail (paused, disabled, needs_login); null when it can send. A draft "
+        "of a mailbox on hold is refused at approval.",
+        examples=[None],
+    )
+
+    @classmethod
+    def of(cls, mailbox, hold: str | None) -> "ApprovalMailboxResponse":
+        return cls(id=mailbox.pk, address=mailbox.address, user_name=_person_name(mailbox.user), hold=hold)
 
 
 class ApprovalCountsResponse(BaseModel):
@@ -733,6 +767,11 @@ class ApprovalCountsResponse(BaseModel):
     by_channel: dict[str, int] = Field(description="Matching drafts per channel idx.", examples=[{"default-europe": 3}])
     by_mailbox: dict[str, int] = Field(
         description='Matching drafts per mailbox id; "none" = the channel SMTP entry.', examples=[{"2": 1, "none": 2}]
+    )
+    mailboxes: list[ApprovalMailboxResponse] = Field(
+        description="The mailboxes of the drafts the other filters leave (every key of `by_mailbox` but none, whatever "
+        "`mailbox` is), by address: what a mailbox filter shows.",
+        examples=[[]],
     )
 
 

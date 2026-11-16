@@ -35,6 +35,9 @@ class Message(BaseModel):
     )
     edited_by_human = models.BooleanField(default=False)
     composed = models.BooleanField(default=False, help_text="Written by hand through `compose()`.")
+    referral_request = models.BooleanField(
+        default=False, help_text="The answer to a wrong-person reply asking who the right person is."
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )

@@ -332,6 +332,30 @@ def test_approval_filter_counts_and_blocker_for_a_paused_mailbox(channel, admin_
     assert review_service.accept(other, user=anna).status == MessageStatus.APPROVED
 
 
+def test_approval_rows_name_their_mailbox_and_counts_label_every_mailbox(channel, admin_api, template):
+    anna, ewa = staff("anna"), staff("ewa")
+    get_user_model().objects.filter(pk=anna.pk).update(first_name="Anna", last_name="Nowak")
+    first = make_mailbox(channel, "sales1@mail.example.test", user=anna)
+    second = make_mailbox(channel, "sales2@mail.example.test", user=ewa)
+    unused = make_mailbox(channel, "sales3@mail.example.test")
+    of_anna, of_ewa = draft(user_id=anna.pk), draft("ewa@example-shop-2.test", user_id=ewa.pk, ref="mb:2")
+    channel_entry = draft("olga@example-shop-3.test", ref="mb:3")
+    Mailbox.objects.filter(pk=second.pk).update(paused_at="2026-09-14T08:00:00Z")
+
+    body = admin_api.get("/api/communicator/v2/admin/approvals/").json()
+    filtered = admin_api.get(f"/api/communicator/v2/admin/approvals/?mailbox={first.pk}").json()
+
+    mailbox_of = {row["id"]: row["mailbox_id"] for row in body["results"]}
+    assert mailbox_of == {of_anna.pk: first.pk, of_ewa.pk: second.pk, channel_entry.pk: None}
+    assert body["counts"]["mailboxes"] == [
+        {"id": first.pk, "address": "sales1@mail.example.test", "user_name": "Anna Nowak", "hold": None},
+        {"id": second.pk, "address": "sales2@mail.example.test", "user_name": "ewa", "hold": "paused"},
+    ]
+    assert unused.pk not in {mailbox["id"] for mailbox in body["counts"]["mailboxes"]}
+    assert filtered["counts"]["mailboxes"] == body["counts"]["mailboxes"]  # the filter keeps every mailbox
+    assert filtered["counts"]["total"] == 1
+
+
 # --- Django admin ---
 
 
