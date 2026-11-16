@@ -4,6 +4,7 @@
 """Admin API v2 — the approval inbox across channels. Mounted before the `<channel_idx>/` include, at
 `api/communicator/v2/admin/approvals/`."""
 
+from dataclasses import replace
 from datetime import datetime
 
 from django.utils import timezone
@@ -62,7 +63,8 @@ class ApprovalListView(AdminView):
         "`blocker` says why approving a row would be refused (null: it may be approved): a missing legal footer, a "
         "mailbox that is paused, disabled or needs a login, or a recipient who may not be mailed (opted out, on the "
         "do-not-contact list, an invalid address, or refused by the owner of the thread's subject). `mailbox_id` of a "
-        "row points into `counts.mailboxes`: address, owner and `hold` of every mailbox of the filtered set.",
+        "row points into `counts.mailboxes`: address, owner and `hold` of every mailbox of the set the other filters "
+        "leave, whatever `mailbox` is (a mailbox filter can list all of them).",
         parameters=[
             OpenApiParameter("channel", str),
             OpenApiParameter("template_key", str),
@@ -81,6 +83,7 @@ class ApprovalListView(AdminView):
         )
         now = timezone.now()
         rows = approval_service.pending(filters, now)
+        any_mailbox = approval_service.pending(replace(filters, mailbox=None), now)
         paginator = AdminPagination()
         page = paginator.paginate_queryset(rows, request, view=self)
         response = paginator.get_paginated_response([_row(message, now) for message in page])
@@ -90,7 +93,7 @@ class ApprovalListView(AdminView):
             by_mailbox=approval_service.counts_by_mailbox(rows),
             mailboxes=[
                 ApprovalMailboxResponse.of(mailbox, mailbox_service.send_hold(mailbox))
-                for mailbox in approval_service.mailboxes_of(rows)
+                for mailbox in approval_service.mailboxes_of(any_mailbox)
             ],
         )
         response.data["counts"] = counts.model_dump()

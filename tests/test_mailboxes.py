@@ -352,7 +352,8 @@ def test_approval_rows_name_their_mailbox_and_counts_label_every_mailbox(channel
         {"id": second.pk, "address": "sales2@mail.example.test", "user_name": "ewa", "hold": "paused"},
     ]
     assert unused.pk not in {mailbox["id"] for mailbox in body["counts"]["mailboxes"]}
-    assert [mailbox["id"] for mailbox in filtered["counts"]["mailboxes"]] == [first.pk]
+    assert filtered["counts"]["mailboxes"] == body["counts"]["mailboxes"]  # the filter keeps every mailbox
+    assert filtered["counts"]["total"] == 1
 
 
 # --- Django admin ---

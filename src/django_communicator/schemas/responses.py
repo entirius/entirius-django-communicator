@@ -769,7 +769,8 @@ class ApprovalCountsResponse(BaseModel):
         description='Matching drafts per mailbox id; "none" = the channel SMTP entry.', examples=[{"2": 1, "none": 2}]
     )
     mailboxes: list[ApprovalMailboxResponse] = Field(
-        description="The mailboxes of `by_mailbox` (every key but none), by address: what a mailbox filter shows.",
+        description="The mailboxes of the drafts the other filters leave (every key of `by_mailbox` but none, whatever "
+        "`mailbox` is), by address: what a mailbox filter shows.",
         examples=[[]],
     )
 
