@@ -54,7 +54,7 @@ def status(message: Message) -> str:
 @pytest.fixture
 def two_users(channel):
     anna, piotr = staff("anna"), staff("piotr")
-    first = make_mailbox(channel, user=anna, display_name="Anna Nowak", cc_address="crm@mail.example.test")
+    first = make_mailbox(channel, user=anna, display_name="Anna Nowak", cc_addresses=["crm@mail.example.test"])
     second = make_mailbox(channel, "piotr@mail.example.test", user=piotr, display_name="Piotr")
     return (anna, first), (piotr, second)
 

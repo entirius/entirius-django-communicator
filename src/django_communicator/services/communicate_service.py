@@ -57,19 +57,21 @@ def communicate(
     audience: str = "",
     mailbox_user_id: int | None = None,
     subject_label: str = "",
+    mailbox_brand: str = "",
 ) -> Message:
     """Address status and suppression (`can_mail`) → template → legal footer → render → static body or AI draft. Raises `Channel.DoesNotExist`.
 
     `audience` is the caller's opaque code (leads: the lead type); it picks the template variant, blank = default.
-    `mailbox_user_id` picks the mailbox of a new thread: that user's sending mailbox in the channel, else the
-    channel's default, else none (the channel SMTP entry); a thread keeps the mailbox of its first message.
+    `mailbox_user_id` and `mailbox_brand` pick the mailbox of a new thread (`mailbox_service.resolve`): that user's
+    sending mailbox of that brand, else the user's default, else any of the user's, else the channel's default, else
+    none (the channel SMTP entry); a thread keeps the mailbox of its first message.
     A non-empty `subject_label` (what the thread is about, e.g. a company name) is stored on the thread.
     Raises `ToolboxDisabledError` for an AI template while the toolbox is switched off — nothing is written."""
     channel = channel_service.get_channel(channel_idx)
     if thread is not None:
         check_thread(thread, channel, recipient, subject_ref)
     base = {"render_context": context, "legal_footer": recipient.legal_footer, "requires_review": requires_review}
-    base.update(mailbox_user_id=mailbox_user_id, subject_label=subject_label)
+    base.update(mailbox_user_id=mailbox_user_id, mailbox_brand=mailbox_brand, subject_label=subject_label)
     if refusal := mail_refusal(channel, recipient.email):
         fields = {**base, "failure_detail": refusal}
         return _create(channel, recipient, subject_ref, thread, status=MessageStatus.SUPPRESSED, **fields)
@@ -145,7 +147,7 @@ def _fail(channel, recipient, subject_ref, thread, code: str, detail: str, base:
 
 def _create(channel, recipient: RecipientData, subject_ref: str, thread: Thread | None, **fields) -> Message:
     thread = thread or thread_for(channel, recipient, subject_ref)
-    mailbox_service.assign(thread, fields.pop("mailbox_user_id"))
+    mailbox_service.assign(thread, fields.pop("mailbox_user_id"), fields.pop("mailbox_brand"))
     label_thread(thread, fields.pop("subject_label"))
     return message_service.create_message(thread=thread, **fields)
 

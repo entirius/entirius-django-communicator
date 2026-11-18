@@ -539,9 +539,13 @@ class MailboxResponse(BaseModel):
     id: int = Field(description="Mailbox id.", examples=[2])
     address: str = Field(description="From address.", examples=["anna@mail.test"])
     display_name: str = Field(description="From name.", examples=["Anna Nowak"])
-    cc_address: str = Field(description="Copy of every mail; empty: none.", examples=[""])
+    cc_addresses: list[str] = Field(description="Copies of every mail.", examples=[["crm@mail.test"]])
+    bcc_addresses: list[str] = Field(description="Blind copies of every mail (never in a header).", examples=[[]])
+    brand: str = Field(description="Brand slug; empty: none.", examples=["entirius"])
+    signature_html: str = Field(description="Sanitised signature HTML after the body; empty: none.", examples=[""])
     user_id: int | None = Field(description="Staff member whose mailbox this is.", examples=[7])
     is_default: bool = Field(description="The channel default.", examples=[True])
+    is_user_default: bool = Field(description="The user's mailbox when no brand matches.", examples=[True])
     auth_method: str = Field(description="password (the only method).", examples=["password"])
     state: str = Field(description="active, paused, needs_login or disabled.", examples=["active"])
     smtp_host: str = Field(description="SMTP host.", examples=["smtp.mail.test"])
@@ -695,16 +699,24 @@ class PauseLogListResponse(BaseModel):
 
 class FooterResponse(BaseModel):
     language: str = Field(description="ISO 639-1 code.", examples=["pl"])
+    brand: str = Field(description="Brand of the mailboxes it serves; empty: every brand.", examples=[""])
     html: str = Field(description="Sanitised footer HTML with `{{ legal }}`.", examples=["<div>{{ legal }}</div>"])
+    unsubscribe_label: str = Field(description="Text of the unsubscribe link; empty: the default.", examples=[""])
     modified_at: datetime = Field(description="Last saved.", examples=["2026-09-26T12:00:00Z"])
 
     @classmethod
     def of(cls, footer) -> "FooterResponse":
-        return cls(language=footer.language.iso2.lower(), html=footer.html, modified_at=footer.modified_at)
+        return cls(
+            language=footer.language.iso2.lower(),
+            brand=footer.brand,
+            html=footer.html,
+            unsubscribe_label=footer.unsubscribe_label,
+            modified_at=footer.modified_at,
+        )
 
 
 class FooterListResponse(BaseModel):
-    results: list[FooterResponse] = Field(description="Footers of the channel by language.", examples=[[]])
+    results: list[FooterResponse] = Field(description="Footers of the channel by language and brand.", examples=[[]])
 
 
 class RetryDraftsResponse(BaseModel):

@@ -39,7 +39,8 @@ interprets (leads passes the lead type). Blank serves every audience. Unique `(c
 ## communicate()
 
 `services/communicate_service.communicate(*, channel_idx, template_key, recipient, context,
-subject_ref, requires_review=True, thread=None, audience="", mailbox_user_id=None, subject_label="") -> Message` — the one entry point for other modules.
+subject_ref, requires_review=True, thread=None, audience="", mailbox_user_id=None, subject_label="",
+mailbox_brand="") -> Message` — the one entry point for other modules.
 Fixed order:
 
 1. **Can mail** — `suppression_service.can_mail`: an `invalid` address status → `suppressed` with
@@ -59,9 +60,10 @@ Fixed order:
    `model` (C-33) and a notification. `complete()` is never retried.
 
 The thread is the newest open `Thread(channel, subject_ref, recipient_email)`, or a new one. Before the thread's
-first message is created its mailbox is chosen and stored in `Thread.mailbox` for good: the mailbox of
-`mailbox_user_id` in the channel when it sends (`send_enabled`), else the channel's default mailbox when it sends,
-else none — the thread then sends through the channel SMTP entry, as before mailboxes existed.
+first message is created its mailbox is chosen (`mailbox_service.resolve`, sending mailboxes only) and stored in
+`Thread.mailbox` for good: the mailbox of `mailbox_user_id` with the brand `mailbox_brand` (several: the user's
+default, else the oldest), else the user's default mailbox, else any of the user's (the oldest), else the channel's
+default mailbox, else none — the thread then sends through the channel SMTP entry, as before mailboxes existed.
 `subject_label` is what the thread is about in the caller's words (leads: the company name): a non-empty value is
 stored on `Thread.subject_label` (a later non-empty one replaces it, a blank one keeps it) so screens never show the
 opaque `subject_ref`; `compose()` takes it the same way.
@@ -95,11 +97,13 @@ conversation's draft say so (`composed`) without asking the caller.
 
 ## Mailboxes
 
-A channel has any number of `Mailbox` rows. Each is one From address (`address`, `display_name`, optional
-`cc_address` copied on every mail) with its own SMTP login (`smtp_*`, `send_enabled`), its own IMAP login
-(`imap_*`, `receive_enabled`, cursor `last_uid` / `uidvalidity`), its own daily cap with an optional warm-up and its
-own pause. `user` (a staff member, at most one mailbox per user and channel) makes a person's mail leave from their
-mailbox; `is_default` (one per channel) serves everyone else. `auth_method` is `password`, the only method; the
+A channel has any number of `Mailbox` rows. Each is one From address (`address`, `display_name`, `cc_addresses` and
+`bcc_addresses` copied on every mail, a `signature_html` after the body, a `brand` slug) with its own SMTP login
+(`smtp_*`, `send_enabled`), its own IMAP login (`imap_*`, `receive_enabled`, cursor `last_uid` / `uidvalidity`), its
+own daily cap with an optional warm-up and its own pause. `user` (a staff member, any number of mailboxes per user)
+makes a person's mail leave from their mailbox — the one of the caller's brand, else the user's `is_user_default`
+(at most one per user and channel; the first mailbox of a user gets it); `is_default` (one per channel) serves
+everyone else. `auth_method` is `password`, the only method; the
 logins sit behind `mailbox_service.smtp_connection` and `imap_login`, so another method is one more branch there.
 
 | State | When | Sending |
@@ -218,25 +222,29 @@ never re-sent — it becomes `failed/send_outcome_unknown` for a human. At most 
 
 **Mail** (C-32): multipart/alternative, footer after `-- `, `Message-ID:
 <communicator-<id>-<hex8>@<from domain>>`, `In-Reply-To`/`References` from the thread's earlier sent
-messages. With a mailbox: From `display_name <address>`, CC `cc_address` (a sandbox only names it in
-`X-Original-Cc`) and the mailbox's SMTP login. Without one: From `DEFAULT_FROM_EMAIL` and the SMTP connection of
+messages. With a mailbox: From `display_name <address>`, CC `cc_addresses`, BCC `bcc_addresses` (envelope only,
+never a header; a sandbox sends to neither and names them in `X-Original-Cc` / `X-Original-Bcc`), the mailbox's
+signature and its SMTP login. Both parts run body → signature → footer → unsubscribe link. Without one: From `DEFAULT_FROM_EMAIL` and the SMTP connection of
 `EMAIL_SMTP_CONFIGURATION_CHANNELS[<channel idx>]` (django_email). A missing or refused login is an outcome of that
 message, not of the run: it waits and the run goes on with the others; a channel without its SMTP entry likewise
 (`SMTP not configured`, once a day).
 
-**Footer.** One HTML footer per (channel, language) — `MailFooter`, `footers/<language>/` — is the layout around
+**Footer.** One HTML footer per (channel, language, brand) — `MailFooter`, `footers/<language>/?brand=` — is the layout around
 the legal text: signature, logo, company data, links. It carries `{{ legal }}` exactly once, as text (never inside an attribute); the caller's
 `legal_footer` (leads: the agreements clause set of the legal basis) replaces it as escaped paragraphs. Saved HTML
 is sanitised to an allowlist (a, img, p, br, strong, em, span, div, table family; text, colour, size and spacing
 styles without `url(`/`expression(` values; http/https/mailto/tel links). At send, `mail_builder` picks the
-footer of the body's language (its template version's; the thread language without one), else the
-channel default language's, else none — the legal text then goes out alone, as before footers existed. The text
+footer of the body's language (its template version's; the thread language without one) and the thread mailbox's
+brand: (language, brand) → (language, no brand) → (channel default language, brand) → (channel default language,
+no brand) → none — the legal text then goes out alone, as before footers existed. The text
 part is the footer converted: blocks become lines, links `text <url>`, images dropped. The sent message stores the
 rendered footer in `footer_html`, so a later footer edit never rewrites sent mail.
 
 **One-click unsubscribe.** With `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` set every mail carries `List-Unsubscribe: <url>`
-and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058) and a link after the footer in the text and HTML
-parts, labelled in the body language (`pl`, else English). `List-Unsubscribe` is written as one unfolded line —
+and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058) and a link in the text and HTML parts: at the
+footer's `{{ unsubscribe }}` (optional, once, as text), else in a small grey paragraph after the footer; labelled with
+the footer's `unsubscribe_label`, else the default of the body language (pl "Nie chcę otrzymywać kolejnych
+wiadomości", else "I don't want to receive further messages"). Without the setting the placeholder is removed. `List-Unsubscribe` is written as one unfolded line —
 Python's SMTP policy would otherwise turn the long URL into RFC 2047 encoded words no mail client reads; every other
 header is written as before. The URL carries a `django.core.signing` token over `{c: channel idx, e: address}` with
 its own salt and no expiry. The public route shows a confirmation page on GET; a POST suppresses the address on the

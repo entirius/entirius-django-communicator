@@ -172,7 +172,7 @@ paths:
   /api/communicator/v2/admin/{channel_idx}/footers/:
     get:
       operationId: communicator_footers_list
-      summary: Mail footers of the channel
+      summary: Mail footers of the channel (every language and brand)
       parameters:
       - in: path
         name: channel_idx
@@ -203,6 +203,11 @@ paths:
       operationId: api_communicator_v2_admin_footers_retrieve
       summary: Mail footer in one language
       parameters:
+      - in: query
+        name: brand
+        schema:
+          type: string
+        description: 'Brand of the footer (slug); omitted or empty: the channel-wide footer.'
       - in: path
         name: channel_idx
         schema:
@@ -235,10 +240,16 @@ paths:
     put:
       operationId: api_communicator_v2_admin_footers_update
       description: The HTML is sanitised to an allowlist (a, img, p, br, strong, em, span, div, table family; basic text,
-        colour and size styles) and must keep `{{ legal }}` exactly once, else 400 on `html`. Sent messages keep the footer
-        they went out with (`footer_html`).
+        colour and size styles) and must keep `{{ legal }}` exactly once and `{{ unsubscribe }}` at most once, both as text,
+        else 400 on `html`. Sent messages keep the footer they went out with (`footer_html`). A mail takes the footer of (its
+        language, its mailbox brand), else (language, no brand), else the channel default language with the brand, then without.
       summary: Create or replace the mail footer
       parameters:
+      - in: query
+        name: brand
+        schema:
+          type: string
+        description: 'Brand of the footer (slug); omitted or empty: the channel-wide footer.'
       - in: path
         name: channel_idx
         schema:
@@ -282,9 +293,15 @@ paths:
           description: No response body
     delete:
       operationId: api_communicator_v2_admin_footers_destroy
-      description: Mail in this language falls back to the channel default language's footer, else the legal text alone.
+      description: Mail in this language falls back to the channel-wide footer, then the channel default language's, else
+        the legal text alone.
       summary: Remove the mail footer
       parameters:
+      - in: query
+        name: brand
+        schema:
+          type: string
+        description: 'Brand of the footer (slug); omitted or empty: the channel-wide footer.'
       - in: path
         name: channel_idx
         schema:
@@ -482,8 +499,9 @@ paths:
           description: No response body
     post:
       operationId: api_communicator_v2_admin_mailboxes_create
-      description: Passwords are stored encrypted and never returned. A new default takes the flag from the old one. A taken
-        address or user, an unknown user or a warm-up without `daily_cap` answers 400.
+      description: Passwords are stored encrypted and never returned. A new default takes the flag from the old one, the same
+        for the default of a user; a user's first mailbox becomes theirs. A taken address, an unknown user, an invalid copy
+        address, brand or signature, or a warm-up without `daily_cap` answers 400.
       summary: Add a mailbox
       parameters:
       - in: path
@@ -3507,7 +3525,7 @@ components:
     FooterListResponse:
       properties:
         results:
-          description: Footers of the channel by language.
+          description: Footers of the channel by language and brand.
           examples:
           - []
           items:
@@ -3522,12 +3540,21 @@ components:
       additionalProperties: false
       properties:
         html:
-          description: Footer HTML with `{{ legal }}` exactly once; sanitised to an allowlist on save.
+          description: Footer HTML with `{{ legal }}` exactly once and optionally `{{ unsubscribe }}` once (where the unsubscribe
+            link goes; without it the link is appended below); sanitised to an allowlist on save.
           examples:
           - <p><strong>Jan Kowalski</strong><br>Example sp. z o.o.</p><div>{{ legal }}</div>
           maxLength: 20000
           minLength: 1
           title: Html
+          type: string
+        unsubscribe_label:
+          default: ''
+          description: 'Text of the unsubscribe link; empty: the default of the language.'
+          examples:
+          - ''
+          maxLength: 120
+          title: Unsubscribe Label
           type: string
       required:
       - html
@@ -3541,11 +3568,23 @@ components:
           - pl
           title: Language
           type: string
+        brand:
+          description: 'Brand of the mailboxes it serves; empty: every brand.'
+          examples:
+          - ''
+          title: Brand
+          type: string
         html:
           description: Sanitised footer HTML with `{{ legal }}`.
           examples:
           - <div>{{ legal }}</div>
           title: Html
+          type: string
+        unsubscribe_label:
+          description: 'Text of the unsubscribe link; empty: the default.'
+          examples:
+          - ''
+          title: Unsubscribe Label
           type: string
         modified_at:
           description: Last saved.
@@ -3556,7 +3595,9 @@ components:
           type: string
       required:
       - language
+      - brand
       - html
+      - unsubscribe_label
       - modified_at
       title: FooterResponse
       type: object
@@ -3820,15 +3861,46 @@ components:
           examples:
           - Anna Nowak
           title: Display Name
-        cc_address:
+        cc_addresses:
           anyOf:
-          - maxLength: 254
-            pattern: ^([^@\s]+@[^@\s]+\.[^@\s]+)?$
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          default: null
+          description: 'Copies of every mail (max 10, replaced as a whole); []: none.'
+          examples:
+          - []
+          title: Cc Addresses
+        bcc_addresses:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          default: null
+          description: 'Blind copies of every mail (max 10, replaced as a whole); []: none.'
+          examples:
+          - []
+          title: Bcc Addresses
+        brand:
+          anyOf:
+          - pattern: ^[a-z0-9.-]{0,32}$
             type: string
           - type: 'null'
           default: null
-          description: 'Copy of every mail; empty: none.'
-          title: Cc Address
+          description: 'Brand slug; empty: none.'
+          examples:
+          - entirius
+          title: Brand
+        signature_html:
+          anyOf:
+          - maxLength: 20000
+            type: string
+          - type: 'null'
+          default: null
+          description: 'Signature HTML after the body, sanitised; empty: none.'
+          title: Signature Html
         user_id:
           anyOf:
           - type: integer
@@ -3843,6 +3915,13 @@ components:
           default: null
           description: Used when the caller names no user with a mailbox.
           title: Is Default
+        is_user_default:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: The user's mailbox when no brand matches; true clears it on the user's others.
+          title: Is User Default
         smtp_host:
           anyOf:
           - maxLength: 255
@@ -4109,11 +4188,33 @@ components:
           - Anna Nowak
           title: Display Name
           type: string
-        cc_address:
-          description: 'Copy of every mail; empty: none.'
+        cc_addresses:
+          description: Copies of every mail.
+          examples:
+          - - crm@mail.test
+          items:
+            type: string
+          title: Cc Addresses
+          type: array
+        bcc_addresses:
+          description: Blind copies of every mail (never in a header).
+          examples:
+          - []
+          items:
+            type: string
+          title: Bcc Addresses
+          type: array
+        brand:
+          description: 'Brand slug; empty: none.'
+          examples:
+          - entirius
+          title: Brand
+          type: string
+        signature_html:
+          description: 'Sanitised signature HTML after the body; empty: none.'
           examples:
           - ''
-          title: Cc Address
+          title: Signature Html
           type: string
         user_id:
           anyOf:
@@ -4128,6 +4229,12 @@ components:
           examples:
           - true
           title: Is Default
+          type: boolean
+        is_user_default:
+          description: The user's mailbox when no brand matches.
+          examples:
+          - true
+          title: Is User Default
           type: boolean
         auth_method:
           description: password (the only method).
@@ -4302,9 +4409,13 @@ components:
       - id
       - address
       - display_name
-      - cc_address
+      - cc_addresses
+      - bcc_addresses
+      - brand
+      - signature_html
       - user_id
       - is_default
+      - is_user_default
       - auth_method
       - state
       - smtp_host
@@ -5081,15 +5192,46 @@ components:
           examples:
           - Anna Nowak
           title: Display Name
-        cc_address:
+        cc_addresses:
           anyOf:
-          - maxLength: 254
-            pattern: ^([^@\s]+@[^@\s]+\.[^@\s]+)?$
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          default: null
+          description: 'Copies of every mail (max 10, replaced as a whole); []: none.'
+          examples:
+          - []
+          title: Cc Addresses
+        bcc_addresses:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          default: null
+          description: 'Blind copies of every mail (max 10, replaced as a whole); []: none.'
+          examples:
+          - []
+          title: Bcc Addresses
+        brand:
+          anyOf:
+          - pattern: ^[a-z0-9.-]{0,32}$
             type: string
           - type: 'null'
           default: null
-          description: 'Copy of every mail; empty: none.'
-          title: Cc Address
+          description: 'Brand slug; empty: none.'
+          examples:
+          - entirius
+          title: Brand
+        signature_html:
+          anyOf:
+          - maxLength: 20000
+            type: string
+          - type: 'null'
+          default: null
+          description: 'Signature HTML after the body, sanitised; empty: none.'
+          title: Signature Html
         user_id:
           anyOf:
           - type: integer
@@ -5104,6 +5246,13 @@ components:
           default: null
           description: Used when the caller names no user with a mailbox.
           title: Is Default
+        is_user_default:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          description: The user's mailbox when no brand matches; true clears it on the user's others.
+          title: Is User Default
         smtp_host:
           anyOf:
           - maxLength: 255

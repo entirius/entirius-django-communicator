@@ -1,6 +1,8 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
+import re
+
 from django import forms
 from django.contrib import admin
 
@@ -133,7 +135,23 @@ class ThreadSequenceStateAdmin(admin.ModelAdmin):
         return False
 
 
+class AddressListField(forms.CharField):
+    """A list of addresses typed one per line (commas and semicolons split too); the service validates them."""
+
+    widget = forms.Textarea(attrs={"rows": 3})
+
+    def prepare_value(self, value):
+        return "\n".join(value) if isinstance(value, list) else value
+
+    def to_python(self, value) -> list[str]:
+        if isinstance(value, list):
+            return value
+        return [part for part in re.split(r"[\s,;]+", super().to_python(value) or "") if part]
+
+
 class MailboxForm(forms.ModelForm):
+    cc_addresses = AddressListField(required=False, help_text="Copies of every mail, one address per line (max 10).")
+    bcc_addresses = AddressListField(required=False, help_text="Blind copies, one address per line (max 10).")
     smtp_password = forms.CharField(
         widget=forms.PasswordInput(render_value=False), required=False, help_text="Leave empty to keep the stored one."
     )
@@ -143,7 +161,8 @@ class MailboxForm(forms.ModelForm):
 
     class Meta:
         model = Mailbox
-        fields = ("channel", "address", "display_name", "cc_address", "user", "is_default", "auth_method")
+        fields = ("channel", "address", "display_name", "cc_addresses", "bcc_addresses", "brand", "signature_html")
+        fields += ("user", "is_default", "is_user_default", "auth_method")
         fields += ("smtp_host", "smtp_port", "smtp_security", "smtp_user", "smtp_password", "send_enabled")
         fields += ("imap_host", "imap_port", "imap_use_ssl", "imap_user", "imap_password", "folder")
         fields += ("receive_enabled", "daily_cap", "warmup_start_cap", "warmup_step", "warmup_started_on")
@@ -170,8 +189,8 @@ class MailboxForm(forms.ModelForm):
         return Mailbox(channel=self.cleaned_data.get("channel"))
 
     def _get_validation_exclusions(self):
-        """The service moves the default flag from the old default; the one-default constraint must not refuse it."""
-        return {*super()._get_validation_exclusions(), "is_default"}
+        """The service moves the default flags from the old defaults; the one-default constraints must not refuse it."""
+        return {*super()._get_validation_exclusions(), "is_default", "is_user_default"}
 
 
 @admin.register(Mailbox)
@@ -179,9 +198,10 @@ class MailboxAdmin(admin.ModelAdmin):
     """Passwords are written only when typed in; pause and resume belong to the API (they are logged)."""
 
     form = MailboxForm
-    list_display = ("address", "channel", "user", "is_default", "send_enabled", "receive_enabled", "paused_at")
-    list_filter = ("send_enabled", "receive_enabled", "is_default")
-    search_fields = ("address", "display_name")
+    list_display = ("address", "channel", "user", "brand", "is_default", "is_user_default", "send_enabled")
+    list_display += ("receive_enabled", "paused_at")
+    list_filter = ("send_enabled", "receive_enabled", "is_default", "is_user_default", "brand")
+    search_fields = ("address", "display_name", "brand")
     readonly_fields = ("smtp_login_failed_at", "paused_at", "pause_reason", "health_reset_at", "last_polled_at")
 
     def save_model(self, request, obj, form, change) -> None:

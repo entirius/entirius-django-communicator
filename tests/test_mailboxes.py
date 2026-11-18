@@ -133,14 +133,16 @@ def test_create_refusals(channel, admin_api, body, status):
     assert admin_api.post(api_url("mailboxes/"), body, format="json").status_code == status
 
 
-def test_user_must_be_staff_and_unique_per_channel(channel, admin_api):
+def test_user_must_be_staff_and_may_have_several_mailboxes(channel, admin_api):
     customer = get_user_model().objects.create_user(username="customer-1")
     anna = staff("anna")
-    make_mailbox(channel, user=anna)
     url = api_url("mailboxes/")
 
     assert admin_api.post(url, {"address": "c@mail.example.test", "user_id": customer.pk}, "json").status_code == 400
-    assert admin_api.post(url, {"address": "b@mail.example.test", "user_id": anna.pk}, "json").status_code == 400
+    first = admin_api.post(url, {"address": "a@mail.example.test", "user_id": anna.pk}, "json")
+    second = admin_api.post(url, {"address": "b@mail.example.test", "user_id": anna.pk}, "json")
+    assert (first.status_code, second.status_code) == (201, 201)
+    assert (first.json()["is_user_default"], second.json()["is_user_default"]) == (True, False)
 
 
 def test_warmup_starts_today_when_no_date_given(channel, admin_api, policy):
@@ -367,7 +369,8 @@ def root_client(client, db):
 
 def _admin_form(mailbox: Mailbox, **overrides) -> dict:
     fields = {
-        "address": mailbox.address, "display_name": "", "cc_address": "", "user": "", "auth_method": "password",
+        "address": mailbox.address, "display_name": "", "cc_addresses": "", "bcc_addresses": "", "brand": "",
+        "signature_html": "", "user": "", "auth_method": "password",
         "smtp_host": mailbox.smtp_host, "smtp_port": 587, "smtp_security": "starttls", "smtp_user": "",
         "smtp_password": "", "send_enabled": "on", "imap_host": "", "imap_port": 993, "folder": "INBOX",
         "daily_cap": "", "warmup_start_cap": "", "warmup_step": 0, "warmup_started_on": "",

@@ -54,12 +54,14 @@ def compose(
     thread: Thread | None = None,
     in_reply_to: Reply | None = None,
     subject_label: str = "",
+    mailbox_brand: str = "",
 ) -> Message:
     """Can mail (a refusal → `suppressed` message) → legal footer → thread → `approved` message, due now.
 
     The thread: the given one (or the reply's), else the newest open or replied thread of (channel, subject_ref,
     email), else a new one. Raises `Channel.DoesNotExist`, `ComposeError`, `ThreadMismatchError` and
-    `LegalFooterRequiredError` — nothing is created then. A non-empty `subject_label` is stored on the thread."""
+    `LegalFooterRequiredError` — nothing is created then. A non-empty `subject_label` is stored on the thread.
+    `mailbox_user_id` and `mailbox_brand` pick the mailbox of a new thread as in `communicate()`."""
     channel = channel_service.get_channel(channel_idx)
     _check_text(subject, body_text)
     if thread := _reply_thread(thread, in_reply_to):
@@ -68,7 +70,7 @@ def compose(
     if refusal is None and not recipient.legal_footer.strip():
         raise LegalFooterRequiredError("a hand-written message requires a legal footer")
     thread = thread or thread_for(channel, recipient, subject_ref, REUSABLE_THREADS)
-    mailbox_service.assign(thread, mailbox_user_id)
+    mailbox_service.assign(thread, mailbox_user_id, mailbox_brand)
     label_thread(thread, subject_label)
     fields = {"subject": subject, "body_text": body_text, "legal_footer": recipient.legal_footer}
     fields.update(

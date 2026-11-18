@@ -6,6 +6,32 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
 
 ### Added
 
+- **Sender settings per mailbox and brand (U20–U23, U25).** Migrations `0027_sender_settings` (fields and data) and
+  `0028_sender_settings_constraints`.
+  - A user may have **several mailboxes**; `Mailbox.is_user_default` (at most one per channel and user) marks the
+    one used when no brand matches. A user's first mailbox gets it; `true` on one clears it on the user's others; a
+    mailbox without a user never has it; when the default is deleted or moves to another user, the user's oldest
+    other mailbox takes it. The migration makes every existing user mailbox its user's default.
+  - `Mailbox.brand` (slug `[a-z0-9.-]{0,32}`, blank = none) and `Mailbox.signature_html` (the footer allowlist, no
+    placeholders), both in `mailboxes/` and the Django admin.
+  - `Mailbox.cc_addresses` and `bcc_addresses` (each max 10, validated, lower-cased, deduplicated; PATCH replaces a
+    list as a whole). BCC is an envelope recipient only, never a header; a sandbox sends to neither and names them
+    in `X-Original-Cc` / `X-Original-Bcc`.
+  - `mailbox_service.resolve(channel, user_id, brand="")`: the user's sending mailbox of that brand (the user's
+    default first, else the oldest) → the user's default → the user's oldest → the channel default.
+    `communicate()`, `compose()` and the development endpoints `test/communicate/` (now also with
+    `mailbox_user_id`) and `test/compose/` take `mailbox_brand`.
+  - `MailFooter.brand` (blank = channel-wide; unique per channel, language and brand). A mail takes (its language,
+    its mailbox brand) → (language, no brand) → (channel default language, brand) → (channel default language, no
+    brand). `GET/PUT/DELETE footers/<language>/?brand=`; without `brand` the channel-wide footer, as before.
+    `GET footers/` lists every brand; each row carries `brand` and `unsubscribe_label`.
+  - `MailFooter.unsubscribe_label` (max 120, through the same PUT; blank = the default of the mail language) and the
+    optional placeholder `{{ unsubscribe }}` (at most once, as text): the link goes there as
+    `<a … style="color:#555555">label</a>`, else a small grey paragraph with it is appended below the footer.
+    Without `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` the placeholder is removed and nothing is added.
+  - Both parts of a mail run body → mailbox signature → footer → unsubscribe link. `footer_html` of a sent message
+    now includes the link (the footer as it went out).
+
 - **Sending health names its clock (U15).** `GET health/` carries `timezone` (the channel's), `now` (when it was
   counted; the `24h` and `7d` windows roll back from here) and `today_since` (00:00 of the channel day, where
   `sent_today` starts). The numbers keep their meaning: the windows roll, `sent_today` is the calendar day.
@@ -148,6 +174,11 @@ Release as 0.5.0 (new fields, new service, changed sequence behaviour).
 
 ### Changed
 
+- **Unsubscribe link text.** The default label is now "Nie chcę otrzymywać kolejnych wiadomości" (pl) / "I don't
+  want to receive further messages" (every other language) instead of "Wypisz się z listy" / "Unsubscribe", and the
+  HTML link is styled (grey, 11 px Arial when appended). Inside a footer the text part shows it as `label <url>`.
+- Mailbox API: `cc_address` (read and write) is replaced by `cc_addresses`; a second mailbox of the same user is
+  no longer a 400.
 - The mailbox login test logs in through the host's mail backend, the connection a send uses (`SMTP_BACKEND` and the
   `backend` argument of `mailbox_service.smtp_connection` are gone): a mailbox that sends no longer reads unreachable.
 - Sending health: `sent` of a window counts every delivery, `would_send` included, as `sent_today` does; rates and the

@@ -3,12 +3,16 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 from django.conf import settings
+from django.core.validators import RegexValidator
 from django.db import models
 from django.db.models import Q
 from django_utils.models.base_model import BaseModel
 
 from django_communicator.enums import MailboxAuth, SmtpSecurity
 from django_communicator.utils.encrypted_field import EncryptedTextField
+
+BRAND_PATTERN = r"^[a-z0-9.-]{0,32}$"
+brand_validator = RegexValidator(BRAND_PATTERN, "A brand is up to 32 of a-z, 0-9, dot and hyphen.")
 
 
 class Mailbox(BaseModel):
@@ -18,11 +22,17 @@ class Mailbox(BaseModel):
     channel = models.ForeignKey("django_communicator.Channel", on_delete=models.CASCADE, related_name="mailboxes")
     address = models.EmailField(help_text="The From address.")
     display_name = models.CharField(max_length=128, blank=True, default="")
-    cc_address = models.EmailField(blank=True, default="", help_text="Copy of every mail sent from this mailbox.")
+    cc_addresses = models.JSONField(default=list, blank=True, help_text="Copies of every mail (up to 10 addresses).")
+    bcc_addresses = models.JSONField(default=list, blank=True, help_text="Blind copies of every mail (up to 10).")
+    brand = models.CharField(
+        max_length=32, blank=True, default="", validators=[brand_validator], help_text="Brand slug; blank: none."
+    )
+    signature_html = models.TextField(blank=True, default="", help_text="Sanitised HTML after the body; blank: none.")
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
     is_default = models.BooleanField(default=False)
+    is_user_default = models.BooleanField(default=False, help_text="The user's mailbox when no brand matches.")
     auth_method = models.CharField(max_length=16, choices=MailboxAuth.choices, default=MailboxAuth.PASSWORD)
 
     smtp_host = models.CharField(max_length=255, blank=True, default="")
@@ -61,7 +71,9 @@ class Mailbox(BaseModel):
                 fields=["channel"], condition=Q(is_default=True), name="communicator_mailbox_one_default"
             ),
             models.UniqueConstraint(
-                fields=["channel", "user"], condition=Q(user__isnull=False), name="communicator_mailbox_one_per_user"
+                fields=["channel", "user"],
+                condition=Q(user__isnull=False, is_user_default=True),
+                name="communicator_mailbox_one_user_default",
             ),
         ]
 
