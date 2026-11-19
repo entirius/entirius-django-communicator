@@ -175,6 +175,12 @@ that reached two mailboxes of the channel.
 **Upgrade.** Migration 0017 turns the old single IMAP config of a channel into its default mailbox, receiving as
 before and not sending (`send_enabled = false`) — the channel SMTP entry keeps sending until a person enables it.
 
+**Rollback of 0027 / 0028 (sender settings).** `migrate django_communicator 0026` succeeds after the features were
+used, and loses this: per channel and user, every mailbox but the oldest is detached (`user` becomes empty; the
+mailbox, its threads and logins stay, it is nobody's personal mailbox any more); every footer with a brand is
+deleted (the brand-less footer stays); mailbox brands, signatures and BCC lists; CC addresses after the first
+(it goes back into `cc_address`); every `unsubscribe_label`. Migrating forward again does not restore any of it.
+
 ## Go/no-go: switching a channel to live
 
 Tick every item per channel before `mode = live`. One unticked item = no-go. Keep the ticked copy with

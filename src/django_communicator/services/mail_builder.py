@@ -4,8 +4,9 @@
 
 """Outgoing mail of a message: multipart/alternative, our Message-ID, threading headers, channel mode addressing.
 
-A thread with a mailbox leaves from that mailbox (its From, CC and SMTP login, from `mailbox_service`); without one
-the channel's SMTP entry of django_email and its `DEFAULT_FROM_EMAIL` are used, as before mailboxes existed.
+A thread with a mailbox leaves from that mailbox (its From, CC, BCC, signature, brand footer and SMTP login, from
+`mailbox_service`); without one the channel's SMTP entry of django_email and its `DEFAULT_FROM_EMAIL` are used, as
+before mailboxes existed. Both parts run body → mailbox signature → footer → unsubscribe link.
 """
 
 import secrets
@@ -21,12 +22,10 @@ from django_email.domain import EmailDomain
 
 from django_communicator import settings as communicator_settings
 from django_communicator.enums import ChannelMode, MessageStatus
-from django_communicator.models import Channel, Mailbox, Message, MessageTemplateVersion, Reply, Thread
+from django_communicator.models import Channel, Mailbox, MailFooter, Message, MessageTemplateVersion, Reply, Thread
 from django_communicator.services import footer_service, mailbox_service, unsubscribe_service
 
 FOOTER_SEPARATOR = "\n\n-- \n"
-UNSUBSCRIBE_LABELS = {"pl": "Wypisz się z listy"}
-UNSUBSCRIBE_LABEL = "Unsubscribe"
 
 
 class _UnfoldedHeader(BaseHeader):
@@ -44,9 +43,19 @@ class _UnfoldedHeader(BaseHeader):
         return f"{self.name}: {self}{policy.linesep}"
 
 
-class _UnsubscribeMail(EmailMultiAlternatives):
+class UnsubscribeMail(EmailMultiAlternatives):
     """Writes `List-Unsubscribe` unfolded; every other header keeps the default policy. A `compat32` message (Django
     before 6.0) never encodes the URL, so it is left as it is."""
+
+    copies_only = False
+
+    def recipients(self) -> list[str]:
+        """The envelope: the real recipient alone, so a refusal of it is never hidden by an accepted CC; with
+        `copies_only` the CC and BCC addresses, sent in a transaction of their own after the delivery."""
+        return self.copy_recipients() if self.copies_only else list(self.to)
+
+    def copy_recipients(self) -> list[str]:
+        return [*self.cc, *self.bcc]
 
     def message(self, *args, **kwargs):
         message = super().message(*args, **kwargs)
@@ -67,7 +76,7 @@ class SmtpNotConfiguredError(Exception):
     """No `EMAIL_SMTP_CONFIGURATION_CHANNELS` entry for the channel — nothing is sent."""
 
 
-def build(message: Message) -> EmailMultiAlternatives:
+def build(message: Message) -> UnsubscribeMail:
     """Also fills `message.footer_html` (unsaved) — the delivery stores it with the sent status. With
     `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` set the mail carries the RFC 8058 headers and a link in both parts.
 
@@ -76,17 +85,19 @@ def build(message: Message) -> EmailMultiAlternatives:
     mailbox = mailbox_service.for_message(message)
     connection, sender = _transport(channel, mailbox)
     to, subject, headers = _addressing(message, channel)
-    cc = _cc(mailbox, channel, headers)
+    cc = _copies(mailbox.cc_addresses if mailbox else [], channel, headers, "X-Original-Cc")
+    bcc = _copies(mailbox.bcc_addresses if mailbox else [], channel, headers, "X-Original-Bcc")
     headers.update(_threading_headers(message))
     headers["Message-ID"] = message.message_id or (  # a soft-bounce retry keeps the Message-ID it was sent with
         f"<communicator-{message.pk}-{secrets.token_hex(4)}@{parseaddr(sender)[1].rpartition('@')[2]}>"
     )
-    message.footer_html = message.footer_html or footer_html(message)
     link = unsubscribe_service.url_for(channel.idx, message.thread.recipient_email)
+    message.footer_html = _with_link(message, link) if message.footer_html else footer_html(message, link)
     headers.update(unsubscribe_service.headers_for(link))
-    text = _text(message, link)
-    mail = _UnsubscribeMail(subject, text, sender, to, cc=cc, headers=headers, connection=connection)
-    mail.attach_alternative(_html(message, link), "text/html")
+    signature = mailbox.signature_html if mailbox else ""
+    text = _text(message, signature, link)
+    mail = UnsubscribeMail(subject, text, sender, to, cc=cc, bcc=bcc, headers=headers, connection=connection)
+    mail.attach_alternative(_html(message, signature, link), "text/html")
     return mail
 
 
@@ -110,14 +121,15 @@ def sender_address(thread: Thread) -> str:
     return parseaddr(sender(thread.channel, thread.mailbox))[1]
 
 
-def _cc(mailbox: Mailbox | None, channel: Channel, headers: dict[str, str]) -> list[str]:
-    """The mailbox copy address; a sandbox only names it in `X-Original-Cc`, nothing leaves for it."""
-    if mailbox is None or not mailbox.cc_address:
+def _copies(addresses: list[str], channel: Channel, headers: dict[str, str], header: str) -> list[str]:
+    """The mailbox copy addresses (CC or BCC — BCC is an envelope recipient only, never a header); a sandbox only
+    names them in `X-Original-Cc` / `X-Original-Bcc`, nothing leaves for them."""
+    if not addresses:
         return []
     if channel.mode == ChannelMode.SANDBOX:
-        headers["X-Original-Cc"] = mailbox.cc_address
+        headers[header] = ", ".join(addresses)
         return []
-    return [mailbox.cc_address]
+    return list(addresses)
 
 
 def from_email(channel: Channel) -> str:
@@ -149,11 +161,29 @@ def _threading_headers(message: Message) -> dict[str, str]:
     return {"In-Reply-To": ids[-1], "References": " ".join(ids)} if ids else {}
 
 
-def footer_html(message: Message) -> str:
-    """The channel footer for the body language (cascade to the channel default) around the legal text; empty
-    when neither has a footer — the legal text then goes out alone, as before footers existed."""
-    footer = footer_service.resolve(message.thread.channel, _body_language(message))
-    return footer_service.render(footer, message.legal_footer) if footer else ""
+def _with_link(message: Message, link: str) -> str:
+    """The stored footer of a retried message; one stored before the unsubscribe link existed gets the link appended
+    below it, as a fresh message without `{{ unsubscribe }}` does."""
+    stored = message.footer_html
+    if not link or escape(link) in stored:
+        return stored
+    return stored + footer_service.unsubscribe_paragraph(link, _unsubscribe_label(message, _footer(message)))
+
+
+def footer_html(message: Message, link: str = "") -> str:
+    """The channel footer for the body language and the mailbox brand (`footer_service.resolve`) around the legal
+    text, the unsubscribe link at `{{ unsubscribe }}` or below; empty when no footer matches — the legal text and the
+    link then go out alone, as before footers existed."""
+    footer = _footer(message)
+    if footer is None:
+        return ""
+    return footer_service.render(footer, message.legal_footer, link, _unsubscribe_label(message, footer))
+
+
+def _footer(message: Message) -> MailFooter | None:
+    mailbox = message.thread.mailbox
+    brand = mailbox.brand if mailbox is not None else ""
+    return footer_service.resolve(message.thread.channel, _body_language(message), brand)
 
 
 def _body_language(message: Message) -> str:
@@ -167,24 +197,29 @@ def _body_language(message: Message) -> str:
     return thread.recipient_language.iso2 if thread.recipient_language else ""
 
 
-def _text(message: Message, link: str) -> str:
+def _text(message: Message, signature: str, link: str) -> str:
+    """Body, signature, then after `-- ` the footer (the link inside it, as `label <url>`) or the legal text and the
+    link as `label: url` — one line, so a quoted reply never reads our link as the recipient's opt-out wording."""
+    body = message.body_text
+    if signature and (signature_text := footer_service.to_text(signature)):
+        body += "\n\n" + signature_text
     if message.footer_html:
         footer = footer_service.to_text(message.footer_html)
     else:
         footer = message.legal_footer.strip()
-    if link:
-        footer = (footer + "\n\n" if footer else "") + f"{_unsubscribe_label(message)}: {link}"
-    return message.body_text + (FOOTER_SEPARATOR + footer if footer else "")
+        if link:
+            footer = (footer + "\n\n" if footer else "") + f"{_unsubscribe_label(message, None)}: {link}"
+    return body + (FOOTER_SEPARATOR + footer if footer else "")
 
 
-def _html(message: Message, link: str) -> str:
-    body = message.body_html or footer_service.paragraphs(message.body_text)
-    unsubscribe = f'<p><a href="{escape(link)}">{escape(_unsubscribe_label(message))}</a></p>' if link else ""
+def _html(message: Message, signature: str, link: str) -> str:
+    body = (message.body_html or footer_service.paragraphs(message.body_text)) + signature
     if message.footer_html:
-        return body + message.footer_html + unsubscribe
+        return body + message.footer_html  # the unsubscribe link is part of the rendered footer
     footer = message.legal_footer.strip()
+    unsubscribe = footer_service.unsubscribe_paragraph(link, _unsubscribe_label(message, None)) if link else ""
     return body + (f"<p>{escape(footer)}</p>" if footer else "") + unsubscribe
 
 
-def _unsubscribe_label(message: Message) -> str:
-    return UNSUBSCRIBE_LABELS.get(_body_language(message).lower(), UNSUBSCRIBE_LABEL)
+def _unsubscribe_label(message: Message, footer: MailFooter | None) -> str:
+    return footer_service.unsubscribe_label(footer, _body_language(message))

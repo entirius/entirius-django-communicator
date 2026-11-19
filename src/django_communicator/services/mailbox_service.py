@@ -12,6 +12,7 @@ leaves a password column alone unless the caller sends a new password, so an unr
 
 import copy
 import imaplib
+import logging
 import smtplib
 import ssl
 from datetime import date, datetime
@@ -19,22 +20,25 @@ from email.utils import formataddr
 from typing import Any
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.core.mail import get_connection
 from django.core.mail.backends.base import BaseEmailBackend
+from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
 from django.db.models import QuerySet
 
 from django_communicator.enums import MailboxState, SmtpSecurity
 from django_communicator.models import Channel, Mailbox, Message, Thread
-from django_communicator.services import alert_service, clock_service
+from django_communicator.services import alert_service, clock_service, footer_service
 from django_communicator.services.exceptions import ClientError
+
+logger = logging.getLogger(__name__)
 
 PASSWORD_FIELDS = ("smtp_password", "imap_password")
 EDITABLE_FIELDS = frozenset(
     {
         "address",
         "display_name",
-        "cc_address",
         "auth_method",
         "smtp_host",
         "smtp_port",
@@ -53,6 +57,9 @@ EDITABLE_FIELDS = frozenset(
         "warmup_started_on",
     }
 )
+COPY_FIELDS = ("cc_addresses", "bcc_addresses")
+COPIES_MAX = 10
+_CHECKED_FIELDS = frozenset({*COPY_FIELDS, "brand", "signature_html"})
 _RELATION_FIELDS = frozenset({"user_id", "is_default", *PASSWORD_FIELDS})
 IMAP_IDENTITY = ("imap_host", "imap_user", "folder")
 LOGIN_TIMEOUT_S = 30
@@ -89,7 +96,8 @@ def get_mailbox(channel: Channel, pk: int) -> Mailbox:
 
 
 def create_mailbox(channel: Channel, changes: dict[str, Any]) -> Mailbox:
-    """Raises `MailboxError` for a taken address or user, a warm-up without a ceiling or an unknown user."""
+    """Raises `MailboxError` for a taken address, a warm-up without a ceiling, an unknown user, an invalid copy
+    address, brand or signature."""
     mailbox = Mailbox(channel=channel)
     _apply(mailbox, changes)
     return _saved(mailbox, None)
@@ -106,6 +114,7 @@ def check_changes(mailbox: Mailbox, changes: dict[str, Any]) -> None:
     _apply(copy.copy(mailbox), changes)
 
 
+@transaction.atomic
 def delete_mailbox(mailbox: Mailbox) -> None:
     """Raises `MailboxInUseError` while it is the default or a thread sends from it."""
     if mailbox.is_default:
@@ -117,18 +126,52 @@ def delete_mailbox(mailbox: Mailbox) -> None:
 
 def _apply(mailbox: Mailbox, changes: dict[str, Any]) -> list[str]:
     """Set the changes on the instance; the names of the columns to write."""
-    invalid = set(changes) - EDITABLE_FIELDS - _RELATION_FIELDS
+    invalid = set(changes) - EDITABLE_FIELDS - _CHECKED_FIELDS - _RELATION_FIELDS
     if invalid:
         raise ValueError(f"Fields not editable on a mailbox: {sorted(invalid)}")
     identity = [getattr(mailbox, name) for name in IMAP_IDENTITY]
     fields = sorted(EDITABLE_FIELDS & set(changes))
     for name in fields:
         setattr(mailbox, name, changes[name])
-    fields += _set_passwords(mailbox, changes) + _set_relations(mailbox, changes)
+    fields += _set_checked(mailbox, changes) + _set_passwords(mailbox, changes) + _set_relations(mailbox, changes)
     if mailbox.pk and identity != [getattr(mailbox, name) for name in IMAP_IDENTITY]:
         mailbox.last_uid, mailbox.uidvalidity = 0, None  # another mailbox: the cursor starts over
         fields += ["last_uid", "uidvalidity"]
     return [*fields, *_check_warmup(mailbox)]
+
+
+def _set_checked(mailbox: Mailbox, changes: dict[str, Any]) -> list[str]:
+    """Copy lists (each replaced as a whole), brand and signature, normalised or refused."""
+    fields = sorted(_CHECKED_FIELDS & set(changes))
+    for name in fields:
+        value = changes[name]
+        if name in COPY_FIELDS:
+            value = _addresses(name, value)
+        elif name == "brand":
+            try:
+                value = footer_service.clean_brand(value)
+            except footer_service.BrandError as error:
+                raise MailboxError(error.client_message) from None
+        else:
+            try:
+                value = footer_service.clean_signature(value)
+            except footer_service.FooterError as error:
+                raise MailboxError(error.client_message) from None
+        setattr(mailbox, name, value)
+    return fields
+
+
+def _addresses(name: str, values: list[str] | None) -> list[str]:
+    """Trimmed, lower-cased, without duplicates (first one kept), each a valid address, at most `COPIES_MAX`."""
+    cleaned = list(dict.fromkeys(value.strip().lower() for value in values or [] if value and value.strip()))
+    for address in cleaned:
+        try:
+            validate_email(address)
+        except ValidationError:
+            raise MailboxError(f"{name}: {address!r} is not a valid e-mail address") from None
+    if len(cleaned) > COPIES_MAX:
+        raise MailboxError(f"{name}: at most {COPIES_MAX} addresses")
+    return cleaned
 
 
 def _set_passwords(mailbox: Mailbox, changes: dict[str, Any]) -> list[str]:
@@ -187,23 +230,29 @@ def _saved(mailbox: Mailbox, fields: list[str] | None) -> Mailbox:
             else:
                 mailbox.save(update_fields=[*fields, "modified_at"])
     except IntegrityError:
-        raise MailboxError("another mailbox of this channel has this address or this user") from None
+        raise MailboxError("another mailbox of this channel has this address") from None
     return mailbox
 
 
-def resolve(channel: Channel, user_id: int | None) -> Mailbox | None:
-    """The sending mailbox of that user in the channel, else the channel's sending default, else None."""
+def resolve(channel: Channel, user_id: int | None, brand: str = "") -> Mailbox | None:
+    """Among sending mailboxes, with a brand: the user's mailbox of that brand, else any mailbox of that brand in the
+    channel (the channel default first, else the oldest); then the user's oldest mailbox, else the channel default,
+    else None. A brand nobody has is logged and the order goes on without it."""
     sending = Mailbox.objects.filter(channel=channel, send_enabled=True)
-    if user_id is not None and (own := sending.filter(user_id=user_id).first()):
-        return own
-    return sending.filter(is_default=True).first()
+    own = sending.filter(user_id=user_id).order_by("pk") if user_id is not None else sending.none()
+    if brand := (brand or "").strip().lower():
+        branded = sending.filter(brand=brand)
+        if mailbox := own.filter(brand=brand).first() or branded.order_by("-is_default", "pk").first():
+            return mailbox
+        logger.warning("communicator: no sending mailbox of brand %r in channel %s", brand, channel.pk)
+    return own.first() or sending.filter(is_default=True).first()
 
 
-def assign(thread: Thread, user_id: int | None) -> None:
+def assign(thread: Thread, user_id: int | None, brand: str = "") -> None:
     """Before the thread's first message: store the mailbox it sends from. A thread keeps it for good."""
     if thread.mailbox_id is not None or thread.messages.exists():
         return
-    mailbox = resolve(thread.channel, user_id)
+    mailbox = resolve(thread.channel, user_id, brand)
     if mailbox is not None and Thread.objects.filter(pk=thread.pk, mailbox__isnull=True).update(mailbox=mailbox):
         thread.mailbox = mailbox
 

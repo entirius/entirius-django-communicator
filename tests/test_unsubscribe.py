@@ -11,6 +11,7 @@ from unittest import mock
 import pytest
 from django.core import mail, signing
 from django.core.cache import cache
+from django.utils.html import escape
 from rest_framework.test import APIClient
 
 from django_communicator import settings as communicator_settings
@@ -21,6 +22,7 @@ from django_communicator.signals import optout_confirmed
 from tests.conftest import CHANNEL_IDX, approved_message
 
 BASE = "https://api.example.test"
+STYLE = "font-family:Arial,sans-serif;font-size:11px;color:#555555"
 EMAIL = "jan@example-shop-1.test"
 
 
@@ -84,7 +86,14 @@ def test_unfolded_header_leaves_every_other_header_unchanged(policy, sandbox, st
     assert ours == standard and len(ours) > 5
 
 
-@pytest.mark.parametrize(("language", "label"), [("PL", "Wypisz się z listy"), ("EN", "Unsubscribe")])
+@pytest.mark.parametrize(
+    ("language", "label"),
+    [
+        ("PL", "Nie chcę otrzymywać kolejnych wiadomości"),
+        ("EN", "I don't want to receive further messages"),
+        ("DE", "I don't want to receive further messages"),  # no default of its own: English
+    ],
+)
 def test_link_in_text_and_html_with_body_language_label(
     policy, sandbox, static_template, unsubscribe_on, language, label
 ):
@@ -95,7 +104,7 @@ def test_link_in_text_and_html_with_body_language_label(
     text, html = (part.get_payload(decode=True).decode() for part in built.get_payload())
     link = unsubscribe_service.url_for(CHANNEL_IDX, EMAIL)
     assert text.rstrip("\n").endswith(f"Seller.\n\n{label}: {link}")
-    assert f'<a href="{link}">{label}</a>' in html
+    assert f'<p style="{STYLE}"><a href="{link}" style="color:#555555">{escape(label)}</a></p>' in html
 
 
 def test_sent_mail_carries_the_headers(policy, sandbox, static_template, unsubscribe_on):

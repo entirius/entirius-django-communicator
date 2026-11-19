@@ -5,9 +5,9 @@
 
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
 from django_communicator.enums import (
     AlertSeverity,
@@ -21,11 +21,22 @@ from django_communicator.enums import (
     SuppressionSource,
     TemplateKind,
 )
+from django_communicator.models.mailbox import BRAND_PATTERN
 from django_communicator.services.communicate_service import RecipientData
 
 AUDIENCE_PATTERN = r"^[A-Z0-9_]*$"
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
-OPTIONAL_EMAIL_PATTERN = r"^([^@\s]+@[^@\s]+\.[^@\s]+)?$"
+
+
+def _brand(value: object) -> object:
+    """Trimmed and lower-cased before the slug pattern, as leads does (`Acme.Shop` → `acme.shop`)."""
+    return value.strip().lower() if isinstance(value, str) else value
+
+
+Brand = Annotated[str, BeforeValidator(_brand)]
+MAILBOX_BRAND_HELP = (
+    "Brand of the sending mailbox of a new thread: the user's mailbox of this brand first; blank = no preference."
+)
 
 
 class ReviewListQuery(BaseModel):
@@ -140,6 +151,10 @@ class DevCommunicateRequest(BaseModel):
         default="", max_length=64, pattern=AUDIENCE_PATTERN, description="Audience code.", examples=["RETAILER"]
     )
     subject_label: str = Field(default="", max_length=200, description=SUBJECT_LABEL_HELP, examples=["Shop Ltd"])
+    mailbox_user_id: int | None = Field(default=None, description="Staff user whose mailbox a new thread uses.")
+    mailbox_brand: Brand = Field(
+        default="", max_length=32, pattern=BRAND_PATTERN, description=MAILBOX_BRAND_HELP, examples=["acme.shop"]
+    )
 
 
 class DevComposeRequest(BaseModel):
@@ -152,6 +167,9 @@ class DevComposeRequest(BaseModel):
     thread_id: int | None = Field(default=None, description="Thread to write in; null = the reuse rule.")
     in_reply_to_id: int | None = Field(default=None, description="Reply of the thread being answered.")
     mailbox_user_id: int | None = Field(default=None, description="Staff user whose mailbox a new thread uses.")
+    mailbox_brand: Brand = Field(
+        default="", max_length=32, pattern=BRAND_PATTERN, description=MAILBOX_BRAND_HELP, examples=["acme.shop"]
+    )
     subject_label: str = Field(default="", max_length=200, description=SUBJECT_LABEL_HELP, examples=["Shop Ltd"])
 
 
@@ -359,8 +377,21 @@ class MailboxUpdateRequest(BaseModel):
         default=None, max_length=254, pattern=EMAIL_PATTERN, description="From address.", examples=["anna@mail.test"]
     )
     display_name: str | None = Field(default=None, max_length=128, description="From name.", examples=["Anna Nowak"])
-    cc_address: str | None = Field(
-        default=None, max_length=254, pattern=OPTIONAL_EMAIL_PATTERN, description="Copy of every mail; empty: none."
+    cc_addresses: list[str] | None = Field(
+        default=None, description="Copies of every mail (max 10, replaced as a whole); []: none.", examples=[[]]
+    )
+    bcc_addresses: list[str] | None = Field(
+        default=None, description="Blind copies of every mail (max 10, replaced as a whole); []: none.", examples=[[]]
+    )
+    brand: Brand | None = Field(
+        default=None,
+        max_length=32,
+        pattern=BRAND_PATTERN,
+        description="Brand slug; empty: none.",
+        examples=["entirius"],
+    )
+    signature_html: str | None = Field(
+        default=None, max_length=20000, description="Signature HTML after the body, sanitised; empty: none."
     )
     user_id: int | None = Field(default=None, description="Staff member whose mailbox this is; null: nobody.")
     is_default: bool | None = Field(default=None, description="Used when the caller names no user with a mailbox.")
@@ -422,8 +453,26 @@ class FooterRequest(BaseModel):
     html: str = Field(
         min_length=1,
         max_length=20000,
-        description="Footer HTML with `{{ legal }}` exactly once; sanitised to an allowlist on save.",
+        description="Footer HTML with `{{ legal }}` exactly once and optionally `{{ unsubscribe }}` once (where the "
+        "unsubscribe link goes; without it the link is appended below); sanitised to an allowlist on save.",
         examples=["<p><strong>Jan Kowalski</strong><br>Example sp. z o.o.</p><div>{{ legal }}</div>"],
+    )
+    unsubscribe_label: str = Field(
+        default="",
+        max_length=120,
+        description="Text of the unsubscribe link; empty: the default of the language.",
+        examples=[""],
+    )
+
+
+class FooterQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    brand: Brand = Field(
+        default="",
+        max_length=32,
+        pattern=BRAND_PATTERN,
+        description="Brand of the footer; empty: the channel-wide one.",
     )
 
 

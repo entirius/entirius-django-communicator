@@ -78,7 +78,7 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
 - **A bad stored `country` / `timezone` answers 409 `CHANNEL_CONFIG_INVALID`** from every admin view that
   loads the policy, never 500; `Channel.clean()` and `save()` validate both.
 
-- **`List-Unsubscribe` is written unfolded** by `mail_builder._UnsubscribeMail`; only that header gets the custom
+- **`List-Unsubscribe` is written unfolded** by `mail_builder.UnsubscribeMail`; only that header gets the custom
   header class. Test it on the wire (`message(policy=email.policy.SMTP).as_bytes()`), not on the parsed message.
 - **The unsubscribe token has no expiry and is tied to the channel idx** — renaming a channel invalidates every link
   already sent (400). `COMMUNICATOR_UNSUBSCRIBE_BASE_URL` is read at import, like every module setting.
@@ -111,6 +111,12 @@ Install-time traps (once backend, queues, OAS 3.1, `SECRET_KEY`, SMTP channel co
   sent row keeps `footer_html`. A soft-bounce retry re-resolves (nothing is stored until `sent`).
 - **Save goes through `footer_service.save_footer`** — the sanitiser and the placeholder rule live there. There is
   no Django admin page for `MailFooter` on purpose: a raw admin save would skip both.
+- **`footer_html` of a sent message includes the unsubscribe link** (at `{{ unsubscribe }}` or appended): the
+  footer as it went out. The mailbox signature is not part of it — it sits between body and footer.
+- **The text part writes the link two ways**: inside a footer as `label <url>`, without a footer as `label: url`.
+  Both keep label and URL on one line — `inbound_service` drops lines with the unsubscribe path before it looks for
+  opt-out phrases, and the default Polish label ("Nie chcę otrzymywać…", like the old "Wypisz się") would otherwise
+  read as one.
 
 ## Inbound
 

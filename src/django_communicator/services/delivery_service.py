@@ -22,7 +22,6 @@ import logging
 import smtplib
 from datetime import datetime, timedelta
 
-from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
 from django.utils import timezone
 
@@ -86,7 +85,7 @@ def _held(message: Message, now: datetime) -> bool:
     return hold is not None
 
 
-def _build(message: Message, now: datetime) -> EmailMultiAlternatives | str:
+def _build(message: Message, now: datetime) -> mail_builder.UnsubscribeMail | str:
     """The mail, or `deferred` when no login can send it (the mailbox or the channel is told once a day)."""
     try:
         return mail_builder.build(message)
@@ -139,7 +138,7 @@ def _finish(message: Message, outcome: str, fields: dict) -> str:
     return outcome
 
 
-def _send(message: Message, mail: EmailMultiAlternatives, now: datetime, *, previous: str) -> str:
+def _send(message: Message, mail: mail_builder.UnsubscribeMail, now: datetime, *, previous: str) -> str:
     try:
         mail.send()
     except smtplib.SMTPAuthenticationError as error:
@@ -157,7 +156,20 @@ def _send(message: Message, mail: EmailMultiAlternatives, now: datetime, *, prev
     }
     _finish(message, MessageStatus.SENT, fields)
     transaction.on_commit(lambda: message_sent.send(sender=Message, message=message))
+    _send_copies(message, mail)
     return MessageStatus.SENT
+
+
+def _send_copies(message: Message, mail: mail_builder.UnsubscribeMail) -> None:
+    """The same mail to the mailbox's CC and BCC addresses, after the recipient's delivery succeeded and in its own
+    SMTP transaction. A failure is logged and changes nothing: the message stays `sent`."""
+    if not mail.copy_recipients():
+        return
+    mail.copies_only = True
+    try:
+        mail.send()
+    except Exception:
+        logger.warning("communicator message %s: copy to CC/BCC addresses failed", message.pk, exc_info=True)
 
 
 def _login_refused(message: Message, previous: str, now: datetime) -> str:

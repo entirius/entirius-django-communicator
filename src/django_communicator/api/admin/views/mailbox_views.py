@@ -47,7 +47,8 @@ class MailboxListView(_MailboxView):
         tags=_TAGS,
         summary="Add a mailbox",
         description="Passwords are stored encrypted and never returned. A new default takes the flag from the old "
-        "one. A taken address or user, an unknown user or a warm-up without `daily_cap` answers 400.",
+        "one, the same for the default of a user; a user's first mailbox becomes theirs. A taken address, an "
+        "unknown user, an invalid copy address, brand or signature, or a warm-up without `daily_cap` answers 400.",
         request=MailboxCreateRequest,
         responses={201: MailboxResponse, **ERROR_RESPONSES},
     )
